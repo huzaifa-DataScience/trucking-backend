@@ -48,8 +48,9 @@ export class SitelineReportService {
    * Buckets: Current, 1-30 Days, 31-60 Days, 61-90 Days, 91-120 Days, >120 Days past due.
    */
   async getAgingReport(): Promise<AgingReportResponse> {
+    // Load all pay apps with their contracts; we'll filter PAID/DRAFT in code so that
+    // rows with NULL status values are still included in the report.
     const payApps = await this.payAppRepo.find({
-      where: { status: Not(In(['PAID', 'DRAFT'])) },
       relations: ['contract'],
     });
 
@@ -61,8 +62,14 @@ export class SitelineReportService {
     const projectTotals = new Map<string, number>();
 
     for (const pa of payApps) {
+      // Skip explicitly paid/draft items, but allow null/other statuses through.
+      if (pa.status === 'PAID' || pa.status === 'DRAFT') continue;
+
       const contract = pa.contract;
-      if (!contract?.projectName) continue;
+      if (!contract) continue;
+
+      // Prefer project name; fall back to project number or contract id if needed.
+      const key = contract.projectName ?? contract.projectNumber ?? contract.id;
 
       const billed = Number(pa.billed ?? 0);
       const retention = Number(pa.retention ?? 0);
@@ -73,8 +80,6 @@ export class SitelineReportService {
         ? Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
         : 0;
       const bucket = getBucket(daysPastDue);
-
-      const key = contract.projectName;
       if (!pivot.has(key)) {
         pivot.set(key, {
           Current: 0,

@@ -130,15 +130,28 @@ export class SitelineService {
               name
               projectNumber
               timeZone
-              architect
+              architect {
+                name
+              }
               bondNumber
-              bondProvider
+              bondProvider {
+                name
+              }
               createdAt
-              gcAddress
-              gcName
-              owner
+              gc {
+                name
+              }
+              gcAddress {
+                street1
+                city
+                state
+                postalCode
+                country
+              }
+              owner {
+                name
+              }
               updatedAt
-              metadata
               location {
                 id
                 nickname
@@ -247,15 +260,28 @@ export class SitelineService {
                 name
                 projectNumber
                 timeZone
-                architect
+                architect {
+                  name
+                }
                 bondNumber
-                bondProvider
+                bondProvider {
+                  name
+                }
                 createdAt
-                gcAddress
-                gcName
-                owner
+                gc {
+                  name
+                }
+                gcAddress {
+                  street1
+                  city
+                  state
+                  postalCode
+                  country
+                }
+                owner {
+                  name
+                }
                 updatedAt
-                metadata
               }
             }
             g702Values {
@@ -325,15 +351,16 @@ export class SitelineService {
                 name
                 projectNumber
                 timeZone
-                architect
                 bondNumber
-                bondProvider
                 createdAt
-                gcAddress
-                gcName
-                owner
                 updatedAt
-                metadata
+                gcAddress {
+                  street1
+                  city
+                  state
+                  postalCode
+                  country
+                }
               }
               payApps (months:["${monthForArg}"]) {
                 id

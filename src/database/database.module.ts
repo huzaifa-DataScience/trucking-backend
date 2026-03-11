@@ -53,9 +53,6 @@ import {
           },
           connectionTimeout: 30000,
           requestTimeout: 30000,
-          extra: {
-            trustServerCertificate: trustCert,
-          },
           entities: [
             Ticket,
             Photo,
@@ -74,8 +71,18 @@ import {
           ],
           synchronize: false,
           logging: config.get('NODE_ENV') === 'development',
-          retryAttempts: 3,
+          retryAttempts: 5,
           retryDelay: 3000,
+          extra: {
+            trustServerCertificate: trustCert,
+            connectionTimeout: 30000,
+            requestTimeout: 30000,
+            pool: {
+              max: 10,
+              min: 1,
+              idleTimeoutMillis: 30000,
+            },
+          },
         };
       },
       inject: [ConfigService],

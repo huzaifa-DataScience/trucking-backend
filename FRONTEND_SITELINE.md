@@ -109,12 +109,38 @@ GET /siteline/contracts/:id
 
 **Example:** `GET /siteline/contracts/abc123`
 
-**Response (success):** Same contract shape as in the list, with richer `sov.lineItems`:
+**Response (success):** Same contract shape as in the list, with richer `sov.lineItems` and a detailed `project`:
 
 ```json
 {
   "id": "...",
-  "project": { ... },
+  "project": {
+    "id": "...",
+    "name": "Project Alpha",
+    "projectNumber": "PRJ-001",
+    "timeZone": "America/New_York",
+    "architect": "ACME Architects",
+    "bondNumber": "BOND-123",
+    "bondProvider": "Bond Provider Inc.",
+    "createdAt": "2025-01-10T12:00:00Z",
+    "gcAddress": "123 GC St, City, ST",
+    "gcName": "General Contractor LLC",
+    "owner": "Project Owner LLC",
+    "updatedAt": "2025-02-05T09:30:00Z",
+    "metadata": {
+      "...": "..."
+    },
+    "location": {
+      "id": "...",
+      "nickname": "Site A",
+      "street1": "...",
+      "city": "...",
+      "state": "...",
+      "country": "...",
+      "postalCode": "...",
+      "timeZone": "America/New_York"
+    }
+  },
   "sov": {
     "lineItems": [
       {
@@ -135,6 +161,34 @@ GET /siteline/contracts/:id
 ```
 
 **Response (not found / error):** `null` or `{ "error": "..." }`.
+
+---
+
+### Project fields (for display)
+
+Wherever a `project` object appears in the Siteline responses (single contract, single pay app, paginated contracts, paginated pay apps), it can include these fields:
+
+- **id**: internal Siteline project id (string).
+- **name**: human‑friendly project name.
+- **projectNumber**: project code / number used for reporting.
+- **timeZone**: IANA time zone (e.g. `America/New_York`).
+- **architect**: architect name.
+- **bondNumber**: bond identifier.
+- **bondProvider**: company providing the bond.
+- **gcName**: general contractor name.
+- **gcAddress**: general contractor address (single string).
+- **owner**: project owner name/entity.
+- **createdAt / updatedAt**: project created/updated timestamps.
+- **metadata**: extra key/value data from Siteline (shape may vary).
+- **location**: nested object with address + timeZone.
+
+**Frontend usage ideas:**
+
+- Contract / pay app header: show project `name`, `projectNumber`, `owner`, `architect`, `gcName`, `gcAddress`.
+- Hover/tooltips: show `metadata` or `location` details when you hover the project name/number.
+- Optional columns in tables (if space allows): `owner`, `architect`, or `gcName`.
+
+All of these fields are already included in the backend responses; the frontend can choose which ones to display.
 
 ---
 
@@ -234,7 +288,21 @@ GET /siteline/contracts/paginated?month=&payAppStatus=&contractStatus=&limit=&cu
       "billingType": "LUMP_SUM",
       "percentComplete": 0.45,
       "project": {
-        "projectNumber": "PRJ-001"
+        "id": "...",
+        "name": "Project Alpha",
+        "projectNumber": "PRJ-001",
+        "timeZone": "America/New_York",
+        "architect": "ACME Architects",
+        "bondNumber": "BOND-123",
+        "bondProvider": "Bond Provider Inc.",
+        "createdAt": "2025-01-10T12:00:00Z",
+        "gcAddress": "123 GC St, City, ST",
+        "gcName": "General Contractor LLC",
+        "owner": "Project Owner LLC",
+        "updatedAt": "2025-02-05T09:30:00Z",
+        "metadata": {
+          "...": "..."
+        }
       },
       "payApps": [
         {

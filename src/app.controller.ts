@@ -10,6 +10,13 @@ export class AppController {
     private readonly dataSource: DataSource,
   ) {}
 
+  /** Lightweight ping to verify server is up (no DB, no auth). Use for load balancers / uptime checks. */
+  @Public()
+  @Get('health/ping')
+  ping() {
+    return { ok: true, timestamp: new Date().toISOString() };
+  }
+
   /** Confirm we are connected to the database (no auth required). */
   @Public()
   @Get('health/db')
@@ -143,6 +150,7 @@ export class AppController {
           agingReport: 'GET /siteline/aging-report',
         },
         health: {
+          ping: 'GET /health/ping (server up? no auth)',
           db: 'GET /health/db (confirm DB connection, no auth)',
           dbTables: 'GET /health/db-tables (check expected tables exist, no auth)',
         },
