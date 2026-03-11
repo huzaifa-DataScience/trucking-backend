@@ -14,12 +14,19 @@ export class ForensicController {
     return this.forensic.getLateSubmissionAudit(startDate, endDate);
   }
 
-  /** Tab 2: Efficiency Outlier – loads per truck vs fleet avg on same route */
+  /** Tab 2: Efficiency Outlier – cycle time vs fleet benchmark; 15% rule; peer group = Date+Job+Material+Destination */
   @Get('efficiency-outlier')
   async getEfficiencyOutlierReport(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('jobId') jobId?: string,
+    @Query('materialId') materialId?: string,
   ) {
-    return this.forensic.getEfficiencyOutlierReport(startDate, endDate);
+    return this.forensic.getEfficiencyOutlierReport(
+      startDate,
+      endDate,
+      jobId,
+      materialId,
+    );
   }
 }

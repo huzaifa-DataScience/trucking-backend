@@ -41,6 +41,8 @@ GET http://localhost:3000/
 
 ## Authentication
 
+**Full login/signup process for frontend:** see **[FRONTEND_AUTH.md](./FRONTEND_AUTH.md)** (step-by-step flow, types, storage, 401 handling, profile, roles).
+
 All API endpoints except the ones below require a JWT in the `Authorization` header:
 
 ```
@@ -63,7 +65,9 @@ GET http://localhost:3000/auth/profile
 Authorization: Bearer <access_token>
 ```
 
-**Public routes (no token):** `GET /`, `POST /auth/login`, `POST /seed`. See `AUTH.md` for full details and admin-only routes.
+**Public routes (no token):** `GET /`, `POST /auth/login`, `POST /auth/register`, `POST /seed`. See **FRONTEND_AUTH.md** for login/signup flow and **AUTH.md** for admin-only routes.
+
+**Siteline billing (contracts, pay apps, company):** see **[FRONTEND_SITELINE.md](./FRONTEND_SITELINE.md)**. **Aging report (net dollars by project × days past due):** see **[FRONTEND_AGING_REPORT.md](./FRONTEND_AGING_REPORT.md)**.
 
 ---
 
@@ -247,48 +251,93 @@ Same structure as Job Dashboard:
 
 ### Forensic & Audit
 
-#### Late Submission Audit
+**Frontend note – contract summary:**
+
+| Tab | Endpoint | Response shape | Key for UI |
+|-----|----------|----------------|------------|
+| **Tab 1: Late Submission** | `GET /forensic/late-submission?startDate=&endDate=` | `{ lateTicketsFound: number, items: [...] }` | KPI card = `lateTicketsFound`; grid = `items`. Row field for “System Entry Date” = `systemEntryDate`. Row click → Ticket Detail (`/tickets/detail/:ticketNumber`). |
+| **Tab 2: Efficiency Outlier** | `GET /forensic/efficiency-outlier?startDate=&endDate=&jobId=&materialId=` | Array of rows (sorted: RED first) | Grid columns: Date, Job Name, Route, Truck Number, Hauler Name, Total Tickets, Work Duration, My Avg Cycle, Fleet Benchmark, Status. Use `status` / `statusLabel` for row highlight (RED = slow, Grey = Single Load). Optional filters: `jobId`, `materialId`. |
+
+If the frontend was using the old forensic responses (e.g. late-submission as a plain array, or old efficiency columns), it needs to be updated to the shapes below.
+
+---
+
+#### Tab 1: Late Submission Audit
+
+Flags tickets where **CreatedAt** is more than **24 hours** after **TicketDate**. Use for KPI card and audit grid; row click opens Ticket Detail Modal.
+
 ```
 GET http://localhost:3000/forensic/late-submission?startDate=2024-01-01&endDate=2024-12-31
 ```
 
 **Response:**
 ```json
-[
-  {
-    "ticketNumber": "T-001",
-    "ticketDate": "2024-01-01",
-    "systemDate": "2024-01-05T10:00:00Z",
-    "lagTime": "+4 Days",
-    "signedBy": "Supervisor",
-    "jobName": "Job A",
-    "hauler": "Hauler Co"
-  }
-]
+{
+  "lateTicketsFound": 12,
+  "items": [
+    {
+      "ticketNumber": "T-001",
+      "ticketDate": "2024-01-01",
+      "systemEntryDate": "2024-01-05T10:00:00.000Z",
+      "lagTime": "+4 Days",
+      "signedBy": "Supervisor Name",
+      "jobName": "Job A",
+      "haulerCompanyName": "Hauler Co"
+    }
+  ]
+}
 ```
 
-#### Efficiency Outlier Report
+- **lateTicketsFound**: Use for KPI card "Late Tickets Found".
+- **items**: Grid columns = Ticket Number, Ticket Date, System Entry Date, Lag Time (highlight red), Supervisor/Signed By, Job Name, Hauler Name. Action = open `GET /tickets/detail/:ticketNumber` (Ticket Detail Modal).
+
+#### Tab 2: Efficiency Outlier Report
+
+Peer group = **Same Date + Same Job + Same Material + Same Destination**. Single-load trucks excluded from benchmark; shown as status "Single Load" (grey). Red = truck >15% slower than fleet benchmark.
+
 ```
-GET http://localhost:3000/forensic/efficiency-outlier?startDate=2024-01-01&endDate=2024-12-31
+GET http://localhost:3000/forensic/efficiency-outlier?startDate=2024-01-01&endDate=2024-12-31&jobId=1&materialId=2
 ```
 
-**Response:**
+**Query params:** `startDate`, `endDate` (default last 7 days on frontend), `jobId` (optional), `materialId` (optional).
+
+**Response:** Sorted by status (RED first, then Single Load, then Green).
 ```json
 [
   {
     "date": "2024-01-15",
     "jobName": "Job A",
-    "routeName": "Site X",
+    "route": "Gravel → North Quarry",
     "truckNumber": "TR-123",
-    "fleetAvgLoads": 5.5,
-    "thisTruckLoads": 3,
-    "firstTicketTime": "07:00",
-    "lastTicketTime": "14:00",
-    "impliedHours": 7.0,
-    "loadsPerHour": 0.43
+    "haulerName": "Hauler Co",
+    "totalTickets": 5,
+    "workDuration": "7:30",
+    "myAvgCycle": 112.5,
+    "fleetBenchmark": 95.2,
+    "status": "RED",
+    "statusLabel": "SLOW (>15%)"
+  },
+  {
+    "date": "2024-01-15",
+    "jobName": "Job A",
+    "route": "Gravel → North Quarry",
+    "truckNumber": "TR-456",
+    "haulerName": "Other Hauler",
+    "totalTickets": 1,
+    "workDuration": "0:00",
+    "myAvgCycle": 0,
+    "fleetBenchmark": 95.2,
+    "status": "Single Load",
+    "statusLabel": "Single Load"
   }
 ]
 ```
+
+- **route**: Display as "Material Name → Destination Site".
+- **workDuration**: Hours:Minutes between first and last ticket.
+- **myAvgCycle**: Minutes per trip for this truck (Duration / (Total Tickets - 1)).
+- **fleetBenchmark**: Average cycle time (min/trip) of peer group (excluding single-load trucks).
+- **status** / **statusLabel**: Green = "Within 15%", RED = "SLOW (>15%)" (highlight row), Single Load = grey.
 
 ---
 

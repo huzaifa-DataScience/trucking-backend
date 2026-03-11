@@ -1,0 +1,40 @@
+{
+  "info": {
+    "_postman_id": "21ea0b8e-16ae-4a29-91fd-c2f187db783b",
+    "name": "Pay apps",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "52981536"
+  },
+  "item": [
+    {
+      "name": "payApp",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "graphql",
+          "graphql": {
+            "query": "query payApp($id: ID!) {\n    payApp(id: $id) {\n        id\n        status\n        billingStart\n        billingEnd\n        timeZone\n        payAppNumber\n        currentBilled\n        currentRetention\n        totalRetention\n        previousRetentionBilled\n        retentionOnly\n        submittedAt\n\n        progress {\n            id\n            progressBilled\n            storedMaterialBilled\n            totalValue\n            \n            sovLineItem {\n                id\n                code\n                name\n            }\n        }\n    }\n}",
+            "variables": "{\n    \"id\": \"5514674b-a496-4fd8-987a-d5421b639ecc\"\n}"
+          }
+        },
+        "url": {
+          "raw": "{{hostname}}/graphql",
+          "host": [
+            "{{hostname}}"
+          ],
+          "path": [
+            "graphql"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

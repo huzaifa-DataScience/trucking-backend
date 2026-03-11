@@ -44,6 +44,27 @@ Content-Type: application/json
 }
 ```
 
+### Register / Signup (public)
+
+```http
+POST /auth/register
+Content-Type: application/json
+
+{
+  "email": "newuser@example.com",
+  "password": "secret123",
+  "confirmPassword": "secret123"
+}
+```
+
+`confirmPassword` is optional; if sent, it must match `password`. New users get role `user` (not admin).
+
+**Response (201):** Same shape as login – `access_token` and `user`.
+
+**Error (409 Conflict):** Email already registered.
+
+**Error (400):** Validation failed or password ≠ confirmPassword.
+
 ### Profile (protected)
 
 ```http
@@ -61,6 +82,13 @@ Authorization: Bearer <access_token>
 ```
 
 Returns `{ "message": "Admin access granted." }` for admin users; `403 Forbidden` for non-admins.
+
+## Admin access (summary)
+
+- **Who is admin?** Only users with `role === 'admin'`. The first admin is created by the seed; additional admins must be created by the backend (e.g. direct DB update or a future admin-only “create user” endpoint).
+- **Signup creates `user` only:** `POST /auth/register` always creates a normal user; there is no public way to self-register as admin.
+- **Protecting routes:** Use `@UseGuards(RolesGuard)` and `@Roles(Role.Admin)` on any route that only admins should access. The JWT guard runs first (globally), then `RolesGuard` checks `user.role`.
+- **Frontend:** Send the JWT on every request; use `GET /auth/profile` or the `user` from login/register to read `user.role` and show or hide admin-only UI. Call admin-only endpoints only when `user.role === 'admin'` (otherwise the API returns 403).
 
 ## Default admin (after seed)
 
@@ -85,6 +113,7 @@ These do **not** require a token:
 
 - `GET /` – API info
 - `POST /auth/login` – login
+- `POST /auth/register` – signup
 - `POST /seed` – seed (development)
 
 All other routes require a valid JWT.

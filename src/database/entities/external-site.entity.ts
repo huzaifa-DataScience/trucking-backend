@@ -18,12 +18,6 @@ export class ExternalSite {
   @Column({ name: 'City', type: 'nvarchar', nullable: true })
   city: string | null;
 
-  @Column({ name: 'State', type: 'nvarchar', nullable: true })
-  state: string | null;
-
-  @Column({ name: 'Zip', type: 'nvarchar', nullable: true })
-  zip: string | null;
-
   @OneToMany(() => Ticket, (t: Ticket) => t.externalSite)
   tickets: Ticket[];
 }

@@ -12,7 +12,7 @@ import {
   Ticket,
   TruckType,
 } from '../entities';
-import { Role } from '../entities';
+import { Role, UserStatus } from '../entities';
 import { UsersService } from '../../users/users.service';
 
 const ADMIN_EMAIL = 'admin@example.com';
@@ -77,7 +77,9 @@ export class SeedService {
           Email nvarchar(255) NOT NULL UNIQUE,
           PasswordHash nvarchar(255) NOT NULL,
           Role nvarchar(50) NOT NULL DEFAULT 'user',
-          CreatedAt datetime2 NOT NULL DEFAULT GETUTCDATE()
+          Status nvarchar(50) NOT NULL DEFAULT 'pending',
+          CreatedAt datetime2 NOT NULL DEFAULT GETUTCDATE(),
+          LastLoginAt datetime2 NULL
         );
       END
     `);
@@ -87,12 +89,19 @@ export class SeedService {
     const existing = await this.usersService.findByEmail(ADMIN_EMAIL);
     if (existing) {
       console.log('👤 Admin user already exists:', ADMIN_EMAIL);
+      // Ensure admin is active (in case status field was added later)
+      if (existing.status !== UserStatus.Active) {
+        existing.status = UserStatus.Active;
+        await this.usersService['userRepo'].save(existing);
+        console.log('👤 Updated admin user status to active');
+      }
       return;
     }
     await this.usersService.create({
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,
       role: Role.Admin,
+      status: UserStatus.Active, // Admin is active by default
     });
     console.log('👤 Created admin user:', ADMIN_EMAIL, '(password: ' + ADMIN_PASSWORD + ')');
   }
@@ -130,8 +139,6 @@ export class SeedService {
         entityId: entities[0].id,
         jobAddress: '123 Main St',
         city: 'New York',
-        state: 'NY',
-        zip: '10001',
         isActive: true,
       },
       {
@@ -140,8 +147,6 @@ export class SeedService {
         entityId: entities[0].id,
         jobAddress: '456 Highway Blvd',
         city: 'Los Angeles',
-        state: 'CA',
-        zip: '90001',
         isActive: true,
       },
       {
@@ -150,8 +155,6 @@ export class SeedService {
         entityId: entities[1].id,
         jobAddress: '789 Oak Avenue',
         city: 'Chicago',
-        state: 'IL',
-        zip: '60601',
         isActive: true,
       },
       {
@@ -160,8 +163,6 @@ export class SeedService {
         entityId: entities[0].id,
         jobAddress: '321 Industrial Way',
         city: 'Houston',
-        state: 'TX',
-        zip: '77001',
         isActive: true,
       },
       {
@@ -170,8 +171,6 @@ export class SeedService {
         entityId: entities[1].id,
         jobAddress: '654 Commerce Dr',
         city: 'Phoenix',
-        state: 'AZ',
-        zip: '85001',
         isActive: true,
       },
       {
@@ -180,8 +179,6 @@ export class SeedService {
         entityId: entities[0].id,
         jobAddress: '987 River Road',
         city: 'Philadelphia',
-        state: 'PA',
-        zip: '19101',
         isActive: true,
       },
       {
@@ -190,8 +187,6 @@ export class SeedService {
         entityId: entities[1].id,
         jobAddress: '147 Business Park',
         city: 'San Antonio',
-        state: 'TX',
-        zip: '78201',
         isActive: true,
       },
       {
@@ -200,8 +195,6 @@ export class SeedService {
         entityId: entities[2].id,
         jobAddress: '258 Logistics Lane',
         city: 'San Diego',
-        state: 'CA',
-        zip: '92101',
         isActive: true,
       },
     ];
@@ -235,48 +228,36 @@ export class SeedService {
         companyName: 'ABC Trucking Co',
         address: '100 Transport Ave',
         city: 'Dallas',
-        state: 'TX',
-        zip: '75201',
         isActive: true,
       },
       {
         companyName: 'XYZ Logistics',
         address: '200 Freight Blvd',
         city: 'Atlanta',
-        state: 'GA',
-        zip: '30301',
         isActive: true,
       },
       {
         companyName: 'Fast Haul Inc',
         address: '300 Speedway Dr',
         city: 'Miami',
-        state: 'FL',
-        zip: '33101',
         isActive: true,
       },
       {
         companyName: 'Reliable Transport',
         address: '400 Delivery St',
         city: 'Seattle',
-        state: 'WA',
-        zip: '98101',
         isActive: true,
       },
       {
         companyName: 'Premier Hauling',
         address: '500 Carrier Way',
         city: 'Denver',
-        state: 'CO',
-        zip: '80201',
         isActive: true,
       },
       {
         companyName: 'Metro Trucking',
         address: '600 Urban Ave',
         city: 'Boston',
-        state: 'MA',
-        zip: '02101',
         isActive: true,
       },
     ];
@@ -291,80 +272,60 @@ export class SeedService {
         siteType: 'Supplier',
         address: '700 Concrete Rd',
         city: 'Austin',
-        state: 'TX',
-        zip: '78701',
       },
       {
         name: 'Concrete Plant B',
         siteType: 'Supplier',
         address: '800 Mix Ave',
         city: 'Portland',
-        state: 'OR',
-        zip: '97201',
       },
       {
         name: 'Disposal Site North',
         siteType: 'Disposal',
         address: '900 Waste Way',
         city: 'Detroit',
-        state: 'MI',
-        zip: '48201',
       },
       {
         name: 'Disposal Site South',
         siteType: 'Disposal',
         address: '1000 Dump Rd',
         city: 'Memphis',
-        state: 'TN',
-        zip: '38101',
       },
       {
         name: 'Gravel Quarry',
         siteType: 'Supplier',
         address: '1100 Quarry Ln',
         city: 'Nashville',
-        state: 'TN',
-        zip: '37201',
       },
       {
         name: 'Sand Pit',
         siteType: 'Supplier',
         address: '1200 Sand Dr',
         city: 'Las Vegas',
-        state: 'NV',
-        zip: '89101',
       },
       {
         name: 'Landfill Central',
         siteType: 'Disposal',
         address: '1300 Landfill Blvd',
         city: 'Kansas City',
-        state: 'MO',
-        zip: '64101',
       },
       {
         name: 'Recycling Center',
         siteType: 'Disposal',
         address: '1400 Recycle Way',
         city: 'Minneapolis',
-        state: 'MN',
-        zip: '55401',
       },
       {
         name: 'Asphalt Plant',
         siteType: 'Supplier',
         address: '1500 Asphalt Ave',
         city: 'Tampa',
-        state: 'FL',
-        zip: '33601',
       },
       {
         name: 'Transfer Station',
         siteType: 'Disposal',
         address: '1600 Transfer St',
         city: 'Baltimore',
-        state: 'MD',
-        zip: '21201',
       },
     ];
     return this.siteRepo.save(sites);

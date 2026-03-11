@@ -12,6 +12,10 @@ import {
   Ticket,
   TruckType,
   User,
+  AppRole,
+  Permission,
+  SitelineContract,
+  SitelinePayApp,
 } from './entities';
 
 @Module({
@@ -22,12 +26,16 @@ import {
         const host = config.get('DB_HOST', 'localhost');
         const port = parseInt(config.get('DB_PORT', '1433'), 10);
         const username = config.get('DB_USERNAME', 'sa');
-        const password = config.get('DB_PASSWORD', '');
+        let password = config.get('DB_PASSWORD', '') ?? '';
+        // In case .env quotes were kept as part of the value (would cause login to fail)
+        if (password.length && (password.startsWith('"') || password.startsWith("'"))) {
+          password = password.slice(1, -1);
+        }
         const database = config.get('DB_DATABASE', 'GoFormzDB');
         const encrypt = config.get('DB_ENCRYPT', 'true') === 'true';
         const trustCert = config.get('DB_TRUST_CERT', 'true') === 'true';
 
-        console.log(`[DB Config] Connecting to ${host}:${port}, database: ${database}, user: ${username}`);
+        console.log(`[DB Config] Connecting to ${host}:${port}, database: ${database}, user: ${username}, passwordLength: ${password?.length ?? 0}`);
 
         return {
           type: 'mssql',
@@ -59,6 +67,10 @@ import {
             Driver,
             OurEntity,
             User,
+            AppRole,
+            Permission,
+            SitelineContract,
+            SitelinePayApp,
           ],
           synchronize: false,
           logging: config.get('NODE_ENV') === 'development',
@@ -79,6 +91,10 @@ import {
       Driver,
       OurEntity,
       User,
+      AppRole,
+      Permission,
+      SitelineContract,
+      SitelinePayApp,
     ]),
   ],
   exports: [TypeOrmModule],

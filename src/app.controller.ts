@@ -1,10 +1,79 @@
 import { Controller, Get, Post } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { SeedService } from './database/seed/seed.service';
 import { Public } from './auth/decorators';
 
 @Controller()
 export class AppController {
-  constructor(private readonly seedService: SeedService) {}
+  constructor(
+    private readonly seedService: SeedService,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  /** Confirm we are connected to the database (no auth required). */
+  @Public()
+  @Get('health/db')
+  async checkDatabase() {
+    try {
+      const result = await this.dataSource.query('SELECT 1 AS ok');
+      const connected = result?.[0]?.ok === 1;
+      return {
+        connected,
+        database: this.dataSource.options.database ?? 'unknown',
+        message: connected ? 'Database connection OK' : 'Unexpected response',
+      };
+    } catch (err: any) {
+      return {
+        connected: false,
+        database: (this.dataSource.options as any).database ?? 'unknown',
+        message: 'Database connection failed',
+        error: err?.message ?? String(err),
+      };
+    }
+  }
+
+  /** Tables the app expects (from TypeORM entities). */
+  private readonly expectedTables = [
+    'Fact_SiteTickets',
+    'Fact_TicketPhotos',
+    'Ref_Jobs',
+    'Ref_Materials',
+    'Ref_ExternalCompanies',
+    'Ref_ExternalSites',
+    'Ref_TruckTypes',
+    'Ref_Drivers',
+    'Ref_OurEntities',
+    'App_Users',
+    'App_Roles',
+    'App_Permissions',
+    'App_RolePermissions',
+  ];
+
+  /** Check which expected tables exist in the database (no auth required). */
+  @Public()
+  @Get('health/db-tables')
+  async checkDbTables() {
+    try {
+      const inList = this.expectedTables.map((t) => `'${t.replace(/'/g, "''")}'`).join(', ');
+      const rows = await this.dataSource.query(
+        `SELECT TABLE_NAME as tableName FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME IN (${inList})`,
+      );
+      const existing = (rows as { tableName: string }[]).map((r) => r.tableName);
+      const missing = this.expectedTables.filter((t) => !existing.includes(t));
+      return {
+        database: this.dataSource.options.database ?? 'unknown',
+        expectedTables: this.expectedTables,
+        existing,
+        missing,
+        allPresent: missing.length === 0,
+      };
+    } catch (err: any) {
+      return {
+        database: (this.dataSource.options as any).database ?? 'unknown',
+        error: err?.message ?? String(err),
+      };
+    }
+  }
 
   @Public()
   @Get()
@@ -45,19 +114,37 @@ export class AppController {
           detail: 'GET /hauler-dashboard/tickets/detail/:ticketNumber',
         },
         forensic: {
-          lateSubmission: 'GET /forensic/late-submission?startDate=&endDate=',
-          efficiencyOutlier: 'GET /forensic/efficiency-outlier?startDate=&endDate=',
+          lateSubmission: 'GET /forensic/late-submission?startDate=&endDate= (returns { lateTicketsFound, items })',
+          efficiencyOutlier: 'GET /forensic/efficiency-outlier?startDate=&endDate=&jobId=&materialId=',
         },
         tickets: {
           detail: 'GET /tickets/detail/:ticketNumber',
         },
         auth: {
           login: 'POST /auth/login { "email", "password" }',
+          register: 'POST /auth/register { "email", "password", "confirmPassword"? }',
           profile: 'GET /auth/profile (Bearer token)',
           admin: 'GET /auth/admin (Admin only)',
         },
+        admin: {
+          users: 'GET /admin/users?page=1&pageSize=25&status=&role=&search= (Admin only)',
+        },
         seed: {
           seedDatabase: 'POST /seed (⚠️ Development only - seeds test data)',
+        },
+        siteline: {
+          status: 'GET /siteline/status (configured? no auth)',
+          company: 'GET /siteline/company',
+          contracts: 'GET /siteline/contracts',
+          contractsPaginated: 'GET /siteline/contracts/paginated',
+          contract: 'GET /siteline/contracts/:id',
+          payApp: 'GET /siteline/pay-apps/:id',
+          payAppsPaginated: 'GET /siteline/pay-apps/paginated',
+          agingReport: 'GET /siteline/aging-report',
+        },
+        health: {
+          db: 'GET /health/db (confirm DB connection, no auth)',
+          dbTables: 'GET /health/db-tables (check expected tables exist, no auth)',
         },
       },
     };

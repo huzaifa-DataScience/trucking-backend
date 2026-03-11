@@ -21,12 +21,6 @@ export class Job {
   @Column({ name: 'City', type: 'nvarchar', nullable: true })
   city: string | null;
 
-  @Column({ name: 'State', type: 'nvarchar', nullable: true })
-  state: string | null;
-
-  @Column({ name: 'Zip', type: 'nvarchar', nullable: true })
-  zip: string | null;
-
   @Column({ name: 'IsActive', type: 'bit', default: true })
   isActive: boolean;
 

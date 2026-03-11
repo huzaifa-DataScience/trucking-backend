@@ -1,0 +1,130 @@
+{
+  "info": {
+    "_postman_id": "aa6b9316-44f8-4b04-b477-7e48e9f75506",
+    "name": "Contracts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "52981536"
+  },
+  "item": [
+    {
+      "name": "paginatedContracts",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "graphql",
+          "graphql": {
+            "query": "query paginatedContracts($input: GetPaginatedContractsInput!) {\n    paginatedContracts(input: $input) {\n      cursor\n      hasNext\n      contracts {\n        id\n        internalProjectNumber\n        billingType\n        percentComplete\n        project {\n            projectNumber\n        }\n        payApps (months:[\"2024-09\"]){        \n           id\n            status\n            billingStart\n            billingEnd\n            timeZone\n            status\n            submittedAt\n        }        \n      }\n    }\n}",
+            "variables": "{\n    \"input\": {\n        \"month\": \"2024-09\",\n        \"payAppStatus\": \"SUBMITTED_SYNCED_PAID\",\n        \"contractStatus\": \"ACTIVE\",\n        \"limit\": 50\n    }\n}"
+          }
+        },
+        "url": {
+          "raw": "{{hostname}}/graphql",
+          "host": [
+            "{{hostname}}"
+          ],
+          "path": [
+            "graphql"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "paginatedPayApps",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "graphql",
+          "graphql": {
+            "query": "query paginatedPayApps($input: GetPaginatedPayAppsInput!) {\n   paginatedPayApps(input: $input) {\n      totalCount\n      cursor\n      hasNext\n      payApps  {\n        id\n        payAppNumber\n        billingType\n        contract {\n            id\n            internalProjectNumber\n            project {\n                projectNumber\n            }            \n        }        \n      }\n    }\n}",
+            "variables": "{\n    \"input\": {\n       \"submittedInMonth\": \"2024-09\"\n    }\n}"
+          }
+        },
+        "url": {
+          "raw": "{{hostname}}/graphql",
+          "host": [
+            "{{hostname}}"
+          ],
+          "path": [
+            "graphql"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "contract",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "graphql",
+          "graphql": {
+            "query": "query contract($id: ID!) {\n    contract(id: $id) {\n        id\n        payApps {\n            id\n        }\n    }\n}",
+            "variables": "{\n    \"id\": \"257ff7ac-dc3e-4a21-b209-6cadfe255a6d\"\n}"
+          }
+        },
+        "url": {
+          "raw": "{{hostname}}/graphql",
+          "host": [
+            "{{hostname}}"
+          ],
+          "path": [
+            "graphql"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "contract with change order requests",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearer_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "graphql",
+          "graphql": {
+            "query": "query contract($id: ID!) {\n    contract(id: $id) {\n        id\n        changeOrderRequests {\n            id\n            name\n            internalNumber\n            amount\n            # ... and many more\n        }\n    }\n}",
+            "variables": "{\n    \"id\": \"7dc63a64-d29d-43c5-9529-2d3e3db27788\"\n}"
+          }
+        },
+        "url": {
+          "raw": "{{hostname}}/graphql",
+          "host": [
+            "{{hostname}}"
+          ],
+          "path": [
+            "graphql"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

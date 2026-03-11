@@ -5,7 +5,10 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../../users/users.service';
 import { User } from '../../database/entities';
 
-export type JwtPayload = { sub: number; email: string; role: string };
+export type JwtPayload = { sub: number; email: string; role: string; permissions?: string[] };
+
+/** User + permissions attached to request (permissions come from JWT). */
+export type RequestUser = User & { permissions: string[] };
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -20,11 +23,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User> {
+  async validate(payload: JwtPayload): Promise<RequestUser> {
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
     }
-    return user;
+    return { ...user, permissions: payload.permissions ?? [] };
   }
 }
