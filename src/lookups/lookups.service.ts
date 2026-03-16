@@ -6,6 +6,7 @@ import {
   Hauler,
   Job,
   Material,
+  OurEntity,
   TruckType,
 } from '../database/entities';
 
@@ -25,6 +26,8 @@ export class LookupsService {
     private readonly haulerRepo: Repository<Hauler>,
     @InjectRepository(ExternalSite)
     private readonly siteRepo: Repository<ExternalSite>,
+    @InjectRepository(OurEntity)
+    private readonly ourEntityRepo: Repository<OurEntity>,
     @InjectRepository(TruckType)
     private readonly truckTypeRepo: Repository<TruckType>,
   ) {}
@@ -59,6 +62,14 @@ export class LookupsService {
       select: ['id', 'name'],
     });
     return rows.map((r: ExternalSite) => ({ id: r.id, name: r.name }));
+  }
+
+  async getOurEntities(): Promise<LookupItemDto[]> {
+    const rows = await this.ourEntityRepo.find({
+      order: { name: 'ASC' },
+      select: ['id', 'name'],
+    });
+    return rows.map((r: OurEntity) => ({ id: r.id, name: r.name }));
   }
 
   async getTruckTypes(): Promise<LookupItemDto[]> {

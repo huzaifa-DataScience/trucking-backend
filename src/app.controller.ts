@@ -97,7 +97,7 @@ export class AppController {
           truckTypes: 'GET /lookups/truck-types',
         },
         jobDashboard: {
-          kpis: 'GET /job-dashboard/kpis?startDate=&endDate=&jobId=&direction=',
+          kpis: 'GET /job-dashboard/kpis?startDate=&endDate=&jobId=&entityId=&direction=',
           vendorSummary: 'GET /job-dashboard/summary/vendor',
           materialSummary: 'GET /job-dashboard/summary/material',
           tickets: 'GET /job-dashboard/tickets?page=1&pageSize=50',

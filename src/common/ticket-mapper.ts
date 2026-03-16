@@ -26,6 +26,7 @@ export function mapTicketToGridRow(t: Ticket): TicketGridRowDto {
     createdAt: t.createdAt ? new Date(t.createdAt).toISOString() : '',
 
     jobName: t.job?.name ?? '',
+    companyName: t.job?.ourEntity?.name ?? '',
     direction: t.direction ?? 'Import',
     destinationOrigin: t.externalSite?.name ?? '',
 
