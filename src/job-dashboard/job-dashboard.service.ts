@@ -57,6 +57,10 @@ export class JobDashboardService {
         direction: filters.direction,
       });
     }
+    if (filters.entityId != null) {
+      qb.leftJoin(`${alias}.job`, 'jobFilter');
+      qb.andWhere('jobFilter.entityId = :entityId', { entityId: filters.entityId });
+    }
   }
 
   async getKpis(filters: JobDashboardFiltersDto): Promise<JobDashboardKpisDto> {
@@ -153,6 +157,7 @@ export class JobDashboardService {
     const qb = this.ticketRepo
       .createQueryBuilder(alias)
       .leftJoinAndSelect(`${alias}.job`, 'job')
+      .leftJoinAndSelect('job.ourEntity', 'ourEntity')
       .leftJoinAndSelect(`${alias}.hauler`, 'hauler')
       .leftJoinAndSelect(`${alias}.material`, 'material')
       .leftJoinAndSelect(`${alias}.externalSite`, 'site')
@@ -174,7 +179,7 @@ export class JobDashboardService {
   async getTicketDetail(ticketNumber: string): Promise<TicketDetailDto | null> {
     const t = await this.ticketRepo.findOne({
       where: { ticketNumber },
-      relations: ['job', 'hauler', 'material', 'externalSite', 'truckType', 'photos'],
+      relations: ['job', 'job.ourEntity', 'hauler', 'material', 'externalSite', 'truckType', 'photos'],
     });
     return t ? mapTicketToDetail(t) : null;
   }
@@ -186,6 +191,7 @@ export class JobDashboardService {
     const qb = this.ticketRepo
       .createQueryBuilder(alias)
       .leftJoinAndSelect(`${alias}.job`, 'job')
+      .leftJoinAndSelect('job.ourEntity', 'ourEntity')
       .leftJoinAndSelect(`${alias}.hauler`, 'hauler')
       .leftJoinAndSelect(`${alias}.material`, 'material')
       .leftJoinAndSelect(`${alias}.externalSite`, 'site')

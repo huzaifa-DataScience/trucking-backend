@@ -1,4 +1,5 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { OurEntity } from './our-entity.entity';
 import { Ticket } from './ticket.entity';
 
 @Entity('Ref_Jobs', { schema: 'dbo' })
@@ -14,6 +15,10 @@ export class Job {
 
   @Column({ name: 'EntityID', type: 'int', nullable: true })
   entityId: number | null;
+
+  @ManyToOne(() => OurEntity, { nullable: true })
+  @JoinColumn({ name: 'EntityID' })
+  ourEntity: OurEntity | null;
 
   @Column({ name: 'JobAddress', type: 'nvarchar', nullable: true })
   jobAddress: string | null;

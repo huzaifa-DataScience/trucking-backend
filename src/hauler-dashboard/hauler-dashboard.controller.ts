@@ -25,6 +25,7 @@ export class HaulerDashboardController {
     @Query('jobId') jobId?: string,
     @Query('materialId') materialId?: string,
     @Query('truckTypeId') truckTypeId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: HaulerDashboardFiltersDto = {
@@ -34,6 +35,7 @@ export class HaulerDashboardController {
       jobId: jobId ? parseInt(jobId, 10) : undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       truckTypeId: truckTypeId ? parseInt(truckTypeId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.haulerDashboard.getKpis(filters);
@@ -47,6 +49,7 @@ export class HaulerDashboardController {
     @Query('jobId') jobId?: string,
     @Query('materialId') materialId?: string,
     @Query('truckTypeId') truckTypeId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: HaulerDashboardFiltersDto = {
@@ -56,6 +59,7 @@ export class HaulerDashboardController {
       jobId: jobId ? parseInt(jobId, 10) : undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       truckTypeId: truckTypeId ? parseInt(truckTypeId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.haulerDashboard.getBillableUnitsSummary(filters);
@@ -69,6 +73,7 @@ export class HaulerDashboardController {
     @Query('jobId') jobId?: string,
     @Query('materialId') materialId?: string,
     @Query('truckTypeId') truckTypeId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: HaulerDashboardFiltersDto = {
@@ -78,6 +83,7 @@ export class HaulerDashboardController {
       jobId: jobId ? parseInt(jobId, 10) : undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       truckTypeId: truckTypeId ? parseInt(truckTypeId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.haulerDashboard.getCostCenterSummary(filters);
@@ -91,6 +97,7 @@ export class HaulerDashboardController {
     @Query('jobId') jobId?: string,
     @Query('materialId') materialId?: string,
     @Query('truckTypeId') truckTypeId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
     @Query('page', new DefaultValuePipe(1), new ParseIntPipe({ optional: true })) page?: number,
     @Query('pageSize', new DefaultValuePipe(50), new ParseIntPipe({ optional: true })) pageSize?: number,
@@ -102,6 +109,7 @@ export class HaulerDashboardController {
       jobId: jobId ? parseInt(jobId, 10) : undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       truckTypeId: truckTypeId ? parseInt(truckTypeId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.haulerDashboard.getTicketGrid(filters, { page, pageSize });
@@ -117,6 +125,7 @@ export class HaulerDashboardController {
     @Query('jobId') jobId?: string,
     @Query('materialId') materialId?: string,
     @Query('truckTypeId') truckTypeId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: HaulerDashboardFiltersDto = {
@@ -126,6 +135,7 @@ export class HaulerDashboardController {
       jobId: jobId ? parseInt(jobId, 10) : undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       truckTypeId: truckTypeId ? parseInt(truckTypeId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     const buffer = await this.haulerDashboard.exportTicketGrid(filters);

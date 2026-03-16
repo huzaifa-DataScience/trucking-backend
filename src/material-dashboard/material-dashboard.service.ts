@@ -59,6 +59,10 @@ export class MaterialDashboardService {
     if (filters.jobId != null) {
       qb.andWhere(`${alias}.jobId = :jobId`, { jobId: filters.jobId });
     }
+    if (filters.entityId != null) {
+      qb.leftJoin(`${alias}.job`, 'jobFilter');
+      qb.andWhere('jobFilter.entityId = :entityId', { entityId: filters.entityId });
+    }
     if (filters.direction && filters.direction !== 'Both') {
       qb.andWhere(`${alias}.direction = :direction`, {
         direction: filters.direction,

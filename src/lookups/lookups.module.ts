@@ -5,6 +5,7 @@ import {
   Hauler,
   Job,
   Material,
+  OurEntity,
   TruckType,
 } from '../database/entities';
 import { LookupsController } from './lookups.controller';
@@ -17,6 +18,7 @@ import { LookupsService } from './lookups.service';
       Material,
       Hauler,
       ExternalSite,
+      OurEntity,
       TruckType,
     ]),
   ],

@@ -25,6 +25,11 @@ export class LookupsController {
     return this.lookups.getExternalSites();
   }
 
+  @Get('our-entities')
+  async getOurEntities() {
+    return this.lookups.getOurEntities();
+  }
+
   @Get('truck-types')
   async getTruckTypes() {
     return this.lookups.getTruckTypes();

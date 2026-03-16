@@ -10,6 +10,8 @@ export class TicketGridRowDto {
   createdAt: string; // ISO datetime
 
   jobName: string;
+  /** Company name from OurEntity (job's entity) */
+  companyName: string;
   direction: Direction;
   destinationOrigin: string; // external site name
 

@@ -90,9 +90,14 @@ GET http://localhost:3000/lookups/haulers
 // External Sites
 GET http://localhost:3000/lookups/external-sites
 
+// Our Entities (companies; table OurEntities / Ref_OurEntities)
+GET http://localhost:3000/lookups/our-entities
+
 // Truck Types
 GET http://localhost:3000/lookups/truck-types
 ```
+
+**Company (“Our company”) filtering:** Company options come from `GET /lookups/our-entities` (same `{ id, name }[]` shape). Jobs are linked by `entityId`; to filter jobs (or dashboards) by company, use the entity `id` (e.g. `entityId=1` or `companyId=1` where the API supports it).
 
 **Example Response:**
 ```json
@@ -108,13 +113,14 @@ GET http://localhost:3000/lookups/truck-types
 
 #### KPIs
 ```
-GET http://localhost:3000/job-dashboard/kpis?startDate=2024-01-01&endDate=2024-12-31&jobId=1&direction=Both
+GET http://localhost:3000/job-dashboard/kpis?startDate=2024-01-01&endDate=2024-12-31&jobId=1&entityId=1&direction=Both
 ```
 
 **Query Params:**
 - `startDate` (required): YYYY-MM-DD
 - `endDate` (required): YYYY-MM-DD
 - `jobId` (optional): number or omit for "All"
+- `entityId` (optional): company id from `GET /lookups/our-entities`; filters by "Our company"
 - `direction` (optional): "Import" | "Export" | "Both"
 
 **Response:**
@@ -140,10 +146,12 @@ GET http://localhost:3000/job-dashboard/summary/material?startDate=2024-01-01&en
 
 #### Ticket Grid (Paginated)
 ```
-GET http://localhost:3000/job-dashboard/tickets?startDate=2024-01-01&endDate=2024-12-31&page=1&pageSize=50
+GET http://localhost:3000/job-dashboard/tickets?startDate=2024-01-01&endDate=2024-12-31&entityId=1&page=1&pageSize=50
 ```
 
-**Response:**
+**Query Params:** same as KPIs, plus `page`, `pageSize`. Use `entityId` to filter by company (OurEntity).
+
+**Response:** each row includes `jobName` and `companyName` (from OurEntities / Ref_OurEntities via the job’s entity).
 ```json
 {
   "items": [
@@ -152,6 +160,7 @@ GET http://localhost:3000/job-dashboard/tickets?startDate=2024-01-01&endDate=202
       "ticketDate": "2024-01-15",
       "createdAt": "2024-01-15T10:30:00Z",
       "jobName": "Job A",
+      "companyName": "GOEL",
       "direction": "Import",
       "destinationOrigin": "Site X",
       "haulingCompany": "Hauler Co",

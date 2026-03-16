@@ -23,6 +23,7 @@ export class MaterialDashboardController {
     @Query('endDate') endDate?: string,
     @Query('materialId') materialId?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: MaterialDashboardFiltersDto = {
@@ -30,6 +31,7 @@ export class MaterialDashboardController {
       endDate: endDate || undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.materialDashboard.getKpis(filters);
@@ -41,6 +43,7 @@ export class MaterialDashboardController {
     @Query('endDate') endDate?: string,
     @Query('materialId') materialId?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: MaterialDashboardFiltersDto = {
@@ -48,6 +51,7 @@ export class MaterialDashboardController {
       endDate: endDate || undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.materialDashboard.getSitesSummary(filters);
@@ -59,6 +63,7 @@ export class MaterialDashboardController {
     @Query('endDate') endDate?: string,
     @Query('materialId') materialId?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: MaterialDashboardFiltersDto = {
@@ -66,6 +71,7 @@ export class MaterialDashboardController {
       endDate: endDate || undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.materialDashboard.getJobsSummary(filters);
@@ -77,6 +83,7 @@ export class MaterialDashboardController {
     @Query('endDate') endDate?: string,
     @Query('materialId') materialId?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
     @Query('page', new DefaultValuePipe(1), new ParseIntPipe({ optional: true })) page?: number,
     @Query('pageSize', new DefaultValuePipe(50), new ParseIntPipe({ optional: true })) pageSize?: number,
@@ -86,6 +93,7 @@ export class MaterialDashboardController {
       endDate: endDate || undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.materialDashboard.getTicketGrid(filters, { page, pageSize });
@@ -99,6 +107,7 @@ export class MaterialDashboardController {
     @Query('endDate') endDate?: string,
     @Query('materialId') materialId?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: MaterialDashboardFiltersDto = {
@@ -106,6 +115,7 @@ export class MaterialDashboardController {
       endDate: endDate || undefined,
       materialId: materialId ? parseInt(materialId, 10) : undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     const buffer = await this.materialDashboard.exportTicketGrid(filters);

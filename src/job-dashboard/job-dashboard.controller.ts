@@ -29,12 +29,14 @@ export class JobDashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: JobDashboardFiltersDto = {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.jobDashboard.getKpis(filters);
@@ -45,12 +47,14 @@ export class JobDashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: JobDashboardFiltersDto = {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.jobDashboard.getVendorSummary(filters);
@@ -61,12 +65,14 @@ export class JobDashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: JobDashboardFiltersDto = {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.jobDashboard.getMaterialSummary(filters);
@@ -77,6 +83,7 @@ export class JobDashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
     @Query('page', new DefaultValuePipe(1), new ParseIntPipe({ optional: true })) page?: number,
     @Query('pageSize', new DefaultValuePipe(50), new ParseIntPipe({ optional: true })) pageSize?: number,
@@ -85,6 +92,7 @@ export class JobDashboardController {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     return this.jobDashboard.getTicketGrid(filters, { page, pageSize });
@@ -97,12 +105,14 @@ export class JobDashboardController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('jobId') jobId?: string,
+    @Query('entityId') entityId?: string,
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
   ) {
     const filters: JobDashboardFiltersDto = {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       jobId: jobId ? parseInt(jobId, 10) : undefined,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
     const buffer = await this.jobDashboard.exportTicketGrid(filters);
