@@ -18,6 +18,7 @@ export class TicketDetailDto implements TicketGridRowDto {
   createdAt: string;
 
   jobName: string;
+  companyName: string;
   direction: Direction;
   destinationOrigin: string;
 
