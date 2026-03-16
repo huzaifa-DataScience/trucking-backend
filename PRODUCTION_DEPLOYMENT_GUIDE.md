@@ -104,6 +104,45 @@ After migration is complete, deploy your backend:
 - The app will start and work with the migrated database
 - Auto-migration code will detect columns exist and skip adding them
 
+### Step 5: Build and run on Windows server (if you deploy to Windows)
+
+If you deploy to a **Windows server** (e.g. `D:\Users\hahmad\trucking-backend`), you **must build the backend on the server** after pulling code. Node/PM2 run the compiled file `dist\main.js`, which is **not** in git.
+
+**If you see this error in PM2 logs:**
+```text
+Error: Cannot find module 'D:\Users\hahmad\trucking-backend\dist\main.js'
+code: 'MODULE_NOT_FOUND'
+```
+
+**Fix:** On the Windows server, in the backend folder, run:
+
+```cmd
+cd D:\Users\hahmad\trucking-backend
+
+REM After git pull (or copying code)
+npm install
+
+REM Remove old build artifacts (optional but recommended)
+rmdir /S /Q dist 2>nul
+del tsconfig.build.tsbuildinfo 2>nul
+
+REM Build – this creates dist\main.js
+npm run build
+
+REM Confirm file exists
+dir dist
+```
+
+Then start or restart the backend with PM2:
+
+```cmd
+pm2 start dist\main.js --name trucking-backend
+REM or, if already added:
+pm2 restart trucking-backend
+```
+
+**Full Windows build and deploy steps:** see **[BUILD_AND_DEPLOY.md](./BUILD_AND_DEPLOY.md)** (port 3000 vs 3001, health check, frontend URL).
+
 ---
 
 ## 🔒 Production Environment Variables
@@ -188,7 +227,10 @@ ALTER TABLE dbo.App_Users DROP COLUMN LastLoginAt;
 - [ ] Verify columns exist: `Status`, `LastLoginAt`
 - [ ] Verify existing users have `Status = 'active'`
 - [ ] Update production environment variables (DB connection, JWT_SECRET)
-- [ ] Deploy backend code
+- [ ] Deploy backend code (e.g. git pull on server)
+- [ ] **On Windows server:** run `npm install` then `npm run build` so `dist\main.js` exists
+- [ ] Start or restart backend (e.g. `pm2 start dist\main.js --name trucking-backend` or `pm2 restart trucking-backend`)
+- [ ] Test health: `curl http://localhost:3000/health/ping` (or your backend port)
 - [ ] Test login with existing admin user
 - [ ] Test new signup (should be pending)
 - [ ] Test admin approval workflow
