@@ -22,10 +22,11 @@ export class SitelineSyncService {
   ) {}
 
   /**
-   * Cron job: runs every 10 minutes.
-   * Temporarily disabled.
+   * Cron job: runs periodically to sync Siteline data from Siteline's API
+   * into our local SQL tables.
+   * Configured to run once per minute (60 seconds) for testing.
    */
-  // @Cron('*/10 * * * *')
+  @Cron('0 * * * * *')
   async syncHourly(): Promise<void> {
     if (!this.siteline.isConfigured()) {
       this.logger.warn('Siteline sync skipped: API not configured');
@@ -56,6 +57,16 @@ export class SitelineSyncService {
           if (!c?.id) continue;
           totalContracts += 1;
 
+          // Fetch full contract detail to get PM info and all pay apps for this contract
+          const detail = (await this.siteline.getContract(c.id)) as any;
+          const primaryPm = detail?.leadPMs?.[0];
+          const leadPmFirst = primaryPm?.firstName ?? '';
+          const leadPmLast = primaryPm?.lastName ?? '';
+          const fullName = `${leadPmFirst} ${leadPmLast}`.trim();
+          const leadPmName: string | null = fullName.length ? fullName : null;
+          const leadPmEmail: string | null = primaryPm?.email ?? null;
+          const payApps: any[] = detail?.payApps ?? [];
+
           try {
             const contractEntity = this.contractRepo.create({
               id: c.id,
@@ -66,6 +77,8 @@ export class SitelineSyncService {
               percentComplete: c.percentComplete ?? null,
               status: c.status ?? null,
               timeZone: c.timeZone ?? null,
+              leadPmName,
+              leadPmEmail,
               lastSyncedAt: new Date(),
             });
             await this.contractRepo.save(contractEntity);
@@ -75,10 +88,6 @@ export class SitelineSyncService {
             );
             continue;
           }
-
-          // Fetch full contract detail to get all pay apps for this contract
-          const detail = (await this.siteline.getContract(c.id)) as any;
-          const payApps: any[] = detail?.payApps ?? [];
 
           for (const pa of payApps) {
             if (!pa?.id) continue;
@@ -108,9 +117,57 @@ export class SitelineSyncService {
         }
       } while (cursor);
 
-      this.logger.log(
-        `Siteline sync finished. Total contracts processed this run: ${totalContracts}.`,
-      );
+      // After syncing contracts/pay apps, refresh lead PM info using agingDashboard
+      try {
+        const today = new Date();
+        const endDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
+        const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+        const startDate = start.toISOString().slice(0, 10);
+
+        const aging: any = await this.siteline.getAgingDashboard({
+          companyId: null,
+          startDate,
+          endDate,
+        });
+        const contractsFromAging: any[] = aging?.contracts ?? [];
+
+        // Log full agingDashboard payload (trimmed a bit) so we can see exactly what Siteline returns.
+        this.logger.log(
+          `Siteline agingDashboard raw: ${JSON.stringify(
+            {
+              summary: aging?.payAppAgingSummary ?? null,
+              firstContracts: (contractsFromAging || []).slice(0, 5),
+            },
+          )}`,
+        );
+
+        for (const entry of contractsFromAging) {
+          const contract = entry?.contract;
+          if (!contract?.id) continue;
+          const primaryPm = contract.leadPMs?.[0];
+          const first = primaryPm?.firstName ?? '';
+          const last = primaryPm?.lastName ?? '';
+          const fullName = `${first} ${last}`.trim() || null;
+          const email = primaryPm?.email ?? null;
+          await this.contractRepo.update(
+            { id: contract.id },
+            { leadPmName: fullName, leadPmEmail: email },
+          );
+        }
+
+        this.logger.log(
+          `Siteline sync finished. Total contracts processed this run: ${totalContracts}. Lead PMs refreshed for ${contractsFromAging.length} aging contracts.`,
+        );
+      } catch (pmErr: any) {
+        this.logger.warn(
+          `Siteline sync: failed to refresh lead PMs from agingDashboard: ${
+            pmErr?.message ?? pmErr
+          }`,
+        );
+        this.logger.log(
+          `Siteline sync finished. Total contracts processed this run: ${totalContracts}.`,
+        );
+      }
     } catch (err: any) {
       this.logger.error(
         `Siteline sync failed (will retry next run): ${err?.message ?? err}`,

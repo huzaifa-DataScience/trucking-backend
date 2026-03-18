@@ -3,7 +3,7 @@
 ## Overview
 
 - **JWT** bearer tokens after login.
-- **Global guard**: all routes require a valid JWT unless marked `@Public()`.
+- **Route protection**: routes should require a valid JWT unless marked `@Public()`. (This codebase enforces auth via controller guards rather than a single global guard.)
 - **Roles**: `user` and `admin`. Use `@Roles(Role.Admin)` for admin-only routes.
 
 ## Environment

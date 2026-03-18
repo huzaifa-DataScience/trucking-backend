@@ -163,6 +163,12 @@ export class SitelineService {
                 timeZone
               }
             }
+            leadPMs {
+              id
+              firstName
+              lastName
+              email
+            }
             sov {
               id
               totalValue
@@ -439,6 +445,120 @@ export class SitelineService {
         { input: gqlInput },
       );
       return data.paginatedPayApps;
+    } catch (e: any) {
+      return { error: e?.message ?? String(e) };
+    }
+  }
+
+  /**
+   * Wraps Siteline's agingDashboard(input: DashboardInput!) query.
+   * Used by the cron job to refresh lead PM info for contracts and
+   * (optionally) cached aging data.
+   */
+  async getAgingDashboard(input: {
+    companyId?: string | null;
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
+  }): Promise<unknown> {
+    if (!this.isConfigured()) {
+      return { configured: false, message: 'Siteline API not configured' };
+    }
+
+    const gqlInput: Record<string, unknown> = {
+      companyId: input.companyId ?? null,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      filters: {
+        overdueOnly: false,
+        search: '',
+      },
+    };
+
+    try {
+      const data = await this.graphql<{ agingDashboard: unknown }>(
+        `
+        query agingDashboard($input: DashboardInput!) {
+          agingDashboard(input: $input) {
+            payAppAgingSummary {
+              amountOutstandingThisMonth
+              amountOutstandingMonthOverMonthPercent
+              amountAged30Days
+              amountAged30DaysMonthOverMonthPercent
+              amountAged60Days
+              amountAged60DaysMonthOverMonthPercent
+              amountAged90Days
+              amountAged90DaysMonthOverMonthPercent
+              amountAged120Days
+              amountAged120DaysMonthOverMonthPercent
+              averageDaysToPaid
+              averageDaysToPaidMonthOverMonthPercent
+              payAppAgingBreakdown {
+                numCurrent
+                numAged30Days
+                numAged60Days
+                numAged90Days
+                numAged120Days
+                amountAgedTotal
+                amountAgedCurrent
+                amountAged30Days
+                amountAged60Days
+                amountAged90Days
+                amountAged120Days
+                amountAgedTotalOverdueOnly
+                averageDaysToPaid
+              }
+            }
+            contracts {
+              contract {
+                id
+                billingType
+                internalProjectNumber
+                paymentTermsType
+                paymentTerms
+                project {
+                  id
+                  name
+                  projectNumber
+                  gcName
+                  gc {
+                    id
+                    name
+                  }
+                }
+                company {
+                  id
+                }
+                leadPMs {
+                  id
+                  firstName
+                  lastName
+                  email
+                }
+              }
+              agingBreakdown {
+                numCurrent
+                numAged30Days
+                numAged60Days
+                numAged90Days
+                numAged120Days
+                amountAgedTotal
+                amountAgedCurrent
+                amountAged30Days
+                amountAged60Days
+                amountAged90Days
+                amountAged120Days
+                amountAgedTotalOverdueOnly
+                averageDaysToPaid
+              }
+              billingStatus
+              hasMissingPreSitelinePayApps
+            }
+          }
+        }
+      `,
+        { input: gqlInput },
+      );
+      return data.agingDashboard;
     } catch (e: any) {
       return { error: e?.message ?? String(e) };
     }

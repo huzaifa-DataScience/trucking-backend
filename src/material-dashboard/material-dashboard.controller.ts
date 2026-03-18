@@ -8,12 +8,15 @@ import {
   Header,
   ParseIntPipe,
   DefaultValuePipe,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { MaterialDashboardFiltersDto } from '../common/dto/filters.dto';
 import { MaterialDashboardService } from './material-dashboard.service';
+import { JwtAuthGuard } from '../auth/guards';
 
 @Controller('material-dashboard')
+@UseGuards(JwtAuthGuard)
 export class MaterialDashboardController {
   constructor(private readonly materialDashboard: MaterialDashboardService) {}
 

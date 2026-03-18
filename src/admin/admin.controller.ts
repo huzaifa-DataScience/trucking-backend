@@ -7,20 +7,19 @@ import {
   Body,
   Param,
   Query,
-  // UseGuards,
+  UseGuards,
   ParseIntPipe,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
-// import { RolesGuard } from '../auth/guards';
-// import { Roles } from '../auth/decorators';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
 import { Role, UserStatus } from '../database/entities';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../database/entities';
 
 @Controller('admin/users')
-// Authorization disabled for now — uncomment to require admin role:
-// @UseGuards(RolesGuard)
-// @Roles(Role.Admin)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.Admin)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
