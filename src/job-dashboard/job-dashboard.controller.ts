@@ -8,13 +8,16 @@ import {
   Header,
   ParseIntPipe,
   DefaultValuePipe,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JobDashboardFiltersDto } from '../common/dto/filters.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { JobDashboardService } from './job-dashboard.service';
+import { JwtAuthGuard } from '../auth/guards';
 
 @Controller('job-dashboard')
+@UseGuards(JwtAuthGuard)
 export class JobDashboardController {
   constructor(private readonly jobDashboard: JobDashboardService) {}
 

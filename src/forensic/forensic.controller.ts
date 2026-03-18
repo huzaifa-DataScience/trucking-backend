@@ -1,7 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ForensicService } from './forensic.service';
+import { JwtAuthGuard } from '../auth/guards';
 
 @Controller('forensic')
+@UseGuards(JwtAuthGuard)
 export class ForensicController {
   constructor(private readonly forensic: ForensicService) {}
 

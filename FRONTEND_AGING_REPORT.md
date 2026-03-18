@@ -1,6 +1,9 @@
-  # Aging Report (Frontend)
+# Aging Report (Frontend)
 
-This document describes how to integrate the **Siteline aging report** in the frontend: one API call, response shape, and how to render the pivot table.
+This document describes how to integrate the **Siteline aging report** in the frontend:
+
+- The main **aging report** tab (bucketed by days‑past‑due).
+- The **Over 50 Days** tab (individual items where daysPastDue > 50 and amount > 0, with project manager info).
 
 ---
 
@@ -23,7 +26,7 @@ Data comes from the **synced** Siteline tables (cron runs every 10 minutes). No 
 
 ---
 
-## Endpoint
+## Endpoint – Main Aging Report
 
 ```
 GET /siteline/aging-report
@@ -39,7 +42,7 @@ GET /siteline/aging-report
 
 ---
 
-## Response shape
+## Response shape – Main Aging Report
 
 ### Success (200)
 
@@ -96,7 +99,7 @@ GET /siteline/aging-report
 
 ---
 
-## TypeScript types
+## TypeScript types – Main Aging Report
 
 ```ts
 const AGING_BUCKETS = [
@@ -112,6 +115,10 @@ type AgingBucket = (typeof AGING_BUCKETS)[number];
 
 interface AgingReportRow {
   projectName: string;
+  /** Optional: primary PM name for this project (from contributing contracts). */
+  leadPmName?: string | null;
+  /** Optional: primary PM email for this project. */
+  leadPmEmail?: string | null;
   buckets: Record<AgingBucket, number>;
   projectTotal: number;
 }
@@ -129,7 +136,7 @@ interface AgingReportResponse {
 
 ---
 
-## Building the table
+## Building the main aging table
 
 ### Columns
 
@@ -200,3 +207,138 @@ if (data.rows.length === 0) return <EmptyState message="No aging data yet. Data 
 
 - **Siteline API (overview):** [FRONTEND_SITELINE.md](./FRONTEND_SITELINE.md) — status, company, contracts, pay apps, and aging report summary.
 - **Auth:** [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) — login, token, 401 handling.
+
+---
+
+## Over 50 Days Tab (Aging Overdue)
+
+This is a **second tab** next to the main aging report. It shows **individual pay apps** where:
+
+- `daysPastDue > 50`, and
+- `netDollars > 0`
+
+and includes the **assigned project manager** for the contract.
+
+Data comes from the **synced** Siteline tables (`Siteline_PayApps` and `Siteline_Contracts`) and cached PM info from Siteline (`leadPMs`). The backend calculates:
+
+- `daysPastDue` from the pay app due date.
+- `netDollars = (Billed − Retention) ÷ 100` (values stored in cents).
+
+### Endpoint – Over 50 Days
+
+```http
+GET /siteline/aging-overdue
+```
+
+- **Base URL:** Same as the rest of the API.
+- **Auth:** Requires JWT:
+  ```http
+  Authorization: Bearer <access_token>
+  ```
+- **Query params:** None.
+- **Method:** GET.
+
+### Response shape – Over 50 Days
+
+#### Success (200)
+
+```json
+{
+  "items": [
+    {
+      "contractId": "5cacb676-19a5-4010-b748-167de62e0bea",
+      "projectName": "31019 - OMVHS Duct Opening (Metro Mechanical PO 36392)",
+      "projectNumber": "PO 36392",
+      "internalProjectNumber": "31019",
+      "companyId": null,
+      "leadPmName": "Asha Goel",
+      "leadPmEmail": "asha.goel@goelservices.com",
+      "dueDate": "2025-01-15T00:00:00.000Z",
+      "daysPastDue": 448,
+      "netDollars": 53727,
+      "status": "SIGNED"
+    }
+  ]
+}
+```
+
+- **`contractId`**: Siteline contract id (string).
+- **`projectName` / `projectNumber` / `internalProjectNumber`**: Project identity; display these in the UI.
+- **`companyId`**: Currently `null` in this implementation; reserved for future company‑filter use.
+- **`leadPmName` / `leadPmEmail`**: Project manager name and email, derived from Siteline `leadPMs`.
+- **`dueDate`**: Pay app due date (ISO 8601 string).
+- **`daysPastDue`**: Whole days between `dueDate` and “today” (UTC midnight).
+- **`netDollars`**: (Billed − Retention) ÷ 100, already converted to dollars.
+- **`status`**: Pay app status string. Records with `PAID` or `DRAFT` are **excluded**.
+
+#### Errors
+
+- **401** — Invalid or expired token; re‑auth or redirect to login.
+- **500** — Server/DB error; show a generic error and optional retry.
+
+### TypeScript types – Over 50 Days Tab
+
+```ts
+export interface AgingOverdueItem {
+  contractId: string;
+  projectName: string | null;
+  projectNumber: string | null;
+  internalProjectNumber: string | null;
+  companyId: string | null;
+  leadPmName: string | null;
+  leadPmEmail: string | null;
+  dueDate: string | null; // ISO string
+  daysPastDue: number;
+  netDollars: number;
+  status: string | null;
+}
+
+export interface AgingOverdueResponse {
+  items: AgingOverdueItem[];
+}
+```
+
+### Building the Over 50 Days table
+
+**Suggested columns:**
+
+1. **Project** – `projectName` (optionally show `internalProjectNumber` in smaller text).
+2. **GC / Project #** – e.g. `projectNumber`.
+3. **PM** – `leadPmName` (make `leadPmEmail` a mailto link or tooltip).
+4. **Due Date** – formatted from `dueDate`.
+5. **Days Past Due** – `daysPastDue`.
+6. **Net Amount** – format `netDollars` as currency.
+7. **Status** – `status`.
+
+**Rows:**
+
+- One row per `items[]` element.
+- Sort descending by `daysPastDue` or `netDollars` in the UI.
+
+### Example: fetch and render Over 50 Days tab
+
+```ts
+const API_BASE = 'http://localhost:3000'; // or your backend URL
+
+async function loadAgingOverdue(): Promise<AgingOverdueResponse | null> {
+  const token = localStorage.getItem('access_token');
+  if (!token) return null;
+
+  const res = await fetch(`${API_BASE}/siteline/aging-overdue`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      // clear auth + redirect to login
+    }
+    return null;
+  }
+  return res.json();
+}
+
+// In your component:
+// - Use the existing aging report tab wired to /siteline/aging-report
+// - Use loadAgingOverdue() to power the Over 50 Days tab.
+```

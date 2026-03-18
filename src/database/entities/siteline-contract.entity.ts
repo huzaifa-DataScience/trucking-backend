@@ -26,6 +26,12 @@ export class SitelineContract {
   @Column({ type: 'nvarchar', length: 100, nullable: true })
   timeZone!: string | null;
 
+  @Column({ type: 'nvarchar', length: 255, nullable: true })
+  leadPmName!: string | null;
+
+  @Column({ type: 'nvarchar', length: 255, nullable: true })
+  leadPmEmail!: string | null;
+
   @Column({ type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   lastSyncedAt!: Date;
 }

@@ -41,12 +41,7 @@ Content-Type: application/json
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": 1,
-    "firstName": "Admin",
-    "lastName": "User",
     "email": "user@example.com",
-    "phone": "+15551234567",
-    "company": "Acme Trucking",
-    "displayName": "Admin User",
     "role": "admin",
     "status": "active",
     "permissions": [
@@ -89,7 +84,7 @@ Content-Type: application/json
 **Endpoint:** `POST /auth/register`  
 **Public:** no token required.
 
-Signup collects full profile information. New users get role `user`. Whether they can log in immediately depends on backend config:
+Signup currently collects only email/password. New users get role `user`. Whether they can log in immediately depends on backend config:
 
 - **With admin approval (default):** `user.status` is `pending`; they must wait until an admin approves. Login will return 401 with “Your account is pending admin approval” until then.
 - **Without approval:** Backend can set `REQUIRE_SIGNUP_APPROVAL=false`; then new users get `status: 'active'` and can log in right after signup.
@@ -101,11 +96,7 @@ POST /auth/register
 Content-Type: application/json
 
 {
-  "firstName": "Alice",
-  "lastName": "Doe",
   "email": "alice@example.com",
-  "phone": "+15551234567",
-  "company": "Acme Trucking",
   "password": "secret123",
   "confirmPassword": "secret123"
 }
@@ -113,11 +104,7 @@ Content-Type: application/json
 
 | Field | Type | Required | Notes |
 |-------|------|----------|--------|
-| `firstName` | string | Yes | 1–100 characters. |
-| `lastName` | string | Yes | 1–100 characters. |
 | `email` | string | Yes | Valid email; must be unique. |
-| `phone` | string | Yes | Phone number (e.g. E.164 or digits; backend may normalize). |
-| `company` | string | No | Organization name; 0–255 characters. |
 | `password` | string | Yes | Minimum 6 characters. |
 | `confirmPassword` | string | No | If sent, must equal `password`. |
 
@@ -133,12 +120,7 @@ Same shape as login: `access_token` and `user` (including profile fields and `pe
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
   "user": {
     "id": 2,
-    "firstName": "Alice",
-    "lastName": "Doe",
     "email": "alice@example.com",
-    "phone": "+15551234567",
-    "company": "Acme Trucking",
-    "displayName": "Alice Doe",
     "role": "user",
     "status": "pending",
     "permissions": [
@@ -195,12 +177,7 @@ export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected';
 
 export interface AuthUser {
   id: number;
-  firstName: string;
-  lastName: string;
   email: string;
-  phone: string | null;
-  company: string | null;
-  displayName?: string;
   role: 'user' | 'admin';
   status: UserStatus;
   permissions: string[];
@@ -217,11 +194,7 @@ export interface LoginRequest {
 }
 
 export interface RegisterRequest {
-  firstName: string;
-  lastName: string;
   email: string;
-  phone: string;
-  company?: string;
   password: string;
   confirmPassword?: string;
 }
@@ -385,21 +358,24 @@ All other routes (lookups, dashboards, tickets, profile, admin, etc.) require a 
 
 Build the register form with:
 
-- **Required:** First name, Last name, Email, Phone, Password, Confirm password.
-- **Optional:** Company.
-- **Validation:** Client-side checks for non-empty names, valid email, password length ≥ 6, password match. Backend returns 400 with field-level messages if invalid.
+- **Required:** Email, Password, Confirm password (optional).
+- **Validation:** Client-side checks for valid email, password length ≥ 6, password match (if confirm is provided). Backend returns 400 with field-level messages if invalid.
 - **On success:** Store `access_token` and `user`; if `user.status === 'pending'`, show “Your account is pending admin approval” and restrict app access until `status === 'active'` (e.g. after admin approves and user logs in again).
 
 ## 11. Quick checklist for frontend
 
 - [ ] Login form calls `POST /auth/login` with `{ email, password }`.
-- [ ] Signup form calls `POST /auth/register` with `{ firstName, lastName, email, phone, company?, password, confirmPassword? }`; on success, same token/user storage as login.
+- [ ] Signup form calls `POST /auth/register` with `{ email, password, confirmPassword? }`; on success, same token/user storage as login.
 - [ ] Use `user.status` to show “pending approval” when `status === 'pending'`; only allow full access when `status === 'active'`.
 - [ ] On login/register success, store `access_token` and `user` (e.g. localStorage or state).
 - [ ] Send `Authorization: Bearer <access_token>` on all non-public API requests.
 - [ ] On 401, clear token/user and redirect to login.
 - [ ] Optional: on app load, call `GET /auth/profile` to restore user (and handle 401).
-- [ ] Use `user.role === 'admin'` to show/hide admin-only UI; use `user.firstName`, `user.lastName`, `user.displayName` for header or profile display.
+- [ ] Use `user.role === 'admin'` to show/hide admin-only UI.
+ 
+### Note on user profile fields
+
+This backend’s `AuthUser` currently includes: `id`, `email`, `role`, `status`, and `permissions`. It does **not** include `firstName`, `lastName`, `phone`, `company`, or `displayName`.
 
 For backend details (env, admin-only routes, adding new protected routes), see **AUTH.md**.  
 For the full list of API endpoints, see **FRONTEND_API_GUIDE.md**.

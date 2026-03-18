@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { SitelineService } from './siteline.service';
 import { SitelineReportService } from './siteline-report.service';
 import { Public } from '../auth/decorators';
+import { JwtAuthGuard } from '../auth/guards';
 
 /**
  * REST API for the frontend billing view.
@@ -27,18 +28,21 @@ export class SitelineController {
   }
 
   /** Get current company from Siteline (real data). */
+  @UseGuards(JwtAuthGuard)
   @Get('company')
   async getCompany() {
     return this.siteline.getCurrentCompany();
   }
 
   /** Get all contracts (with project, pay apps, SOV) from Siteline (real data). */
+  @UseGuards(JwtAuthGuard)
   @Get('contracts')
   async getContracts() {
     return this.siteline.getContracts();
   }
 
   /** Paginated contracts list (Siteline paginatedContracts GraphQL). */
+  @UseGuards(JwtAuthGuard)
   @Get('contracts/paginated')
   async getPaginatedContracts(
     @Query('month') month?: string,
@@ -57,24 +61,35 @@ export class SitelineController {
   }
 
   /** Get a single contract by id (real data). */
+  @UseGuards(JwtAuthGuard)
   @Get('contracts/:id')
   async getContract(@Param('id') id: string) {
     return this.siteline.getContract(id);
   }
 
   /** Get a single pay app by id (real data). */
+  @UseGuards(JwtAuthGuard)
   @Get('pay-apps/:id')
   async getPayApp(@Param('id') id: string) {
     return this.siteline.getPayApp(id);
   }
 
   /** Aging report from synced DB: net dollars by project and days-past-due bucket. */
+  @UseGuards(JwtAuthGuard)
   @Get('aging-report')
   async getAgingReport() {
     return this.report.getAgingReport();
   }
 
+  /** Overdue aging view: pay apps with daysPastDue > 50 and netDollars > 0, including PM info. */
+  @UseGuards(JwtAuthGuard)
+  @Get('aging-overdue')
+  async getAgingOverdue() {
+    return this.report.getOverdueOver50();
+  }
+
   /** Paginated pay apps (Siteline paginatedPayApps GraphQL). */
+  @UseGuards(JwtAuthGuard)
   @Get('pay-apps/paginated')
   async getPaginatedPayApps(
     @Query('submittedInMonth') submittedInMonth?: string,

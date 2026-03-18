@@ -70,7 +70,8 @@ import {
             SitelinePayApp,
           ],
           synchronize: false,
-          logging: config.get('NODE_ENV') === 'development',
+          // Keep logs high-level in development (no noisy raw SQL "query:" lines)
+          logging: config.get('NODE_ENV') === 'development' ? ['error', 'warn', 'schema', 'migration'] : false,
           retryAttempts: 5,
           retryDelay: 3000,
           extra: {

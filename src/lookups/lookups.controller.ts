@@ -1,7 +1,9 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { LookupsService } from './lookups.service';
+import { JwtAuthGuard } from '../auth/guards';
 
 @Controller('lookups')
+@UseGuards(JwtAuthGuard)
 export class LookupsController {
   constructor(private readonly lookups: LookupsService) {}
 

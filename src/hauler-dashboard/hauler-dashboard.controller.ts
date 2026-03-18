@@ -8,12 +8,15 @@ import {
   Header,
   ParseIntPipe,
   DefaultValuePipe,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { HaulerDashboardFiltersDto } from '../common/dto/filters.dto';
 import { HaulerDashboardService } from './hauler-dashboard.service';
+import { JwtAuthGuard } from '../auth/guards';
 
 @Controller('hauler-dashboard')
+@UseGuards(JwtAuthGuard)
 export class HaulerDashboardController {
   constructor(private readonly haulerDashboard: HaulerDashboardService) {}
 
