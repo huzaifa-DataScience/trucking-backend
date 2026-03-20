@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EmailTemplateModule } from '../email/email-template.module';
 import { SitelineController } from './siteline.controller';
 import { SitelineService } from './siteline.service';
 import { SitelineSyncService } from './siteline-sync.service';
 import { SitelineReportService } from './siteline-report.service';
+import { SitelineOverdueEmailService } from './siteline-overdue-email.service';
 import { SitelineContract, SitelinePayApp } from '../database/entities';
 
 /**
@@ -14,9 +16,13 @@ import { SitelineContract, SitelinePayApp } from '../database/entities';
  * in Siteline_Contracts and Siteline_PayApps for reporting (e.g. aging report).
  */
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([SitelineContract, SitelinePayApp])],
+  imports: [
+    ConfigModule,
+    TypeOrmModule.forFeature([SitelineContract, SitelinePayApp]),
+    EmailTemplateModule,
+  ],
   controllers: [SitelineController],
-  providers: [SitelineService, SitelineSyncService, SitelineReportService],
+  providers: [SitelineService, SitelineSyncService, SitelineReportService, SitelineOverdueEmailService],
   exports: [SitelineService, SitelineReportService],
 })
 export class SitelineModule {}

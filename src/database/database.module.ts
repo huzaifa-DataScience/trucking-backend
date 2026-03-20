@@ -16,6 +16,7 @@ import {
   Permission,
   SitelineContract,
   SitelinePayApp,
+  AppEmailTemplate,
 } from './entities';
 
 @Module({
@@ -68,6 +69,7 @@ import {
             Permission,
             SitelineContract,
             SitelinePayApp,
+            AppEmailTemplate,
           ],
           synchronize: false,
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
@@ -103,6 +105,7 @@ import {
       Permission,
       SitelineContract,
       SitelinePayApp,
+      AppEmailTemplate,
     ]),
   ],
   exports: [TypeOrmModule],
