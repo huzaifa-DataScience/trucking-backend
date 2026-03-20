@@ -119,72 +119,12 @@ export class SitelineService {
         query Contract($id: ID!) {
           contract(id: $id) {
             id
-            createdAt
-            updatedAt
-            billingType
-            status
-            timeZone
             internalProjectNumber
-            project {
-              id
-              name
-              projectNumber
-              timeZone
-              architect {
-                name
-              }
-              bondNumber
-              bondProvider {
-                name
-              }
-              createdAt
-              gc {
-                name
-              }
-              gcAddress {
-                street1
-                city
-                state
-                postalCode
-                country
-              }
-              owner {
-                name
-              }
-              updatedAt
-              location {
-                id
-                nickname
-                street1
-                city
-                state
-                country
-                postalCode
-                timeZone
-              }
-            }
             leadPMs {
               id
               firstName
               lastName
               email
-            }
-            sov {
-              id
-              totalValue
-              totalBilled
-              totalRetention
-              progressComplete
-              lineItems {
-                id
-                sortOrder
-                code
-                name
-                originalTotalValue
-                latestTotalValue
-                totalBilled
-                progressComplete
-              }
             }
             payApps {
               id
@@ -193,20 +133,10 @@ export class SitelineService {
               billingEnd
               payAppDueDate
               status
-              statusChangedAt
               currentBilled
               currentRetention
-              totalRetention
               totalValue
-              balanceToFinish
-              retentionOnly
               updatedAt
-            }
-            changeOrderRequests {
-              id
-              name
-              internalNumber
-              amount
             }
           }
         }

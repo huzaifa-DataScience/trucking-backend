@@ -40,6 +40,21 @@ GET /siteline/aging-report
 Authorization: Bearer <access_token>
 ```
 
+### 2.1.1 Optional query filters (both endpoints)
+
+These filters apply to **both**:
+
+- `GET /siteline/aging-report`
+- `GET /siteline/aging-overdue`
+
+All filters are optional.
+
+- `search` (string): case-insensitive match across project + PM fields.
+- `overdueOnly` (`true|false`): when true, excludes `daysPastDue <= 0`.
+- `minDaysPastDue` / `maxDaysPastDue` (number): inclusive range.
+- `minNetDollars` / `maxNetDollars` (number): dollars, inclusive range.
+- `includeStatuses` / `excludeStatuses` (string): comma-separated list, exact match.
+
 ### 2.2 Response (unchanged fields + NEW PM fields)
 
 ```ts
@@ -59,6 +74,8 @@ export interface AgingReportRow {
   // NEW: primary PM for this project, when available
   leadPmName?: string | null;
   leadPmEmail?: string | null;
+  // NEW: invoice/pay app number (max/latest seen for this project), when available
+  invoiceNumber?: number | null;
   buckets: Record<AgingBucket, number>;
   projectTotal: number;
 }
@@ -111,6 +128,7 @@ export interface AgingOverdueItem {
   companyId: string | null;
   leadPmName: string | null;   // PM name, when available
   leadPmEmail: string | null;  // PM email, when available
+  invoiceNumber: number | null; // Invoice/Pay App number from Siteline (payAppNumber)
   dueDate: string | null;      // ISO date string
   daysPastDue: number;         // strictly > 50
   netDollars: number;          // strictly > 0
@@ -128,6 +146,7 @@ export interface AgingOverdueResponse {
 - Backend derives:
   - `daysPastDue` from `dueDate` vs “today”.
   - `netDollars = (billed − retention) / 100`.
+- `invoiceNumber` comes directly from Siteline pay apps (the “Number” column in Siteline Billing).
 - `leadPmName` / `leadPmEmail` are filled either from cached contract data or, if missing, by live‑calling Siteline for that contract’s `leadPMs`.
 
 ### 3.3 How to render the Over‑50 tab
