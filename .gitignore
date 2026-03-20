@@ -3,4 +3,9 @@ dist
 *.log
 .DS_Store
 config.bat
+
+# Local secrets — never commit
+!.env.example
+
+# TypeScript incremental build cache
 tsconfig.build.tsbuildinfo

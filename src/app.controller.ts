@@ -135,6 +135,8 @@ export class AppController {
         },
         admin: {
           users: 'GET /admin/users?page=1&pageSize=25&status=&role=&search= (Admin only)',
+          emailTemplatesBase:
+            'GET/POST/PUT/DELETE /admin/email-templates (Admin only) with purpose selector (e.g. siteline.overdue_leadpm)',
         },
         seed: {
           seedDatabase: 'POST /seed (⚠️ Development only - seeds test data)',
@@ -148,6 +150,7 @@ export class AppController {
           payApp: 'GET /siteline/pay-apps/:id',
           payAppsPaginated: 'GET /siteline/pay-apps/paginated',
           agingReport: 'GET /siteline/aging-report',
+          agingOverdue: 'GET /siteline/aging-overdue',
         },
         health: {
           ping: 'GET /health/ping (server up? no auth)',

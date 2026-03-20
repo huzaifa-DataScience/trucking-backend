@@ -13,6 +13,29 @@ const AGING_BUCKETS = [
   '>120 Days',
 ] as const;
 
+export interface SitelineAgingFilters {
+  /**
+   * Case-insensitive substring match against:
+   * - projectName, projectNumber, internalProjectNumber
+   * - leadPmName, leadPmEmail
+   */
+  search?: string;
+  /** If true, exclude non-overdue items (daysPastDue <= 0). */
+  overdueOnly?: boolean;
+  /** Minimum days past due (inclusive). */
+  minDaysPastDue?: number;
+  /** Maximum days past due (inclusive). */
+  maxDaysPastDue?: number;
+  /** Minimum net dollars (inclusive). */
+  minNetDollars?: number;
+  /** Maximum net dollars (inclusive). */
+  maxNetDollars?: number;
+  /** Allowed statuses (exact match). */
+  includeStatuses?: string[];
+  /** Blocked statuses (exact match). */
+  excludeStatuses?: string[];
+}
+
 function getBucket(daysPastDue: number): (typeof AGING_BUCKETS)[number] {
   if (daysPastDue <= 0) return 'Current';
   if (daysPastDue <= 30) return '1-30 Days';
@@ -22,12 +45,25 @@ function getBucket(daysPastDue: number): (typeof AGING_BUCKETS)[number] {
   return '>120 Days';
 }
 
+function normalizeStatus(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const t = s.trim();
+  return t.length ? t : null;
+}
+
+function includesNormalized(haystack: string | null | undefined, needle: string): boolean {
+  if (!haystack) return false;
+  return haystack.toLowerCase().includes(needle);
+}
+
 export interface AgingReportRow {
   projectName: string;
   /** Optional: primary PM name for this project (from contributing contracts). */
   leadPmName?: string | null;
   /** Optional: primary PM email for this project (from contributing contracts). */
   leadPmEmail?: string | null;
+  /** Invoice/Pay App number (max/latest seen for this project), when available. */
+  invoiceNumber?: number | null;
   buckets: Record<(typeof AGING_BUCKETS)[number], number>;
   projectTotal: number;
 }
@@ -46,6 +82,8 @@ export interface AgingOverdueRow {
   companyId: string | null;
   leadPmName: string | null;
   leadPmEmail: string | null;
+  /** Invoice/Pay App number from Siteline (payAppNumber). */
+  invoiceNumber: number | null;
   dueDate: string | null;
   daysPastDue: number;
   netDollars: number;
@@ -71,7 +109,7 @@ export class SitelineReportService {
    * Net Dollars = (Billed - Retention) / 100. Excludes pay apps with status PAID or DRAFT.
    * Buckets: Current, 1-30 Days, 31-60 Days, 61-90 Days, 91-120 Days, >120 Days past due.
    */
-  async getAgingReport(): Promise<AgingReportResponse> {
+  async getAgingReport(filters: SitelineAgingFilters = {}): Promise<AgingReportResponse> {
     // Load all pay apps with their contracts; we'll filter PAID/DRAFT in code so that
     // rows with NULL status values are still included in the report.
     const payApps = await this.payAppRepo.find({
@@ -86,6 +124,13 @@ export class SitelineReportService {
     const projectTotals = new Map<string, number>();
     const projectPmName = new Map<string, string | null>();
     const projectPmEmail = new Map<string, string | null>();
+    const projectInvoiceNumber = new Map<string, number | null>();
+
+    const search = (filters.search ?? '').trim().toLowerCase();
+    const includeStatuses =
+      filters.includeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
+    const excludeStatuses =
+      filters.excludeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
 
     for (const pa of payApps) {
       // Skip explicitly paid/draft items, but allow null/other statuses through.
@@ -105,6 +150,37 @@ export class SitelineReportService {
       const daysPastDue = dueDate
         ? Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
         : 0;
+
+      const status = normalizeStatus(pa.status);
+      if (filters.overdueOnly && daysPastDue <= 0) continue;
+      if (typeof filters.minDaysPastDue === 'number' && daysPastDue < filters.minDaysPastDue)
+        continue;
+      if (typeof filters.maxDaysPastDue === 'number' && daysPastDue > filters.maxDaysPastDue)
+        continue;
+      if (typeof filters.minNetDollars === 'number' && netDollars < filters.minNetDollars)
+        continue;
+      if (typeof filters.maxNetDollars === 'number' && netDollars > filters.maxNetDollars)
+        continue;
+      if (includeStatuses && includeStatuses.length) {
+        if (!status || !includeStatuses.includes(status)) continue;
+      }
+      if (excludeStatuses && excludeStatuses.length) {
+        if (status && excludeStatuses.includes(status)) continue;
+      }
+
+      if (search) {
+        const cAny = contract as any;
+        const pmName: string | null = cAny.leadPmName ?? null;
+        const pmEmail: string | null = cAny.leadPmEmail ?? null;
+        const matches =
+          includesNormalized(contract.projectName ?? null, search) ||
+          includesNormalized(contract.projectNumber ?? null, search) ||
+          includesNormalized(contract.internalProjectNumber ?? null, search) ||
+          includesNormalized(pmName, search) ||
+          includesNormalized(pmEmail, search);
+        if (!matches) continue;
+      }
+
       const bucket = getBucket(daysPastDue);
       if (!pivot.has(key)) {
         pivot.set(key, {
@@ -119,6 +195,14 @@ export class SitelineReportService {
       const row = pivot.get(key)!;
       row[bucket] += netDollars;
       projectTotals.set(key, (projectTotals.get(key) ?? 0) + netDollars);
+
+      // Capture an invoice number per project (max payAppNumber seen).
+      if (typeof pa.number === 'number') {
+        const current = projectInvoiceNumber.get(key);
+        if (current === undefined || current === null || pa.number > current) {
+          projectInvoiceNumber.set(key, pa.number);
+        }
+      }
 
       // Capture a primary PM per project (first non-null contract PM wins).
       const existingPmName = projectPmName.get(key);
@@ -158,6 +242,7 @@ export class SitelineReportService {
         projectName,
         leadPmName: projectPmName.get(projectName) ?? null,
         leadPmEmail: projectPmEmail.get(projectName) ?? null,
+        invoiceNumber: projectInvoiceNumber.get(projectName) ?? null,
         buckets: { ...buckets },
         projectTotal,
       });
@@ -177,7 +262,7 @@ export class SitelineReportService {
    * Based on synced Siteline_PayApps + Siteline_Contracts, reusing the same
    * net dollars and days-past-due calculations as the main aging report.
    */
-  async getOverdueOver50(): Promise<AgingOverdueResponse> {
+  async getOverdueOver50(filters: SitelineAgingFilters = {}): Promise<AgingOverdueResponse> {
     const payApps = await this.payAppRepo.find({
       relations: ['contract'],
     });
@@ -187,6 +272,12 @@ export class SitelineReportService {
 
     const items: AgingOverdueRow[] = [];
     const pmCache = new Map<string, { name: string | null; email: string | null }>();
+
+    const search = (filters.search ?? '').trim().toLowerCase();
+    const includeStatuses =
+      filters.includeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
+    const excludeStatuses =
+      filters.excludeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
 
     for (const pa of payApps) {
       // Skip explicitly paid/draft items, but allow null/other statuses through.
@@ -206,6 +297,23 @@ export class SitelineReportService {
 
       if (daysPastDue <= 50) continue;
       if (netDollars <= 0) continue;
+
+      const status = normalizeStatus(pa.status);
+      if (filters.overdueOnly && daysPastDue <= 0) continue;
+      if (typeof filters.minDaysPastDue === 'number' && daysPastDue < filters.minDaysPastDue)
+        continue;
+      if (typeof filters.maxDaysPastDue === 'number' && daysPastDue > filters.maxDaysPastDue)
+        continue;
+      if (typeof filters.minNetDollars === 'number' && netDollars < filters.minNetDollars)
+        continue;
+      if (typeof filters.maxNetDollars === 'number' && netDollars > filters.maxNetDollars)
+        continue;
+      if (includeStatuses && includeStatuses.length) {
+        if (!status || !includeStatuses.includes(status)) continue;
+      }
+      if (excludeStatuses && excludeStatuses.length) {
+        if (status && excludeStatuses.includes(status)) continue;
+      }
 
       // Try DB-cached PM first
       let leadPmName: string | null = (contract as any).leadPmName ?? null;
@@ -232,6 +340,16 @@ export class SitelineReportService {
         leadPmEmail = cached.email;
       }
 
+      if (search) {
+        const matches =
+          includesNormalized(contract.projectName ?? null, search) ||
+          includesNormalized(contract.projectNumber ?? null, search) ||
+          includesNormalized(contract.internalProjectNumber ?? null, search) ||
+          includesNormalized(leadPmName, search) ||
+          includesNormalized(leadPmEmail, search);
+        if (!matches) continue;
+      }
+
       items.push({
         contractId: contract.id,
         projectName: contract.projectName ?? null,
@@ -240,6 +358,7 @@ export class SitelineReportService {
         companyId: null, // Siteline company id is not stored on contract entity today
         leadPmName,
         leadPmEmail,
+        invoiceNumber: pa.number ?? null,
         dueDate: dueDate ? dueDate.toISOString() : null,
         daysPastDue,
         netDollars,
