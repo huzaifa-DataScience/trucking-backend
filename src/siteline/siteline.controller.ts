@@ -4,6 +4,33 @@ import { SitelineReportService } from './siteline-report.service';
 import { Public } from '../auth/decorators';
 import { JwtAuthGuard } from '../auth/guards';
 
+function parseBool(v: unknown): boolean | undefined {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim().toLowerCase();
+  if (s === 'true' || s === '1' || s === 'yes') return true;
+  if (s === 'false' || s === '0' || s === 'no') return false;
+  return undefined;
+}
+
+function parseNum(v: unknown): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  if (!s) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function parseCsv(v: unknown): string[] | undefined {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  if (!s) return undefined;
+  const parts = s
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return parts.length ? parts : undefined;
+}
+
 /**
  * REST API for the frontend billing view.
  * All data comes from Siteline's API (real data, not demo). Separate from job/material/hauler dashboards.
@@ -77,15 +104,51 @@ export class SitelineController {
   /** Aging report from synced DB: net dollars by project and days-past-due bucket. */
   @UseGuards(JwtAuthGuard)
   @Get('aging-report')
-  async getAgingReport() {
-    return this.report.getAgingReport();
+  async getAgingReport(
+    @Query('search') search?: string,
+    @Query('overdueOnly') overdueOnly?: string,
+    @Query('minDaysPastDue') minDaysPastDue?: string,
+    @Query('maxDaysPastDue') maxDaysPastDue?: string,
+    @Query('minNetDollars') minNetDollars?: string,
+    @Query('maxNetDollars') maxNetDollars?: string,
+    @Query('includeStatuses') includeStatuses?: string,
+    @Query('excludeStatuses') excludeStatuses?: string,
+  ) {
+    return this.report.getAgingReport({
+      search,
+      overdueOnly: parseBool(overdueOnly),
+      minDaysPastDue: parseNum(minDaysPastDue),
+      maxDaysPastDue: parseNum(maxDaysPastDue),
+      minNetDollars: parseNum(minNetDollars),
+      maxNetDollars: parseNum(maxNetDollars),
+      includeStatuses: parseCsv(includeStatuses),
+      excludeStatuses: parseCsv(excludeStatuses),
+    });
   }
 
   /** Overdue aging view: pay apps with daysPastDue > 50 and netDollars > 0, including PM info. */
   @UseGuards(JwtAuthGuard)
   @Get('aging-overdue')
-  async getAgingOverdue() {
-    return this.report.getOverdueOver50();
+  async getAgingOverdue(
+    @Query('search') search?: string,
+    @Query('overdueOnly') overdueOnly?: string,
+    @Query('minDaysPastDue') minDaysPastDue?: string,
+    @Query('maxDaysPastDue') maxDaysPastDue?: string,
+    @Query('minNetDollars') minNetDollars?: string,
+    @Query('maxNetDollars') maxNetDollars?: string,
+    @Query('includeStatuses') includeStatuses?: string,
+    @Query('excludeStatuses') excludeStatuses?: string,
+  ) {
+    return this.report.getOverdueOver50({
+      search,
+      overdueOnly: parseBool(overdueOnly),
+      minDaysPastDue: parseNum(minDaysPastDue),
+      maxDaysPastDue: parseNum(maxDaysPastDue),
+      minNetDollars: parseNum(minNetDollars),
+      maxNetDollars: parseNum(maxNetDollars),
+      includeStatuses: parseCsv(includeStatuses),
+      excludeStatuses: parseCsv(excludeStatuses),
+    });
   }
 
   /** Paginated pay apps (Siteline paginatedPayApps GraphQL). */

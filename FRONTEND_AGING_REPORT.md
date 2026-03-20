@@ -40,6 +40,16 @@ GET /siteline/aging-report
 - **Query params:** None.
 - **Method:** GET.
 
+### Optional filters (query params)
+
+All filters are **optional**. If omitted, the backend returns the full dataset.
+
+- **`search`**: case-insensitive substring match across `projectName`, `projectNumber`, `internalProjectNumber`, `leadPmName`, `leadPmEmail`.
+- **`overdueOnly`**: `true|false` — when `true`, excludes non-overdue items (`daysPastDue <= 0`).
+- **`minDaysPastDue` / `maxDaysPastDue`**: numbers (inclusive).
+- **`minNetDollars` / `maxNetDollars`**: numbers in **dollars** (inclusive).
+- **`includeStatuses` / `excludeStatuses`**: comma-separated statuses (exact match). Example: `includeStatuses=PROPOSED,SIGNED`.
+
 ---
 
 ## Response shape – Main Aging Report
@@ -52,6 +62,7 @@ GET /siteline/aging-report
   "rows": [
     {
       "projectName": "Project Alpha",
+      "invoiceNumber": 12,
       "buckets": {
         "Current": 15000.50,
         "1-30 Days": 0,
@@ -119,6 +130,8 @@ interface AgingReportRow {
   leadPmName?: string | null;
   /** Optional: primary PM email for this project. */
   leadPmEmail?: string | null;
+  /** Invoice/Pay App number (max/latest seen for this project), when available. */
+  invoiceNumber?: number | null;
   buckets: Record<AgingBucket, number>;
   projectTotal: number;
 }
@@ -235,8 +248,18 @@ GET /siteline/aging-overdue
   ```http
   Authorization: Bearer <access_token>
   ```
-- **Query params:** None.
+- **Query params:** Optional (same filters as main report).
 - **Method:** GET.
+
+### Optional filters (query params)
+
+Same as `GET /siteline/aging-report`:
+
+- `search`
+- `overdueOnly`
+- `minDaysPastDue` / `maxDaysPastDue`
+- `minNetDollars` / `maxNetDollars`
+- `includeStatuses` / `excludeStatuses`
 
 ### Response shape – Over 50 Days
 
@@ -253,6 +276,7 @@ GET /siteline/aging-overdue
       "companyId": null,
       "leadPmName": "Asha Goel",
       "leadPmEmail": "asha.goel@goelservices.com",
+      "invoiceNumber": 7,
       "dueDate": "2025-01-15T00:00:00.000Z",
       "daysPastDue": 448,
       "netDollars": 53727,
@@ -287,6 +311,8 @@ export interface AgingOverdueItem {
   companyId: string | null;
   leadPmName: string | null;
   leadPmEmail: string | null;
+  /** Invoice/Pay App number from Siteline (payAppNumber). */
+  invoiceNumber: number | null;
   dueDate: string | null; // ISO string
   daysPastDue: number;
   netDollars: number;
@@ -307,8 +333,9 @@ export interface AgingOverdueResponse {
 3. **PM** – `leadPmName` (make `leadPmEmail` a mailto link or tooltip).
 4. **Due Date** – formatted from `dueDate`.
 5. **Days Past Due** – `daysPastDue`.
-6. **Net Amount** – format `netDollars` as currency.
-7. **Status** – `status`.
+6. **Invoice #** – `invoiceNumber`.
+7. **Net Amount** – format `netDollars` as currency.
+8. **Status** – `status`.
 
 **Rows:**
 
