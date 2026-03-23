@@ -5,8 +5,11 @@ dist
 config.bat
 
 # Local secrets — never commit
+<<<<<<< HEAD
 .env
 .env.*
+=======
+>>>>>>> 0740b44f0d7713cd9fc0b239240bba6d32c70059
 !.env.example
 
 # TypeScript incremental build cache
