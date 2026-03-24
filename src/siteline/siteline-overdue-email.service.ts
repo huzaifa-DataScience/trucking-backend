@@ -32,7 +32,8 @@ export class SitelineOverdueEmailService {
     private readonly payAppRepo: Repository<SitelinePayApp>,
   ) {}
 
-  @Cron('0 */5 * * * *')
+  // TEMP: scheduling disabled — uncomment the line below to resume overdue emails every 5 min.
+  // @Cron('0 */5 * * * *')
   async sendOverdueEmails(): Promise<void> {
     if (this.config.get<string>('OVERDUE_EMAIL_ENABLED', 'false') !== 'true') {
       return;
