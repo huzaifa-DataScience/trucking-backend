@@ -25,8 +25,9 @@ export class SitelineSyncService {
    * Cron job: runs periodically to sync Siteline data from Siteline's API
    * into our local SQL tables.
    * Configured to run every 5 minutes.
+   * TEMP: scheduling disabled — uncomment the line below to resume automatic sync.
    */
-  @Cron('0 */5 * * * *')
+  // @Cron('0 */5 * * * *')
   async syncHourly(): Promise<void> {
     if (!this.siteline.isConfigured()) {
       this.logger.warn('Siteline sync skipped: API not configured');
