@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as nodemailer from 'nodemailer';
+import { AppSettingsService } from '../app-settings/app-settings.service';
 import { SitelinePayApp } from '../database/entities';
 import { EmailTemplateService } from '../email/email-template.service';
 
@@ -27,6 +28,7 @@ export class SitelineOverdueEmailService {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly appSettings: AppSettingsService,
     private readonly emailTemplates: EmailTemplateService,
     @InjectRepository(SitelinePayApp)
     private readonly payAppRepo: Repository<SitelinePayApp>,
@@ -34,6 +36,9 @@ export class SitelineOverdueEmailService {
   @Cron('0 */5 * * * *')
   async sendOverdueEmails(): Promise<void> {
     if (this.config.get<string>('OVERDUE_EMAIL_ENABLED', 'false') !== 'true') {
+      return;
+    }
+    if (!(await this.appSettings.getOverdueEmailSendingEnabled())) {
       return;
     }
 

@@ -137,6 +137,10 @@ export class AppController {
           users: 'GET /admin/users?page=1&pageSize=25&status=&role=&search= (Admin only)',
           emailTemplatesBase:
             'GET/POST/PUT/DELETE /admin/email-templates (Admin only) with purpose selector (e.g. siteline.overdue_leadpm)',
+          overdueEmailSending:
+            'GET/PATCH /admin/settings/overdue-email-sending (Admin only; PATCH body { "enabled": true|false }; env OVERDUE_EMAIL_ENABLED is master)',
+          smtpTestEmail:
+            'POST /admin/settings/smtp-test-email (Admin only; body { "to": "you@example.com" } — verifies SMTP; does not require OVERDUE_EMAIL_ENABLED)',
         },
         seed: {
           seedDatabase: 'POST /seed (⚠️ Development only - seeds test data)',
