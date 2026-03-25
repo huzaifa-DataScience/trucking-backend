@@ -7,15 +7,13 @@ config.bat
 # Local secrets — never commit
 <<<<<<< HEAD
 <<<<<<< HEAD
-.env
-.env.*
 =======
 >>>>>>> 0740b44f0d7713cd9fc0b239240bba6d32c70059
 =======
-.env
-.env.*
 >>>>>>> f2ae047a05026908b67cf6c270421ef29bd761ce
 !.env.example
 
 # TypeScript incremental build cache
 tsconfig.build.tsbuildinfo
+temp_auto_push.bat
+temp_interactive_push.bat

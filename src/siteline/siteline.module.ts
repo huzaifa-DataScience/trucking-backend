@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { EmailTemplateModule } from '../email/email-template.module';
 import { SitelineController } from './siteline.controller';
 import { SitelineService } from './siteline.service';
@@ -20,6 +21,7 @@ import { SitelineContract, SitelinePayApp } from '../database/entities';
     ConfigModule,
     TypeOrmModule.forFeature([SitelineContract, SitelinePayApp]),
     EmailTemplateModule,
+    AppSettingsModule,
   ],
   controllers: [SitelineController],
   providers: [SitelineService, SitelineSyncService, SitelineReportService, SitelineOverdueEmailService],

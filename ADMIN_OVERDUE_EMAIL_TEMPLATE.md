@@ -24,3 +24,27 @@ Use the generic template management API:
 | `{{itemsTableHtml}}` | Pre-built HTML table of rows (do not edit row data here) |
 
 The cron job still uses SMTP settings from `.env` (`SMTP_*`, `OVERDUE_EMAIL_FROM`, `OVERDUE_EMAIL_ENABLED`).
+
+## Enable / disable sending (admin toggle)
+
+Emails send only when **both** are true:
+
+1. **Env master**: `OVERDUE_EMAIL_ENABLED=true` (requires deploy/restart to change).
+2. **Admin toggle** (stored in SQL `App_Settings`, key `overdue_email_sending_enabled`): default **on** if no row exists.
+
+| Method | Path | Body |
+|--------|------|------|
+| `GET` | `/admin/settings/overdue-email-sending` | — |
+| `PATCH` | `/admin/settings/overdue-email-sending` | `{ "enabled": true }` or `false` |
+
+Response shape: `{ envMasterEnabled, adminToggleEnabled, effectiveEnabled }`. The cron uses `effectiveEnabled` logic (env on **and** admin toggle on) before SMTP.
+
+## SMTP test email (admin)
+
+Verify Gmail / Office365 / etc. without enabling overdue cron or waiting for the scheduler.
+
+| Method | Path | Body |
+|--------|------|------|
+| `POST` | `/admin/settings/smtp-test-email` | `{ "to": "your-address@example.com" }` |
+
+Uses `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OVERDUE_EMAIL_FROM` from `.env`. Does **not** require `OVERDUE_EMAIL_ENABLED=true`. Returns `{ ok, message }` or `400` with `{ missing: [...] }` if env is incomplete.
