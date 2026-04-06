@@ -8,7 +8,12 @@ import { SitelineService } from './siteline.service';
 import { SitelineSyncService } from './siteline-sync.service';
 import { SitelineReportService } from './siteline-report.service';
 import { SitelineOverdueEmailService } from './siteline-overdue-email.service';
-import { SitelineContract, SitelinePayApp } from '../database/entities';
+import {
+  SitelineContract,
+  SitelinePayApp,
+  SitelineAgingSummary,
+  SitelineAgingContract,
+} from '../database/entities';
 
 /**
  * Separate module for Siteline billing integration.
@@ -19,7 +24,12 @@ import { SitelineContract, SitelinePayApp } from '../database/entities';
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([SitelineContract, SitelinePayApp]),
+    TypeOrmModule.forFeature([
+      SitelineContract,
+      SitelinePayApp,
+      SitelineAgingSummary,
+      SitelineAgingContract,
+    ]),
     EmailTemplateModule,
     AppSettingsModule,
   ],

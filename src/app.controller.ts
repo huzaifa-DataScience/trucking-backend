@@ -141,6 +141,8 @@ export class AppController {
             'GET/PATCH /admin/settings/overdue-email-sending (Admin only; PATCH body { "enabled": true|false }; env OVERDUE_EMAIL_ENABLED is master)',
           smtpTestEmail:
             'POST /admin/settings/smtp-test-email (Admin only; body { "to": "you@example.com" } — verifies SMTP; does not require OVERDUE_EMAIL_ENABLED)',
+          smtpTestOverdueEmail:
+            'POST /admin/settings/smtp-test-overdue-email (Admin only; body { "to": "you@example.com", "leadPmName"?: "Test PM" } — sends the PM-lead overdue template)',
         },
         seed: {
           seedDatabase: 'POST /seed (⚠️ Development only - seeds test data)',
@@ -154,7 +156,7 @@ export class AppController {
           payApp: 'GET /siteline/pay-apps/:id',
           payAppsPaginated: 'GET /siteline/pay-apps/paginated',
           agingReport: 'GET /siteline/aging-report',
-          agingOverdue: 'GET /siteline/aging-overdue',
+          agingOverdue: 'GET /siteline/aging-overdue (optional minDaysPastDue, default 51)',
         },
         health: {
           ping: 'GET /health/ping (server up? no auth)',

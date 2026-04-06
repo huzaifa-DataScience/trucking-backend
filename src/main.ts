@@ -1,5 +1,8 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import * as swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
 import 'dotenv/config';
 
@@ -54,6 +57,22 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  const swaggerSpecPath =
+    process.env.SWAGGER_TEST_FILE?.trim() || join(process.cwd(), 'swagger.json');
+  if (existsSync(swaggerSpecPath)) {
+    try {
+      const specRaw = readFileSync(swaggerSpecPath, 'utf8');
+      const swaggerSpec = JSON.parse(specRaw);
+      app.use('/swagger-test', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+      console.log(`Swagger test UI: http://localhost:${process.env.PORT ?? 3000}/swagger-test`);
+    } catch (err) {
+      console.error(`Failed to load swagger file at ${swaggerSpecPath}:`, err);
+    }
+  } else {
+    console.warn(
+      `Swagger test disabled: no file found at ${swaggerSpecPath}. Set SWAGGER_TEST_FILE or add swagger.json at project root.`,
+    );
+  }
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`Dashboard API running at http://localhost:${port}`);

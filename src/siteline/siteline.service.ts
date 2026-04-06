@@ -72,6 +72,15 @@ export class SitelineService {
             updatedAt
             name
             phoneNumber
+            users {
+              id
+              firstName
+              lastName
+              email
+              jobTitle
+              phoneNumber
+              status
+            }
             locations {
               id
               nickname
@@ -119,23 +128,75 @@ export class SitelineService {
         query Contract($id: ID!) {
           contract(id: $id) {
             id
+            createdAt
+            updatedAt
             internalProjectNumber
+            billingType
+            status
+            timeZone
+            paymentTermsType
+            paymentTerms
+            percentComplete
             leadPMs {
               id
               firstName
               lastName
               email
             }
+            project {
+              id
+              name
+              projectNumber
+              timeZone
+              createdAt
+              updatedAt
+              gcName
+              bondNumber
+              gcAddress {
+                street1
+                city
+                state
+                postalCode
+                country
+              }
+            }
+            sov {
+              id
+              totalValue
+              totalBilled
+              totalRetention
+              progressComplete
+              lineItems {
+                id
+                code
+                name
+                originalTotalValue
+                latestTotalValue
+                totalBilled
+                totalRetention
+                progressComplete
+              }
+            }
             payApps {
               id
+              createdAt
               payAppNumber
+              billingType
               billingStart
               billingEnd
               payAppDueDate
+              timeZone
               status
+              statusChangedAt
+              retentionOnly
               currentBilled
               currentRetention
+              totalRetention
               totalValue
+              balanceToFinish
+              previousRetentionBilled
+              retentionReleased
+              retentionHeldPercent
               updatedAt
             }
           }
@@ -248,27 +309,18 @@ export class SitelineService {
 
   /**
    * Wraps Siteline's paginatedContracts(input: GetPaginatedContractsInput!) GraphQL query.
-   * Input roughly matches the Postman collection: month, payAppStatus, contractStatus, limit, cursor.
+   * Only limit + cursor — no month/status filters (full list per Siteline).
    */
-  async getPaginatedContracts(input: {
-    month?: string;
-    payAppStatus?: string;
-    contractStatus?: string;
-    limit?: number;
-    cursor?: string;
-  }): Promise<unknown> {
+  async getPaginatedContracts(input: { limit?: number; cursor?: string }): Promise<unknown> {
     if (!this.isConfigured()) {
       return { configured: false, message: 'Siteline API not configured' };
     }
 
     const gqlInput: Record<string, unknown> = {};
-    if (input.month) gqlInput.month = input.month;
-    if (input.payAppStatus) gqlInput.payAppStatus = input.payAppStatus;
-    if (input.contractStatus) gqlInput.contractStatus = input.contractStatus;
     if (typeof input.limit === 'number') gqlInput.limit = input.limit;
     if (input.cursor) gqlInput.cursor = input.cursor;
 
-    const monthForArg = (input.month ?? '').replace(/"/g, '\\"');
+    const payAppsField = 'payApps {';
 
     try {
       const data = await this.graphql<{ paginatedContracts: unknown }>(
@@ -279,14 +331,21 @@ export class SitelineService {
             hasNext
             contracts {
               id
+              createdAt
+              updatedAt
               internalProjectNumber
               billingType
               percentComplete
+              status
+              timeZone
+              paymentTermsType
+              paymentTerms
               project {
                 id
                 name
                 projectNumber
                 timeZone
+                gcName
                 bondNumber
                 createdAt
                 updatedAt
@@ -298,13 +357,26 @@ export class SitelineService {
                   country
                 }
               }
-              payApps (months:["${monthForArg}"]) {
+              ${payAppsField}
                 id
+                createdAt
+                payAppNumber
+                billingType
                 status
+                statusChangedAt
                 billingStart
                 billingEnd
+                payAppDueDate
                 timeZone
-                status
+                retentionOnly
+                currentBilled
+                currentRetention
+                totalRetention
+                totalValue
+                balanceToFinish
+                previousRetentionBilled
+                retentionReleased
+                retentionHeldPercent
                 updatedAt
               }
             }
@@ -321,19 +393,14 @@ export class SitelineService {
 
   /**
    * Wraps Siteline's paginatedPayApps(input: GetPaginatedPayAppsInput!) GraphQL query.
-   * Input roughly matches the Postman collection: submittedInMonth, limit, cursor.
+   * Only limit + cursor — no month filter.
    */
-  async getPaginatedPayApps(input: {
-    submittedInMonth?: string;
-    limit?: number;
-    cursor?: string;
-  }): Promise<unknown> {
+  async getPaginatedPayApps(input: { limit?: number; cursor?: string }): Promise<unknown> {
     if (!this.isConfigured()) {
       return { configured: false, message: 'Siteline API not configured' };
     }
 
     const gqlInput: Record<string, unknown> = {};
-    if (input.submittedInMonth) gqlInput.submittedInMonth = input.submittedInMonth;
     if (typeof input.limit === 'number') gqlInput.limit = input.limit;
     if (input.cursor) gqlInput.cursor = input.cursor;
 
@@ -347,26 +414,83 @@ export class SitelineService {
             hasNext
             payApps {
               id
+              createdAt
+              updatedAt
               payAppNumber
               billingType
+              billingStart
+              billingEnd
+              payAppDueDate
+              status
+              statusChangedAt
+              retentionOnly
+              currentBilled
+              currentRetention
+              totalRetention
+              totalValue
+              balanceToFinish
+              previousRetentionBilled
+              retentionReleased
+              retentionHeldPercent
+              timeZone
               contract {
                 id
+                billingType
+                status
+                timeZone
+                paymentTermsType
+                paymentTerms
+                percentComplete
                 internalProjectNumber
                 project {
                   id
                   name
                   projectNumber
                   timeZone
-                  architect
                   bondNumber
-                  bondProvider
                   createdAt
-                  gcAddress
-                  gcName
-                  owner
                   updatedAt
-                  metadata
+                  gcName
+                  gcAddress {
+                    street1
+                    city
+                    state
+                    postalCode
+                    country
+                  }
                 }
+                leadPMs {
+                  id
+                  firstName
+                  lastName
+                  email
+                }
+              }
+              progress {
+                id
+                progressBilled
+                storedMaterialBilled
+                totalValue
+                sovLineItem {
+                  id
+                  code
+                  name
+                }
+              }
+              g702Values {
+                originalContractSum
+                netChangeByChangeOrders
+                contractSumToDate
+                totalCompletedToDate
+                progressRetentionPercent
+                progressRetentionAmount
+                materialsRetentionPercent
+                materialsRetentionAmount
+                totalRetention
+                totalLessRetainage
+                previousPayments
+                balanceToFinish
+                balanceToFinishWithRetention
               }
             }
           }
@@ -389,6 +513,8 @@ export class SitelineService {
     companyId?: string | null;
     startDate: string; // YYYY-MM-DD
     endDate: string;   // YYYY-MM-DD
+    search?: string;
+    overdueOnly?: boolean;
   }): Promise<unknown> {
     if (!this.isConfigured()) {
       return { configured: false, message: 'Siteline API not configured' };
@@ -399,8 +525,8 @@ export class SitelineService {
       startDate: input.startDate,
       endDate: input.endDate,
       filters: {
-        overdueOnly: false,
-        search: '',
+        overdueOnly: input.overdueOnly ?? false,
+        search: input.search ?? '',
       },
     };
 
@@ -409,7 +535,9 @@ export class SitelineService {
         `
         query agingDashboard($input: DashboardInput!) {
           agingDashboard(input: $input) {
+            __typename
             payAppAgingSummary {
+              __typename
               amountOutstandingThisMonth
               amountOutstandingMonthOverMonthPercent
               amountAged30Days
@@ -423,6 +551,7 @@ export class SitelineService {
               averageDaysToPaid
               averageDaysToPaidMonthOverMonthPercent
               payAppAgingBreakdown {
+                __typename
                 numCurrent
                 numAged30Days
                 numAged60Days
@@ -439,33 +568,39 @@ export class SitelineService {
               }
             }
             contracts {
+              __typename
               contract {
+                __typename
                 id
                 billingType
                 internalProjectNumber
                 paymentTermsType
                 paymentTerms
                 project {
+                  __typename
                   id
                   name
                   projectNumber
                   gcName
                   gc {
+                    __typename
                     id
                     name
                   }
                 }
                 company {
+                  __typename
                   id
                 }
                 leadPMs {
+                  __typename
                   id
                   firstName
                   lastName
-                  email
                 }
               }
               agingBreakdown {
+                __typename
                 numCurrent
                 numAged30Days
                 numAged60Days
