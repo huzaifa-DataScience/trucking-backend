@@ -12,5 +12,7 @@ export { AppRole } from './role.entity';
 export { Permission } from './permission.entity';
 export { SitelineContract } from './siteline-contract.entity';
 export { SitelinePayApp } from './siteline-payapp.entity';
+export { SitelineAgingSummary } from './siteline-aging-summary.entity';
+export { SitelineAgingContract } from './siteline-aging-contract.entity';
 export { AppEmailTemplate } from './app-email-template.entity';
 export { AppSetting } from './app-setting.entity';

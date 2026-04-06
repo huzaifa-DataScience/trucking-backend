@@ -29,7 +29,7 @@ export class SitelinePayApp {
   @Column({ type: 'bigint', nullable: true })
   totalValue!: number | null;
 
-  @Column({ type: 'datetime2', nullable: true })
+  @Column({ name: 'StartDate', type: 'datetime2', nullable: true })
   startDate!: Date | null;
 
   @Column({ type: 'datetime2', nullable: true })

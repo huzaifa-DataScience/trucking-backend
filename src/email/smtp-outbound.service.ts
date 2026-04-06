@@ -32,10 +32,10 @@ export class SmtpOutboundService {
     return missing;
   }
 
-  /**
-   * Sends a simple message to verify SMTP. Does not require OVERDUE_EMAIL_ENABLED.
-   */
-  async sendTestEmail(to: string): Promise<void> {
+  private async getValidatedTransport(): Promise<{
+    transporter: nodemailer.Transporter;
+    from: string;
+  }> {
     const { host, port, user, pass, from } = this.readSmtp();
     const missing = this.getSmtpConfigurationGaps();
     if (missing.length) {
@@ -52,13 +52,32 @@ export class SmtpOutboundService {
       auth: { user, pass },
     });
 
+    return { transporter, from };
+  }
+
+  /**
+   * Sends a simple message to verify SMTP. Does not require OVERDUE_EMAIL_ENABLED.
+   */
+  async sendTestEmail(to: string): Promise<void> {
     const ts = new Date().toISOString();
-    await transporter.sendMail({
-      from,
+
+    await this.sendEmail({
       to,
       subject: 'Trucking dashboard — SMTP test',
       text: `This is a test message sent at ${ts}. If you received it, outbound SMTP is working.`,
       html: `<p>This is a <strong>test message</strong> sent at <code>${ts}</code>.</p><p>If you received it, outbound SMTP is working.</p>`,
+    });
+  }
+
+  /** Sends a fully custom message using the current SMTP_* env settings. */
+  async sendEmail(params: { to: string; subject: string; html: string; text?: string }): Promise<void> {
+    const { transporter, from } = await this.getValidatedTransport();
+    await transporter.sendMail({
+      from,
+      to: params.to,
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
     });
   }
 }

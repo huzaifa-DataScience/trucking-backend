@@ -1,0 +1,1337 @@
+{
+  "fetchedAtUtc": "2026-03-26T17:37:13.371243+00:00",
+  "apiUrl": "https://api-external.siteline.com",
+  "queries": {
+    "currentCompany": {
+      "httpError": {
+        "code": 400,
+        "body": {
+          "errors": [
+            {
+              "message": "Cannot query field \"firstName\" on type \"CompanyUser\".",
+              "locations": [
+                {
+                  "line": 9,
+                  "column": 16
+                }
+              ],
+              "extensions": {
+                "code": "GRAPHQL_VALIDATION_FAILED"
+              }
+            },
+            {
+              "message": "Cannot query field \"lastName\" on type \"CompanyUser\".",
+              "locations": [
+                {
+                  "line": 9,
+                  "column": 26
+                }
+              ],
+              "extensions": {
+                "code": "GRAPHQL_VALIDATION_FAILED"
+              }
+            },
+            {
+              "message": "Cannot query field \"email\" on type \"CompanyUser\".",
+              "locations": [
+                {
+                  "line": 9,
+                  "column": 35
+                }
+              ],
+              "extensions": {
+                "code": "GRAPHQL_VALIDATION_FAILED"
+              }
+            },
+            {
+              "message": "Cannot query field \"jobTitle\" on type \"CompanyUser\".",
+              "locations": [
+                {
+                  "line": 9,
+                  "column": 41
+                }
+              ],
+              "extensions": {
+                "code": "GRAPHQL_VALIDATION_FAILED"
+              }
+            },
+            {
+              "message": "Cannot query field \"phoneNumber\" on type \"CompanyUser\".",
+              "locations": [
+                {
+                  "line": 9,
+                  "column": 50
+                }
+              ],
+              "extensions": {
+                "code": "GRAPHQL_VALIDATION_FAILED"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "paginatedContracts": {
+      "data": {
+        "paginatedContracts": {
+          "cursor": "efde0bcd-70b5-4afd-8b9e-66911a6acd13",
+          "hasNext": true,
+          "contracts": [
+            {
+              "id": "bfa96bf4-2a47-4d3a-bd71-d0cfc89c4567",
+              "createdAt": "2024-02-07T15:21:46.835Z",
+              "updatedAt": "2024-05-22T15:36:53.689Z",
+              "internalProjectNumber": "09914",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "2c818a25-bf1f-41cf-b6fb-3bc9481268a2",
+                "name": "09914 - Aiton Elementary School (TS/LL)",
+                "projectNumber": "GBC-J09601.000",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-02-07T15:21:46.835Z",
+                "updatedAt": "2024-02-07T15:21:46.835Z",
+                "gcAddress": {
+                  "street1": "7 Jackson Walkway",
+                  "city": "Providence",
+                  "state": "RI",
+                  "postalCode": "02903",
+                  "country": "United States"
+                }
+              },
+              "payApps": []
+            },
+            {
+              "id": "5a5ed179-cea9-4a8a-a304-136f07e31523",
+              "createdAt": "2024-02-03T04:47:49.634Z",
+              "updatedAt": "2025-06-19T15:19:13.608Z",
+              "internalProjectNumber": "09915",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "34b9d32d-f025-40c9-9cc5-bf8487387ba6",
+                "name": "09915 - Carl F West Estates (CH/RA)",
+                "projectNumber": "6|21|202",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-02-03T04:47:49.634Z",
+                "updatedAt": "2024-03-07T20:30:08.525Z",
+                "gcAddress": {
+                  "street1": "7475 Wisconsin Avenue",
+                  "city": "Bethesda",
+                  "state": "MD",
+                  "postalCode": "20814",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "a1cfb4c3-01c6-4324-9d5a-96571399b2fb",
+                  "createdAt": "2025-06-19T16:21:42.158Z",
+                  "payAppNumber": 5,
+                  "billingType": "LUMP_SUM",
+                  "status": "DRAFT",
+                  "statusChangedAt": "2025-06-19T16:29:09.299Z",
+                  "billingStart": "2025-06-01T04:00:00.000Z",
+                  "billingEnd": "2025-07-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-06-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": true,
+                  "currentBilled": 0,
+                  "currentRetention": 0,
+                  "totalRetention": 0,
+                  "totalValue": 8138997,
+                  "balanceToFinish": 0,
+                  "previousRetentionBilled": 813900,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-06-19T16:29:09.176Z"
+                }
+              ]
+            },
+            {
+              "id": "b9a073ad-b788-47dc-a05a-67b5ccf89bf5",
+              "createdAt": "2024-02-03T04:49:58.234Z",
+              "updatedAt": "2025-01-07T12:55:59.157Z",
+              "internalProjectNumber": "09916",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "2f52bc6d-5e12-4bf1-821f-515dc6cb7364",
+                "name": "09916 - Carl F. West Estates - Interior (CH/RA)",
+                "projectNumber": "6|21|202",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-02-03T04:49:58.234Z",
+                "updatedAt": "2024-02-07T11:40:54.965Z",
+                "gcAddress": {
+                  "street1": "7475 Wisconsin Avenue",
+                  "city": "Bethesda",
+                  "state": "MD",
+                  "postalCode": "20814",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "06df36e3-08b0-45ea-a273-04e8af698a4d",
+                  "createdAt": "2025-01-07T12:56:21.799Z",
+                  "payAppNumber": 6,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2024-11-18T05:00:00.000Z",
+                  "billingStart": "2024-11-01T04:00:00.000Z",
+                  "billingEnd": "2024-12-01T04:59:59.999Z",
+                  "payAppDueDate": "2024-11-19T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": true,
+                  "currentBilled": 0,
+                  "currentRetention": 0,
+                  "totalRetention": 0,
+                  "totalValue": 11278905,
+                  "balanceToFinish": 0,
+                  "previousRetentionBilled": 1127890,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-01-07T12:57:23.386Z"
+                }
+              ]
+            },
+            {
+              "id": "7a7f8348-11b2-4c94-95d5-e64e06441103",
+              "createdAt": "2024-02-07T14:07:31.511Z",
+              "updatedAt": "2026-01-26T13:55:46.875Z",
+              "internalProjectNumber": "09917",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 0.99723,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "ac9f94d9-14d0-4a9a-a59a-2e2fc5c256f4",
+                "name": "09917 - Truesdell ES (BSC-CWC)(Goel DC - PW)(TS/LL)",
+                "projectNumber": "6|22|203",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-02-07T14:07:31.511Z",
+                "updatedAt": "2025-02-25T20:10:27.000Z",
+                "gcAddress": {
+                  "street1": "4315 50th Street Northwest",
+                  "city": "Washington",
+                  "state": "DC",
+                  "postalCode": "20016",
+                  "country": "United States"
+                }
+              },
+              "payApps": []
+            },
+            {
+              "id": "a4f0725d-314f-461a-a3bc-f1ece8f7a671",
+              "createdAt": "2024-02-27T20:45:26.967Z",
+              "updatedAt": "2024-03-12T14:01:02.099Z",
+              "internalProjectNumber": "09919",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "a5f4aa25-b93e-402c-a2c1-2d306ada2304",
+                "name": "09919 - McMillan ACM PipeHaul (Anderson)(Goel DC - NS)(TS/LL)",
+                "projectNumber": "- (2220-3965)",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-02-27T20:45:26.967Z",
+                "updatedAt": "2025-02-25T20:08:12.227Z",
+                "gcAddress": {
+                  "street1": "Tac Court",
+                  "city": "Manassas",
+                  "state": "VA",
+                  "postalCode": "20109",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "14a848b5-c2f7-413a-8752-5726ba50c3d9",
+                  "createdAt": "2025-01-17T21:01:16.449Z",
+                  "payAppNumber": 2,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-01-10T05:00:00.000Z",
+                  "billingStart": "2025-01-01T05:00:00.000Z",
+                  "billingEnd": "2025-02-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-01-29T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": true,
+                  "currentBilled": 0,
+                  "currentRetention": -226950,
+                  "totalRetention": 226950,
+                  "totalValue": 4539000,
+                  "balanceToFinish": 0,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.05,
+                  "updatedAt": "2025-01-17T21:04:01.595Z"
+                }
+              ]
+            },
+            {
+              "id": "bc02462c-15c9-48d6-8fb6-596925872415",
+              "createdAt": "2025-03-28T18:56:45.034Z",
+              "updatedAt": "2025-04-22T15:37:16.060Z",
+              "internalProjectNumber": "09920",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 0.48318,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "c56fe9c2-2c27-4cd8-958c-5fec5dc7db7e",
+                "name": "09920 - Brent ES (Smoot) (GoelDC-PW) (TS-LL)",
+                "projectNumber": "DC-23-008",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2025-03-28T18:56:45.034Z",
+                "updatedAt": "2025-03-28T18:56:45.034Z",
+                "gcAddress": {
+                  "street1": "3939 Wisconsin Avenue Northwest",
+                  "city": "Washington",
+                  "state": "DC",
+                  "postalCode": "20016",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "f124ede8-a720-41c3-9be3-e905903f24b5",
+                  "createdAt": "2025-04-22T15:34:24.866Z",
+                  "payAppNumber": 2,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-07-03T04:00:00.000Z",
+                  "billingStart": "2025-04-01T04:00:00.000Z",
+                  "billingEnd": "2025-05-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-04-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 1500000,
+                  "currentRetention": 150000,
+                  "totalRetention": 300000,
+                  "totalValue": 12255000,
+                  "balanceToFinish": 342537000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-11-03T18:33:05.926Z"
+                },
+                {
+                  "id": "e4351569-fe17-4afc-b39d-eff40ea4e621",
+                  "createdAt": "2026-01-23T14:41:49.125Z",
+                  "payAppNumber": 11,
+                  "billingType": "LUMP_SUM",
+                  "status": "PROPOSED",
+                  "statusChangedAt": "2026-01-28T05:00:00.000Z",
+                  "billingStart": "2026-01-01T05:00:00.000Z",
+                  "billingEnd": "2026-02-01T04:59:59.999Z",
+                  "payAppDueDate": "2026-01-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 69641000,
+                  "currentRetention": 6964100,
+                  "totalRetention": 11856500,
+                  "totalValue": 164975000,
+                  "balanceToFinish": 226972000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-02-05T18:58:02.047Z"
+                },
+                {
+                  "id": "a662e8e6-3fdc-4bb3-8934-13bfd0810be7",
+                  "createdAt": "2025-12-30T12:15:14.823Z",
+                  "payAppNumber": 10,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-03-11T04:00:00.000Z",
+                  "billingStart": "2025-12-01T05:00:00.000Z",
+                  "billingEnd": "2026-01-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-12-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 6820000,
+                  "currentRetention": 682000,
+                  "totalRetention": 4892400,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 296613000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-17T14:02:57.394Z"
+                },
+                {
+                  "id": "c90ddb4c-d2d4-448d-bde1-d263af7164c0",
+                  "createdAt": "2026-03-18T14:45:10.507Z",
+                  "payAppNumber": 13,
+                  "billingType": "LUMP_SUM",
+                  "status": "DRAFT",
+                  "statusChangedAt": "2026-03-18T14:45:10.606Z",
+                  "billingStart": "2026-03-01T05:00:00.000Z",
+                  "billingEnd": "2026-04-01T03:59:59.999Z",
+                  "payAppDueDate": "2026-03-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 0,
+                  "currentRetention": 0,
+                  "totalRetention": 16695550,
+                  "totalValue": 345537000,
+                  "balanceToFinish": 178581500,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-18T14:45:10.507Z"
+                },
+                {
+                  "id": "84c89dca-963d-41bf-b9b0-d5965623fc25",
+                  "createdAt": "2025-05-12T12:36:40.966Z",
+                  "payAppNumber": 3,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-07-30T04:00:00.000Z",
+                  "billingStart": "2025-05-01T04:00:00.000Z",
+                  "billingEnd": "2025-06-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-05-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 1495000,
+                  "currentRetention": 149500,
+                  "totalRetention": 449500,
+                  "totalValue": 12255000,
+                  "balanceToFinish": 341042000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-09-17T12:11:20.666Z"
+                },
+                {
+                  "id": "ea7066ce-38c2-4fb3-b5fe-4f2a1dddee03",
+                  "createdAt": "2025-08-20T12:32:42.890Z",
+                  "payAppNumber": 6,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-10-16T04:00:00.000Z",
+                  "billingStart": "2025-08-01T04:00:00.000Z",
+                  "billingEnd": "2025-09-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-08-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 11100000,
+                  "currentRetention": 1110000,
+                  "totalRetention": 2410000,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 321437000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-01-28T18:35:43.058Z"
+                },
+                {
+                  "id": "2f32d14b-7078-4ccb-b6cc-6048de12c4fd",
+                  "createdAt": "2026-02-05T18:58:20.756Z",
+                  "payAppNumber": 12,
+                  "billingType": "LUMP_SUM",
+                  "status": "PROPOSED",
+                  "statusChangedAt": "2026-03-05T19:24:30.202Z",
+                  "billingStart": "2026-02-01T05:00:00.000Z",
+                  "billingEnd": "2026-03-01T04:59:59.999Z",
+                  "payAppDueDate": "2026-02-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 48390500,
+                  "currentRetention": 4839050,
+                  "totalRetention": 16695550,
+                  "totalValue": 345537000,
+                  "balanceToFinish": 178581500,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-05T19:24:37.743Z"
+                },
+                {
+                  "id": "5e0c4e32-5eeb-4e94-997e-b9ae2a234ce7",
+                  "createdAt": "2025-10-09T18:31:13.597Z",
+                  "payAppNumber": 8,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-01-26T05:00:00.000Z",
+                  "billingStart": "2025-10-01T04:00:00.000Z",
+                  "billingEnd": "2025-11-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-10-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 12592450,
+                  "currentRetention": 1259245,
+                  "totalRetention": 4186300,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 303674000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-01-23T20:13:07.341Z"
+                },
+                {
+                  "id": "9558a5cd-fa12-49ea-b70d-cfbe0d69c5ec",
+                  "createdAt": "2025-11-12T14:45:46.827Z",
+                  "payAppNumber": 9,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-01-28T05:00:00.000Z",
+                  "billingStart": "2025-11-01T04:00:00.000Z",
+                  "billingEnd": "2025-12-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-11-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 241000,
+                  "currentRetention": 24100,
+                  "totalRetention": 4210400,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 303433000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-02-04T19:50:50.995Z"
+                },
+                {
+                  "id": "74f4edd9-3acc-489a-934a-3039dd3fb90c",
+                  "createdAt": "2025-09-11T12:49:13.051Z",
+                  "payAppNumber": 7,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-10-26T04:00:00.000Z",
+                  "billingStart": "2025-09-01T04:00:00.000Z",
+                  "billingEnd": "2025-10-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-09-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 5170550,
+                  "currentRetention": 517055,
+                  "totalRetention": 2927055,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 316266450,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-12-11T21:01:02.106Z"
+                },
+                {
+                  "id": "f7c310e4-7497-487b-96cf-5a2fde9a056d",
+                  "createdAt": "2025-06-19T12:59:59.448Z",
+                  "payAppNumber": 4,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-08-25T04:00:00.000Z",
+                  "billingStart": "2025-06-01T04:00:00.000Z",
+                  "billingEnd": "2025-07-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-06-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 7505000,
+                  "currentRetention": 750500,
+                  "totalRetention": 1200000,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 333537000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-09-17T12:12:25.723Z"
+                },
+                {
+                  "id": "3f7c7cdf-cf33-4e9a-a4ab-257912af5278",
+                  "createdAt": "2025-07-18T19:38:10.335Z",
+                  "payAppNumber": 5,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-09-18T04:00:00.000Z",
+                  "billingStart": "2025-07-01T04:00:00.000Z",
+                  "billingEnd": "2025-08-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-07-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 1000000,
+                  "currentRetention": 100000,
+                  "totalRetention": 1300000,
+                  "totalValue": 136045000,
+                  "balanceToFinish": 332537000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-09-26T18:27:45.734Z"
+                },
+                {
+                  "id": "b4ad349f-5d38-42d2-8054-f44430459c89",
+                  "createdAt": "2025-03-28T19:00:52.614Z",
+                  "payAppNumber": 1,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-06-04T04:00:00.000Z",
+                  "billingStart": "2025-03-01T05:00:00.000Z",
+                  "billingEnd": "2025-04-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-03-29T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 1500000,
+                  "currentRetention": 150000,
+                  "totalRetention": 150000,
+                  "totalValue": 12255000,
+                  "balanceToFinish": 344037000,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-09-17T12:07:49.474Z"
+                }
+              ]
+            },
+            {
+              "id": "a0dd6156-06cc-46c0-8067-0e16a996e3cc",
+              "createdAt": "2025-02-26T15:35:50.252Z",
+              "updatedAt": "2025-03-18T17:24:02.165Z",
+              "internalProjectNumber": "09921",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "1e5178bd-ff4d-4357-a6f8-217a5f5f2566",
+                "name": "09921 - American University Roper Hall (Davis) (GoelDC-NS) (TS-LL)",
+                "projectNumber": "21472-014",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2025-02-26T15:35:50.252Z",
+                "updatedAt": "2025-03-05T13:54:05.656Z",
+                "gcAddress": {
+                  "street1": "12530 Parklawn Drive",
+                  "city": "Rockville",
+                  "state": "MD",
+                  "postalCode": "20852",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "ada26fca-461a-4b2e-8bb9-ab757d6da068",
+                  "createdAt": "2025-06-13T17:00:15.788Z",
+                  "payAppNumber": 3,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-07-22T04:00:00.000Z",
+                  "billingStart": "2025-06-01T04:00:00.000Z",
+                  "billingEnd": "2025-07-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-06-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 1501500,
+                  "currentRetention": 150150,
+                  "totalRetention": 1128662,
+                  "totalValue": 13528264,
+                  "balanceToFinish": 6369320,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-08-13T18:11:15.082Z"
+                },
+                {
+                  "id": "b732523c-3560-44bd-a40b-c1d4f903cb11",
+                  "createdAt": "2025-11-21T12:38:28.970Z",
+                  "payAppNumber": 4,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-02-27T05:00:00.000Z",
+                  "billingStart": "2025-11-01T04:00:00.000Z",
+                  "billingEnd": "2025-12-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-11-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 6369320,
+                  "currentRetention": 636933,
+                  "totalRetention": 1765595,
+                  "totalValue": 17655944,
+                  "balanceToFinish": 0,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-19T14:29:44.423Z"
+                },
+                {
+                  "id": "0491335b-fb3e-4a80-9f1e-0ad25c0cee18",
+                  "createdAt": "2025-05-12T12:19:37.983Z",
+                  "payAppNumber": 2,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-07-08T04:00:00.000Z",
+                  "billingStart": "2025-05-01T04:00:00.000Z",
+                  "billingEnd": "2025-06-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-05-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 5587624,
+                  "currentRetention": 558762,
+                  "totalRetention": 978512,
+                  "totalValue": 13528264,
+                  "balanceToFinish": 7870820,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-07-16T12:03:49.460Z"
+                },
+                {
+                  "id": "7a8faa25-9769-4b0a-8474-529e042dda09",
+                  "createdAt": "2025-04-16T13:52:05.147Z",
+                  "payAppNumber": 1,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-06-10T04:00:00.000Z",
+                  "billingStart": "2025-04-01T04:00:00.000Z",
+                  "billingEnd": "2025-05-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-04-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 4197500,
+                  "currentRetention": 419750,
+                  "totalRetention": 419750,
+                  "totalValue": 13528264,
+                  "balanceToFinish": 13458444,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-06-12T18:43:34.552Z"
+                }
+              ]
+            },
+            {
+              "id": "9b302e9f-3544-4b23-b001-c202dc965f44",
+              "createdAt": "2025-02-26T15:21:11.190Z",
+              "updatedAt": "2025-03-13T18:07:13.419Z",
+              "internalProjectNumber": "09922",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "58056278-0ef9-46c3-92bf-36279a5064a2",
+                "name": "09922 - Belmont Crossing Phase 2 (Bozzuto) (GoelDC-PW) (TS-LL)",
+                "projectNumber": "Belmont 2A/2B",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2025-02-26T15:21:11.190Z",
+                "updatedAt": "2025-03-05T13:56:25.952Z",
+                "gcAddress": {
+                  "street1": "6406 Ivy Lane",
+                  "city": "Greenbelt",
+                  "state": "MD",
+                  "postalCode": "20770",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "00e67eab-7fa0-45cf-bc6c-3cefe4fe16c7",
+                  "createdAt": "2025-03-12T13:31:53.845Z",
+                  "payAppNumber": 1,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-05-30T04:00:00.000Z",
+                  "billingStart": "2025-03-01T05:00:00.000Z",
+                  "billingEnd": "2025-04-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-03-19T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 15755000,
+                  "currentRetention": 1575500,
+                  "totalRetention": 1575500,
+                  "totalValue": 15755000,
+                  "balanceToFinish": 0,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-06-06T12:57:32.521Z"
+                }
+              ]
+            },
+            {
+              "id": "3cd392cc-2a30-4821-a622-763482d1f880",
+              "createdAt": "2025-03-31T19:10:20.226Z",
+              "updatedAt": "2025-04-11T18:04:09.077Z",
+              "internalProjectNumber": "09923",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 0.9484,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "4df47a54-08b7-4678-b3b2-f08263aaf10d",
+                "name": "09923 - Belmont Crossing Phase 2- 2C-2D (Bozzuto) (GoelDC-XX) (TS-LL)",
+                "projectNumber": "SC-1356-031",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2025-03-31T19:10:20.226Z",
+                "updatedAt": "2025-03-31T19:10:20.226Z",
+                "gcAddress": {
+                  "street1": "6406 Ivy Lane",
+                  "city": "Greenbelt",
+                  "state": "MD",
+                  "postalCode": "20770",
+                  "country": "United States"
+                }
+              },
+              "payApps": [
+                {
+                  "id": "27aa3115-045d-496e-a32f-0b011fff019a",
+                  "createdAt": "2026-02-13T19:36:24.764Z",
+                  "payAppNumber": 4,
+                  "billingType": "LUMP_SUM",
+                  "status": "PROPOSED",
+                  "statusChangedAt": "2026-01-15T05:00:00.000Z",
+                  "billingStart": "2026-01-01T05:00:00.000Z",
+                  "billingEnd": "2026-02-01T04:59:59.999Z",
+                  "payAppDueDate": "2026-01-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 32501690,
+                  "currentRetention": 3250169,
+                  "totalRetention": 6879634,
+                  "totalValue": 110480000,
+                  "balanceToFinish": 43332925,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-02-13T19:39:02.576Z"
+                },
+                {
+                  "id": "33f84f96-51b9-4580-ac8b-9331bc32eb31",
+                  "createdAt": "2026-02-18T11:10:33.421Z",
+                  "payAppNumber": 5,
+                  "billingType": "LUMP_SUM",
+                  "status": "PROPOSED",
+                  "statusChangedAt": "2026-02-18T17:19:58.611Z",
+                  "billingStart": "2026-02-01T05:00:00.000Z",
+                  "billingEnd": "2026-03-01T04:59:59.999Z",
+                  "payAppDueDate": "2026-02-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 34430185,
+                  "currentRetention": 3443019,
+                  "totalRetention": 10322653,
+                  "totalValue": 110912665,
+                  "balanceToFinish": 8902740,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-02-18T17:19:49.339Z"
+                },
+                {
+                  "id": "03bfc271-c7ff-41ec-8ea1-fc1b01f97830",
+                  "createdAt": "2025-12-18T20:45:31.779Z",
+                  "payAppNumber": 3,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-03-13T04:00:00.000Z",
+                  "billingStart": "2025-12-01T05:00:00.000Z",
+                  "billingEnd": "2026-01-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-12-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 5359850,
+                  "currentRetention": 535985,
+                  "totalRetention": 3629465,
+                  "totalValue": 110480000,
+                  "balanceToFinish": 75834615,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-19T14:28:36.262Z"
+                },
+                {
+                  "id": "2401534d-55b1-4d04-a8b0-d495fa4e5aa8",
+                  "createdAt": "2025-11-17T20:24:05.627Z",
+                  "payAppNumber": 2,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2026-01-13T05:00:00.000Z",
+                  "billingStart": "2025-11-01T04:00:00.000Z",
+                  "billingEnd": "2025-12-01T04:59:59.999Z",
+                  "payAppDueDate": "2025-11-21T04:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 15179800,
+                  "currentRetention": 1517980,
+                  "totalRetention": 3093480,
+                  "totalValue": 110480000,
+                  "balanceToFinish": 81194465,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-02-16T18:34:43.907Z"
+                },
+                {
+                  "id": "03b396da-f681-419f-b480-12d681f48b09",
+                  "createdAt": "2025-04-04T16:56:39.930Z",
+                  "payAppNumber": 1,
+                  "billingType": "LUMP_SUM",
+                  "status": "PAID",
+                  "statusChangedAt": "2025-07-07T04:00:00.000Z",
+                  "billingStart": "2025-04-01T04:00:00.000Z",
+                  "billingEnd": "2025-05-01T03:59:59.999Z",
+                  "payAppDueDate": "2025-04-29T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 15755000,
+                  "currentRetention": 1575500,
+                  "totalRetention": 1575500,
+                  "totalValue": 15755000,
+                  "balanceToFinish": 96374265,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2025-09-15T18:54:26.881Z"
+                },
+                {
+                  "id": "0af494b3-01ed-4dfa-b346-465d2b05526f",
+                  "createdAt": "2026-03-10T19:39:56.582Z",
+                  "payAppNumber": 6,
+                  "billingType": "LUMP_SUM",
+                  "status": "PROPOSED",
+                  "statusChangedAt": "2026-03-10T19:59:39.238Z",
+                  "billingStart": "2026-03-01T05:00:00.000Z",
+                  "billingEnd": "2026-04-01T03:59:59.999Z",
+                  "payAppDueDate": "2026-03-21T03:59:59.999Z",
+                  "timeZone": "America/New_York",
+                  "retentionOnly": false,
+                  "currentBilled": 3116600,
+                  "currentRetention": 311660,
+                  "totalRetention": 10634313,
+                  "totalValue": 112129265,
+                  "balanceToFinish": 5786140,
+                  "previousRetentionBilled": 0,
+                  "retentionReleased": null,
+                  "retentionHeldPercent": 0.1,
+                  "updatedAt": "2026-03-10T19:59:44.373Z"
+                }
+              ]
+            },
+            {
+              "id": "efde0bcd-70b5-4afd-8b9e-66911a6acd13",
+              "createdAt": "2024-01-18T18:30:14.959Z",
+              "updatedAt": "2025-08-25T15:11:10.050Z",
+              "internalProjectNumber": "24007",
+              "billingType": "LUMP_SUM",
+              "percentComplete": 1,
+              "status": "ACTIVE",
+              "timeZone": "America/New_York",
+              "paymentTermsType": null,
+              "paymentTerms": null,
+              "project": {
+                "id": "03d9de83-b872-4a0f-ad8b-d3ff6f7d2563",
+                "name": "24007 - DGS HC Core & Shell (RD/JS)",
+                "projectNumber": "21021",
+                "timeZone": "America/New_York",
+                "gcName": null,
+                "bondNumber": null,
+                "createdAt": "2024-01-18T18:30:14.959Z",
+                "updatedAt": "2024-02-02T20:16:00.980Z",
+                "gcAddress": null
+              },
+              "payApps": []
+            }
+          ]
+        }
+      }
+    },
+    "contractById": {
+      "id": "bfa96bf4-2a47-4d3a-bd71-d0cfc89c4567",
+      "response": {
+        "data": {
+          "contract": {
+            "id": "bfa96bf4-2a47-4d3a-bd71-d0cfc89c4567",
+            "createdAt": "2024-02-07T15:21:46.835Z",
+            "updatedAt": "2024-05-22T15:36:53.689Z",
+            "internalProjectNumber": "09914",
+            "billingType": "LUMP_SUM",
+            "status": "ACTIVE",
+            "timeZone": "America/New_York",
+            "paymentTermsType": null,
+            "paymentTerms": null,
+            "percentComplete": 1,
+            "leadPMs": [
+              {
+                "id": "wcA5l8QIOQf62tBcKd7YmOJdsmy2",
+                "firstName": "Timothy",
+                "lastName": "Short",
+                "email": "timothy.short@goelservices.com"
+              }
+            ],
+            "project": {
+              "id": "2c818a25-bf1f-41cf-b6fb-3bc9481268a2",
+              "name": "09914 - Aiton Elementary School (TS/LL)",
+              "projectNumber": "GBC-J09601.000",
+              "timeZone": "America/New_York",
+              "createdAt": "2024-02-07T15:21:46.835Z",
+              "updatedAt": "2024-02-07T15:21:46.835Z",
+              "gcName": null,
+              "bondNumber": null,
+              "gcAddress": {
+                "street1": "7 Jackson Walkway",
+                "city": "Providence",
+                "state": "RI",
+                "postalCode": "02903",
+                "country": "United States"
+              }
+            },
+            "sov": {
+              "id": "13fabd0c-8738-4b85-835f-cf989acd51f5",
+              "totalValue": 111143446,
+              "totalBilled": 111143446,
+              "totalRetention": 5557173,
+              "progressComplete": 100,
+              "lineItems": [
+                {
+                  "id": "fdc4e0c8-4623-4d23-ad6e-dcb7d30ff2dd",
+                  "code": "001*GBC-J09601",
+                  "name": "001 - IS-00010 - Additional Demolition Scope",
+                  "originalTotalValue": 1500000,
+                  "latestTotalValue": 1500000,
+                  "totalBilled": 1500000,
+                  "totalRetention": 75000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "6a92933c-bb4c-47e2-abb3-9eb536433867",
+                  "code": "001*GBC-J09601",
+                  "name": "001 - IS-00010 - Additional Demolition Scope",
+                  "originalTotalValue": 2076800,
+                  "latestTotalValue": 2076800,
+                  "totalBilled": 2076800,
+                  "totalRetention": 103840,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "20d06c59-0af5-4718-80a8-c6107e52f460",
+                  "code": "001*GBC-J09601",
+                  "name": "001 - IS-00010 - Additional Demolition Scope",
+                  "originalTotalValue": 3902900,
+                  "latestTotalValue": 3902900,
+                  "totalBilled": 3902900,
+                  "totalRetention": 195145,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "20994f41-9130-418c-8a3d-ac8e859cf769",
+                  "code": "001*GBC-J09601",
+                  "name": "001 - IS-00010 - Additional Demolition Scope",
+                  "originalTotalValue": 3556000,
+                  "latestTotalValue": 3556000,
+                  "totalBilled": 3556000,
+                  "totalRetention": 177800,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "9487a1d5-22b9-45dd-b790-d06f444dc7b1",
+                  "code": "001*GBC-J09601",
+                  "name": "001 - IS-00010 - Additional Demolition Scope",
+                  "originalTotalValue": 10396500,
+                  "latestTotalValue": 10396500,
+                  "totalBilled": 10396500,
+                  "totalRetention": 519825,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "a3ad1e74-7c33-423f-be55-243319b6d4c8",
+                  "code": "002*GBC-J09601",
+                  "name": "002 - IS-00018 - Additional Demolition in Renovation",
+                  "originalTotalValue": 2448000,
+                  "latestTotalValue": 2448000,
+                  "totalBilled": 2448000,
+                  "totalRetention": 122400,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "022c42c0-2734-4a9f-a0cf-39c2092f2e0e",
+                  "code": "003*j09601",
+                  "name": "003:IS-00026-Additional Demolition at the Renovation associated with the IFC Changes",
+                  "originalTotalValue": 1663370,
+                  "latestTotalValue": 1663370,
+                  "totalBilled": 1663370,
+                  "totalRetention": 83169,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "e3d3ce23-bf4f-4f2f-b2e2-81ebf3222640",
+                  "code": "004*J09601",
+                  "name": "004:IS-00022-Additional Demolition at Renovation - Joist Bridging Demo and Additional Slab Openings for MEP Systems",
+                  "originalTotalValue": 5300000,
+                  "latestTotalValue": 5300000,
+                  "totalBilled": 5300000,
+                  "totalRetention": 265000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "4290853a-4040-4a02-ab09-053d5c10839e",
+                  "code": "1",
+                  "name": "Lobby Protection",
+                  "originalTotalValue": 1500000,
+                  "latestTotalValue": 1500000,
+                  "totalBilled": 1500000,
+                  "totalRetention": 75000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "3a940c70-366e-4029-843f-c8f424baa2ef",
+                  "code": "2",
+                  "name": "1st Floor Clearance",
+                  "originalTotalValue": 1100000,
+                  "latestTotalValue": 1100000,
+                  "totalBilled": 1100000,
+                  "totalRetention": 55000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "de01a915-f9d5-49b9-8682-fc08499af108",
+                  "code": "3",
+                  "name": "1st Floor Demo",
+                  "originalTotalValue": 7100000,
+                  "latestTotalValue": 7100000,
+                  "totalBilled": 7100000,
+                  "totalRetention": 355000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "2d360ad5-2992-4817-b2e9-bcb1e02e7978",
+                  "code": "4",
+                  "name": "2nd Floor Abatement",
+                  "originalTotalValue": 5500000,
+                  "latestTotalValue": 5500000,
+                  "totalBilled": 5500000,
+                  "totalRetention": 275000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "b6c4ee21-e1cc-4f21-a685-55b13e937d1b",
+                  "code": "5",
+                  "name": "2nd Floor Clearance",
+                  "originalTotalValue": 1100000,
+                  "latestTotalValue": 1100000,
+                  "totalBilled": 1100000,
+                  "totalRetention": 55000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "4b9d7d7c-cc68-4c08-b582-5c5d1c94a258",
+                  "code": "6",
+                  "name": "2nd Floor Demo",
+                  "originalTotalValue": 8400000,
+                  "latestTotalValue": 8400000,
+                  "totalBilled": 8400000,
+                  "totalRetention": 420000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "dacaa158-9b61-4752-9849-b7d646daa002",
+                  "code": "7",
+                  "name": "3rd Floor Abatement",
+                  "originalTotalValue": 5500000,
+                  "latestTotalValue": 5500000,
+                  "totalBilled": 5500000,
+                  "totalRetention": 275000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "4f75c6c3-528d-4745-ba0b-fd50435dc172",
+                  "code": "8",
+                  "name": "3rd Floor Clearance",
+                  "originalTotalValue": 1100000,
+                  "latestTotalValue": 1100000,
+                  "totalBilled": 1100000,
+                  "totalRetention": 55000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "1fcbf564-1202-4cdf-bee7-8372c12609aa",
+                  "code": "9",
+                  "name": "3rd Floor Demo",
+                  "originalTotalValue": 8400000,
+                  "latestTotalValue": 8400000,
+                  "totalBilled": 8400000,
+                  "totalRetention": 420000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "5439c584-81ca-48bb-928c-ac856009a35d",
+                  "code": "10",
+                  "name": "4th Floor Abatement",
+                  "originalTotalValue": 5500000,
+                  "latestTotalValue": 5500000,
+                  "totalBilled": 5500000,
+                  "totalRetention": 275000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "e8036a0a-c235-41c1-b11a-5d3f3154f7b8",
+                  "code": "11",
+                  "name": "4th Floor Clearance",
+                  "originalTotalValue": 1100000,
+                  "latestTotalValue": 1100000,
+                  "totalBilled": 1100000,
+                  "totalRetention": 55000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "a27ee774-d2ac-4c77-9392-7eb32ccec290",
+                  "code": "12",
+                  "name": "4th Floor Demo",
+                  "originalTotalValue": 8400000,
+                  "latestTotalValue": 8400000,
+                  "totalBilled": 8400000,
+                  "totalRetention": 420000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "760d5455-3a9c-4a5a-930e-e2cc1a81a0fc",
+                  "code": "13",
+                  "name": "Furniture Movement (upto 15 dumpsters)",
+                  "originalTotalValue": 4200000,
+                  "latestTotalValue": 4200000,
+                  "totalBilled": 4200000,
+                  "totalRetention": 210000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "75d224ea-26d9-442c-a083-75b023a6cc07",
+                  "code": "14",
+                  "name": "Mechanical Room",
+                  "originalTotalValue": 1780000,
+                  "latestTotalValue": 1780000,
+                  "totalBilled": 1780000,
+                  "totalRetention": 89000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "fddbc444-c514-473d-aebc-8b7e6e84db19",
+                  "code": "15",
+                  "name": "Asbestos Permit",
+                  "originalTotalValue": 650000,
+                  "latestTotalValue": 650000,
+                  "totalBilled": 650000,
+                  "totalRetention": 32500,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "c10ff9b2-a4a3-470f-97ad-b4cf002d7468",
+                  "code": "16",
+                  "name": "Lead (Pb) Permit",
+                  "originalTotalValue": 600000,
+                  "latestTotalValue": 600000,
+                  "totalBilled": 600000,
+                  "totalRetention": 30000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "e4635473-8a78-425e-ab31-5fd2abc77cd2",
+                  "code": "17",
+                  "name": "Separation of Multipurpose Room",
+                  "originalTotalValue": 1900000,
+                  "latestTotalValue": 1900000,
+                  "totalBilled": 1900000,
+                  "totalRetention": 95000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "e50cba81-cb7a-4beb-9ac7-03f58ea75e2d",
+                  "code": "18",
+                  "name": "Auditorium",
+                  "originalTotalValue": 3500000,
+                  "latestTotalValue": 3500000,
+                  "totalBilled": 3500000,
+                  "totalRetention": 175000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "4ebbf52b-f1e5-4540-9567-0d21f2d9233d",
+                  "code": "19",
+                  "name": "Slab Demo",
+                  "originalTotalValue": 2040000,
+                  "latestTotalValue": 2040000,
+                  "totalBilled": 2040000,
+                  "totalRetention": 102000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "e32f7523-a1b1-433f-a9a0-c324dbe4eb5a",
+                  "code": "20",
+                  "name": "SOG Saw Cut Allowance (200sf)",
+                  "originalTotalValue": 360000,
+                  "latestTotalValue": 360000,
+                  "totalBilled": 360000,
+                  "totalRetention": 18000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "faf34699-441b-44f0-87a3-3b7a978a0752",
+                  "code": "21",
+                  "name": "1st floor Abatement",
+                  "originalTotalValue": 5500000,
+                  "latestTotalValue": 5500000,
+                  "totalBilled": 5500000,
+                  "totalRetention": 275000,
+                  "progressComplete": 100
+                },
+                {
+                  "id": "6c8ad9e5-71c5-4790-9529-e0b8f7e9e79f",
+                  "code": "005*J09601",
+                  "name": "005:IS00049-Demolition of Concrete Joists for Roof Reinforcement Channels and Opening ERV Opening",
+                  "originalTotalValue": 5069876,
+                  "latestTotalValue": 5069876,
+                  "totalBilled": 5069876,
+                  "totalRetention": 253494,
+                  "progressComplete": 100
+                }
+              ]
+            },
+            "payApps": []
+          }
+        }
+      }
+    },
+    "payAppById": {
+      "skipped": "No pay app id from first contract"
+    }
+  }
+}

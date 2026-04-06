@@ -72,16 +72,10 @@ export class SitelineController {
   @UseGuards(JwtAuthGuard)
   @Get('contracts/paginated')
   async getPaginatedContracts(
-    @Query('month') month?: string,
-    @Query('payAppStatus') payAppStatus?: string,
-    @Query('contractStatus') contractStatus?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
     return this.siteline.getPaginatedContracts({
-      month,
-      payAppStatus,
-      contractStatus,
       limit: limit ? parseInt(limit, 10) : undefined,
       cursor,
     });
@@ -101,10 +95,15 @@ export class SitelineController {
     return this.siteline.getPayApp(id);
   }
 
-  /** Aging report from synced DB: net dollars by project and days-past-due bucket. */
+  /**
+   * Aging report: **default** reads `Siteline_AgingContracts` / `Siteline_AgingSummary` populated by the Siteline sync
+   * cron (`agingDashboard`). `useSitelineDashboard=false` uses synced pay apps + local due-date buckets instead.
+   */
   @UseGuards(JwtAuthGuard)
   @Get('aging-report')
   async getAgingReport(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('search') search?: string,
     @Query('overdueOnly') overdueOnly?: string,
     @Query('minDaysPastDue') minDaysPastDue?: string,
@@ -113,8 +112,11 @@ export class SitelineController {
     @Query('maxNetDollars') maxNetDollars?: string,
     @Query('includeStatuses') includeStatuses?: string,
     @Query('excludeStatuses') excludeStatuses?: string,
+    @Query('useSitelineDashboard') useSitelineDashboard?: string,
   ) {
     return this.report.getAgingReport({
+      startDate,
+      endDate,
       search,
       overdueOnly: parseBool(overdueOnly),
       minDaysPastDue: parseNum(minDaysPastDue),
@@ -123,10 +125,14 @@ export class SitelineController {
       maxNetDollars: parseNum(maxNetDollars),
       includeStatuses: parseCsv(includeStatuses),
       excludeStatuses: parseCsv(excludeStatuses),
+      useSitelineDashboard: parseBool(useSitelineDashboard),
     });
   }
 
-  /** Overdue aging view: pay apps with daysPastDue > 50 and netDollars > 0, including PM info. */
+  /**
+   * Overdue aging view: pay apps with netDollars > 0 and days past due at least `minDaysPastDue`
+   * (default 51, matching legacy "> 50 days"; pass 10, 23, etc. for a custom floor).
+   */
   @UseGuards(JwtAuthGuard)
   @Get('aging-overdue')
   async getAgingOverdue(
@@ -155,14 +161,22 @@ export class SitelineController {
   @UseGuards(JwtAuthGuard)
   @Get('pay-apps/paginated')
   async getPaginatedPayApps(
-    @Query('submittedInMonth') submittedInMonth?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
     return this.siteline.getPaginatedPayApps({
-      submittedInMonth,
       limit: limit ? parseInt(limit, 10) : undefined,
       cursor,
     });
+  }
+
+  /**
+   * Debug: show raw DB pay app dates and how we bucket them.
+   * Use to compare with Siteline's agingDashboard buckets for a specific internal project number.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('debug/aging')
+  async debugAging(@Query('internalProjectNumber') internalProjectNumber: string) {
+    return this.report.debugAgingByInternalProjectNumber(String(internalProjectNumber ?? '').trim());
   }
 }

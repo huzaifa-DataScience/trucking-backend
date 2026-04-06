@@ -34,5 +34,20 @@ export class SitelineContract {
 
   @Column({ type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   lastSyncedAt!: Date;
+
+  /** Raw Siteline `agingBreakdown` JSON from last `agingDashboard` sync (cents fields unchanged). */
+  @Column({ type: 'nvarchar', length: 'max', nullable: true })
+  agingBreakdownJson!: string | null;
+
+  /** `DashboardInput.startDate` (YYYY-MM-DD) for the cached breakdown. */
+  @Column({ type: 'nvarchar', length: 10, nullable: true })
+  agingDashboardStartDate!: string | null;
+
+  /** `DashboardInput.endDate` (YYYY-MM-DD) for the cached breakdown. */
+  @Column({ type: 'nvarchar', length: 10, nullable: true })
+  agingDashboardEndDate!: string | null;
+
+  @Column({ type: 'datetime2', nullable: true })
+  agingBreakdownSyncedAt!: Date | null;
 }
 
