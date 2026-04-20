@@ -1,0 +1,150 @@
+{
+  "projects": [
+    {
+      "id": 101,
+      "jobNumber": "JOB-1001",
+      "name": "West Campus Expansion",
+      "office": "Dallas",
+      "region": "TX",
+      "division": "Mechanical",
+      "customerName": "Acme Owner LLC",
+      "startDate": "2026-01-15",
+      "endDate": "2026-12-20",
+      "baseContractValue": 1250000
+    },
+    {
+      "id": 102,
+      "jobNumber": "JOB-1002",
+      "name": "Airport Retrofit Phase 2",
+      "office": "Phoenix",
+      "region": "AZ",
+      "division": "General",
+      "customerName": "Skyport Partners",
+      "startDate": "2026-02-01",
+      "endDate": null,
+      "baseContractValue": 820000
+    }
+  ],
+  "corsByProjectId": {
+    "101": [
+      {
+        "id": 9001,
+        "issueNumber": "COR-0017",
+        "type": "DETAILED_CO",
+        "statusBucket": "IN_REVIEW",
+        "stage": "ROM",
+        "ballInCourt": "CUSTOMER",
+        "latestVersion": { "version": 3, "grandTotal": 5781 },
+        "updatedAt": "2026-04-01T18:22:10.000Z",
+        "notes": [
+          {
+            "id": 1,
+            "createdAt": "2026-03-29T14:10:00.000Z",
+            "author": "PM",
+            "body": "Customer requested ROM pricing; awaiting confirmation."
+          }
+        ],
+        "lineItems": [
+          {
+            "category": "LABOR",
+            "description": "Foreman",
+            "qty": 20,
+            "unit": "hours",
+            "unitCost": 95,
+            "amount": 1900,
+            "laborHours": 20,
+            "laborRole": "Foreman"
+          },
+          {
+            "category": "MATERIAL",
+            "description": "Rubber membrane",
+            "qty": 12,
+            "unit": "roll",
+            "unitCost": 140,
+            "amount": 1680
+          }
+        ]
+      },
+      {
+        "id": 9002,
+        "issueNumber": "TM-0042",
+        "type": "TM_TAG",
+        "statusBucket": "ATP",
+        "stage": "Estimate",
+        "ballInCourt": "OWNER",
+        "latestVersion": { "version": 1, "grandTotal": 12350 },
+        "updatedAt": "2026-03-27T12:01:00.000Z",
+        "notes": [],
+        "lineItems": [
+          {
+            "category": "LABOR",
+            "description": "Insulator crew",
+            "qty": 48,
+            "unit": "hours",
+            "unitCost": null,
+            "amount": 7200,
+            "laborHours": 48,
+            "laborRole": "Insulator"
+          },
+          {
+            "category": "EQUIPMENT",
+            "description": "Lift rental",
+            "qty": 2,
+            "unit": "day",
+            "unitCost": 850,
+            "amount": 1700
+          }
+        ]
+      },
+      {
+        "id": 9003,
+        "issueNumber": "COR-0009",
+        "type": "LUMP_SUM_CO",
+        "statusBucket": "APPROVED",
+        "stage": "Approved",
+        "ballInCourt": "INTERNAL",
+        "latestVersion": { "version": 2, "grandTotal": 45000 },
+        "updatedAt": "2026-03-05T09:15:00.000Z",
+        "notes": [
+          {
+            "id": 2,
+            "createdAt": "2026-03-01T10:00:00.000Z",
+            "author": "Estimator",
+            "body": "Revised scope reduced hours from 100 to 20 on v2."
+          }
+        ],
+        "voidLog": null
+      },
+      {
+        "id": 9004,
+        "issueNumber": "COR-0003",
+        "type": "DETAILED_CO",
+        "statusBucket": "VOID",
+        "stage": "Void",
+        "ballInCourt": "UNKNOWN",
+        "latestVersion": { "version": 1, "grandTotal": 9800 },
+        "updatedAt": "2026-02-10T16:45:00.000Z",
+        "notes": [],
+        "voidLog": {
+          "voidedAt": "2026-02-10T16:45:00.000Z",
+          "reason": "Duplicate request",
+          "breadcrumbs": ["Submitted", "Reviewed", "Marked duplicate", "Voided"]
+        }
+      }
+    ],
+    "102": [
+      {
+        "id": 9101,
+        "issueNumber": "COR-0001",
+        "type": "DETAILED_CO",
+        "statusBucket": "PLACEHOLDER",
+        "stage": "Potential CO",
+        "ballInCourt": "INTERNAL",
+        "latestVersion": { "version": 1, "grandTotal": 25000 },
+        "updatedAt": "2026-04-02T08:00:00.000Z",
+        "notes": []
+      }
+    ]
+  }
+}
+

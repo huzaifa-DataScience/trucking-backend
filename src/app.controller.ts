@@ -158,6 +158,19 @@ export class AppController {
           agingReport: 'GET /siteline/aging-report',
           agingOverdue: 'GET /siteline/aging-overdue (optional minDaysPastDue, default 51)',
         },
+        clearstory: {
+          projects: 'GET /clearstory/projects',
+          projectSummary: 'GET /clearstory/projects/:id/summary',
+          projectCors: 'GET /clearstory/projects/:id/cors',
+          apiPayload: 'GET /clearstory/api-payload?type=&key= (full JSON from last sync; see docs/frontend-clearstory-api.md)',
+          tasks: 'GET /clearstory/tasks',
+        },
+        clearstoryMock: {
+          projects: 'GET /clearstory-mock/projects',
+          projectSummary: 'GET /clearstory-mock/projects/:id/summary',
+          projectCors: 'GET /clearstory-mock/projects/:id/cors',
+          tasks: 'GET /clearstory-mock/tasks',
+        },
         health: {
           ping: 'GET /health/ping (server up? no auth)',
           db: 'GET /health/db (confirm DB connection, no auth)',
