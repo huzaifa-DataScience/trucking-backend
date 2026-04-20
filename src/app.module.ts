@@ -14,6 +14,8 @@ import { LookupsModule } from './lookups/lookups.module';
 import { MaterialDashboardModule } from './material-dashboard/material-dashboard.module';
 import { SitelineModule } from './siteline/siteline.module';
 import { TicketsModule } from './tickets/tickets.module';
+import { ClearstoryMockModule } from './clearstory-mock/clearstory-mock.module';
+import { ClearstoryModule } from './clearstory/clearstory.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { TicketsModule } from './tickets/tickets.module';
     ForensicModule,
     SitelineModule,
     TicketsModule,
+    ClearstoryMockModule,
+    ClearstoryModule,
   ],
   controllers: [AppController],
 })
