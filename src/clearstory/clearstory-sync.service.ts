@@ -28,6 +28,38 @@ const RATE_TYPES = ['labor', 'material', 'equipment', 'other'] as const;
 
 type BackfillMode = 'ALL' | 'ONLY_MISSING';
 
+/** Persisted under Clearstory_SyncState key `tagsPhaseLast` after each tags sync attempt. */
+export type ClearstoryTagsPhaseDiag = {
+  ranAt: string;
+  saved: number;
+  uniqueIds: number;
+  strategies: ClearstoryTagsStrategyDiag[];
+};
+
+export type ClearstoryTagsStrategyDiag = {
+  label: string;
+  params: Record<string, unknown>;
+  pages: number;
+  rowsSeen: number;
+  firstPageListLen: number;
+  lastSkip: number;
+  lastApiCount: number | null;
+  error: string | null;
+};
+
+function newTagsStrategyDiag(label: string, params: Record<string, unknown>): ClearstoryTagsStrategyDiag {
+  return {
+    label,
+    params,
+    pages: 0,
+    rowsSeen: 0,
+    firstPageListLen: 0,
+    lastSkip: 0,
+    lastApiCount: null,
+    error: null,
+  };
+}
+
 function strOpt(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -409,8 +441,8 @@ export class ClearstorySyncService implements OnModuleInit {
           JobNumber nvarchar(100) NULL,
           CorNumber nvarchar(100) NULL,
           IssueNumber nvarchar(100) NULL,
-          Title nvarchar(500) NULL,
-          Description nvarchar(4000) NULL,
+          Title nvarchar(MAX) NULL,
+          Description nvarchar(MAX) NULL,
           EntryMethod nvarchar(100) NULL,
           Type nvarchar(50) NULL,
           Status nvarchar(50) NULL,
@@ -418,12 +450,12 @@ export class ClearstorySyncService implements OnModuleInit {
           BallInCourt nvarchar(50) NULL,
           Version int NULL,
           CustomerJobNumber nvarchar(100) NULL,
-          CustomerReferenceNumber nvarchar(200) NULL,
+          CustomerReferenceNumber nvarchar(MAX) NULL,
           ChangeNotificationId int NULL,
-          ProjectName nvarchar(255) NULL,
+          ProjectName nvarchar(MAX) NULL,
           ContractId int NULL,
-          CustomerName nvarchar(255) NULL,
-          ContractorName nvarchar(255) NULL,
+          CustomerName nvarchar(MAX) NULL,
+          ContractorName nvarchar(MAX) NULL,
           CustomerCoNumber nvarchar(100) NULL,
           DateSubmitted datetime2 NULL,
           RequestedAmount decimal(18,2) NULL,
@@ -454,9 +486,9 @@ export class ClearstorySyncService implements OnModuleInit {
           JobNumber nvarchar(100) NULL,
           Number nvarchar(100) NULL,
           PaddedTagNumber nvarchar(100) NULL,
-          Title nvarchar(255) NULL,
+          Title nvarchar(MAX) NULL,
           Status nvarchar(50) NULL,
-          CustomerReferenceNumber nvarchar(200) NULL,
+          CustomerReferenceNumber nvarchar(MAX) NULL,
           DateOfWorkPerformed datetime2 NULL,
           SignedAt datetime2 NULL,
           UpdatedAt datetime2 NULL,
@@ -545,6 +577,41 @@ export class ClearstorySyncService implements OnModuleInit {
         );
       END
     `);
+
+    // Idempotent column widenings for tables created by an earlier schema.
+    // Free-text columns (titles, descriptions, customer references, names) regularly exceed
+    // their original fixed widths and cause TDS errors
+    // ("Data type 0xE7 has an invalid data length or metadata length") on batched INSERTs.
+    // Widen only non-indexed free-text columns to nvarchar(MAX); indexed columns (JobNumber,
+    // Status) stay fixed-width because SQL Server does not allow altering an indexed column
+    // to MAX without dropping the index first.
+    const widenToMax: { table: string; column: string }[] = [
+      { table: 'Clearstory_Cors', column: 'Description' },
+      { table: 'Clearstory_Cors', column: 'Title' },
+      { table: 'Clearstory_Cors', column: 'CustomerReferenceNumber' },
+      { table: 'Clearstory_Cors', column: 'ProjectName' },
+      { table: 'Clearstory_Cors', column: 'CustomerName' },
+      { table: 'Clearstory_Cors', column: 'ContractorName' },
+      { table: 'Clearstory_Tags', column: 'Title' },
+      { table: 'Clearstory_Tags', column: 'CustomerReferenceNumber' },
+    ];
+    for (const { table, column } of widenToMax) {
+      await this.dataSource.query(`
+        IF EXISTS (
+          SELECT 1
+          FROM sys.columns c
+          INNER JOIN sys.objects o ON o.object_id = c.object_id
+          INNER JOIN sys.types t ON t.user_type_id = c.user_type_id
+          WHERE o.name = '${table}'
+            AND c.name = '${column}'
+            AND t.name = 'nvarchar'
+            AND c.max_length <> -1
+        )
+        BEGIN
+          ALTER TABLE dbo.${table} ALTER COLUMN ${column} nvarchar(MAX) NULL;
+        END
+      `);
+    }
   }
 
   /**
@@ -576,10 +643,32 @@ export class ClearstorySyncService implements OnModuleInit {
   }
 
   /** Used by GET /clearstory/status — stable fields for a health / ops UI. */
-  async getHealthInfo(): Promise<{ syncRunning: boolean; lastSuccessfulRunAt: string | null }> {
+  async getHealthInfo(): Promise<{
+    syncRunning: boolean;
+    lastSuccessfulRunAt: string | null;
+    tags: {
+      typedRowCount: number;
+      payloadRowCount: number;
+      lastPhase: ClearstoryTagsPhaseDiag | null;
+    };
+  }> {
+    const [typedRowCount, payloadRowCount] = await Promise.all([
+      this.tagRepo.count(),
+      this.apiPayloadRepo.count({ where: { resourceType: 'tag' } }),
+    ]);
+    let lastPhase: ClearstoryTagsPhaseDiag | null = null;
+    const raw = await this.getState('tagsPhaseLast');
+    if (raw) {
+      try {
+        lastPhase = JSON.parse(raw) as ClearstoryTagsPhaseDiag;
+      } catch {
+        lastPhase = null;
+      }
+    }
     return {
       syncRunning: this.syncInFlight,
       lastSuccessfulRunAt: await this.getState('lastSuccessfulRunAt'),
+      tags: { typedRowCount, payloadRowCount, lastPhase },
     };
   }
 
@@ -603,12 +692,26 @@ export class ClearstorySyncService implements OnModuleInit {
     } as any);
   }
 
-  private async runSyncPhase(label: string, run: () => Promise<number>): Promise<number> {
+  private async runSyncPhase(
+    label: string,
+    run: () => Promise<number>,
+    opts?: { swallowErrors?: boolean },
+  ): Promise<number> {
     const t = Date.now();
     this.logger.log(`Clearstory phase "${label}" starting…`);
-    const n = await run();
-    this.logger.log(`Clearstory phase "${label}" done: ${n} saved, ${Date.now() - t}ms`);
-    return n;
+    try {
+      const n = await run();
+      this.logger.log(`Clearstory phase "${label}" done: ${n} saved, ${Date.now() - t}ms`);
+      return n;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      if (opts?.swallowErrors) {
+        this.logger.error(`Clearstory phase "${label}" failed after ${Date.now() - t}ms: ${msg}`, stack);
+        return 0;
+      }
+      throw err;
+    }
   }
 
   async syncNow(): Promise<void> {
@@ -633,19 +736,22 @@ export class ClearstorySyncService implements OnModuleInit {
             : undefined;
 
         const counts: Record<string, number> = {};
+        // Phase order: tags first (highest-priority data and independent of other resources),
+        // then cheap lookups → projects → cors → slower relational → derived snapshots/rates.
+        // Tags and cors both use swallowErrors so a failure in one phase never aborts the rest.
+        counts.tags = await this.runSyncPhase('tags', () => this.syncTagsAll(), { swallowErrors: true });
         counts.company = await this.runSyncPhase('company', () => this.syncCompany());
         counts.users = await this.runSyncPhase('users', () => this.syncUsers());
         counts.offices = await this.runSyncPhase('offices', () => this.syncOffices());
         counts.divisions = await this.runSyncPhase('divisions', () => this.syncDivisions());
-        counts.customers = await this.runSyncPhase('customers', () => this.syncCustomers());
         counts.labels = await this.runSyncPhase('labels', () => this.syncLabels());
         counts.projects = await this.runSyncPhase('projects', () => this.syncProjects());
+        counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(fromUpdatedAt), { swallowErrors: true });
+        counts.customers = await this.runSyncPhase('customers', () => this.syncCustomers());
         counts.contracts = await this.runSyncPhase('contracts', () => this.syncContracts());
         counts.changeNotifications = await this.runSyncPhase('changeNotifications', () =>
           this.syncChangeNotifications(),
         );
-        counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(fromUpdatedAt));
-        counts.tags = await this.runSyncPhase('tags', () => this.syncTagsAll());
         counts.snapshots = await this.runSyncPhase('corSnapshots', () => this.syncCorAggregateSnapshots());
         counts.companyRates = await this.runSyncPhase('companyRates', () => this.syncCompanyRates());
         counts.projectRates = await this.runSyncPhase('projectRates', () => this.syncProjectRates());
@@ -1443,53 +1549,167 @@ export class ClearstorySyncService implements OnModuleInit {
     return saved;
   }
 
+  /** Extra GET per tag (slow). Off by default because /tags list already contains every field we persist. */
+  private tagDetailEnabled(): boolean {
+    const raw = this.config.get<string>('CLEARSTORY_TAG_DETAIL', 'false') ?? 'false';
+    const v = String(raw).trim().toLowerCase();
+    return ['true', '1', 'yes', 'on'].includes(v);
+  }
+
   private async syncTagsAll(): Promise<number> {
-    let saved = 0;
-    const inboxes = ['sent', 'received'] as const;
-    for (const inbox of inboxes) {
-      let skip = 0;
-      const take = 100;
-      while (true) {
-        const { records, count } = await this.api.listTags({ inbox, skip, take });
-        const list = Array.isArray(records) ? records : [];
-        if (!list.length) break;
+    /**
+     * Clearstory `/tags` requires the `inbox` query param — calling without it returns
+     * HTTP 422 ("Invalid value, param=inbox"). We hit both inboxes (`sent` + `received`)
+     * and dedupe by tag id so we never double-save the same row.
+     *
+     * Per-page strategy (measured: ~7 min/page of 100 with per-row detail+save, ~1 s without):
+     *   1. One list call → N rows.
+     *   2. One IN(ids) lookup for existing tag rows (so save() becomes UPDATE not INSERT).
+     *   3. One IN(projectIds) lookup to backfill jobNumber in bulk.
+     *   4. Batch save tag rows + batch save raw payloads.
+     */
+    const strategies: { label: string; params: Record<string, unknown> }[] = [
+      { label: 'sent', params: { inbox: 'sent' } },
+      { label: 'received', params: { inbox: 'received' } },
+    ];
 
-        for (const t of list) {
-          const id = Number(t?.id);
-          if (!Number.isFinite(id)) continue;
-          const entity = (await this.tagRepo.findOne({ where: { id } })) ?? this.tagRepo.create({ id });
-          this.mapTagFromPayload(entity, t, null);
-          entity.lastSyncedAt = new Date();
-          let mergedTag: unknown = t;
+    const diag: ClearstoryTagsPhaseDiag = {
+      ranAt: new Date().toISOString(),
+      saved: 0,
+      uniqueIds: 0,
+      strategies: strategies.map((s) => newTagsStrategyDiag(s.label, s.params)),
+    };
 
-          if (entity.projectId && !entity.jobNumber) {
-            const proj = await this.projectRepo.findOne({ where: { id: entity.projectId } });
-            entity.jobNumber = proj?.jobNumber ?? null;
-          }
-
-          try {
-            const detail = await this.api.getTag(id);
-            mergedTag = mergeClearstoryApiObjects(t, detail);
-            this.mapTagFromPayload(entity, t, detail);
-          } catch (err: any) {
-            this.logger.warn(`Clearstory tag detail failed for ${id}: ${err?.message ?? err}`);
-          }
-
-          if (entity.projectId && !entity.jobNumber) {
-            const proj = await this.projectRepo.findOne({ where: { id: entity.projectId } });
-            entity.jobNumber = proj?.jobNumber ?? null;
-          }
-
-          await this.persistClearstoryApiPayload('tag', String(id), mergedTag);
-          await this.tagRepo.save(entity);
-          saved += 1;
-        }
-
-        skip += take;
-        if (skip >= Number(count ?? 0)) break;
+    const persistDiag = async () => {
+      try {
+        await this.setState('tagsPhaseLast', JSON.stringify(diag));
+      } catch (e: any) {
+        this.logger.warn(`Clearstory tagsPhaseLast state write failed: ${e?.message ?? e}`);
       }
+    };
+
+    const wantDetail = this.tagDetailEnabled();
+    const seen = new Set<number>();
+    let saved = 0;
+    try {
+      for (let si = 0; si < strategies.length; si += 1) {
+        const { label, params } = strategies[si];
+        const box = diag.strategies[si];
+        let skip = 0;
+        const take = 100;
+        while (true) {
+          box.lastSkip = skip;
+          let list: any[] = [];
+          let countRaw: unknown;
+          try {
+            const paged = await this.api.listTags({ ...params, skip, take });
+            list = Array.isArray(paged.records) ? paged.records : [];
+            countRaw = paged.count;
+            const countNum = Number(countRaw);
+            box.lastApiCount = Number.isFinite(countNum) ? countNum : list.length;
+            if (box.pages === 0) box.firstPageListLen = list.length;
+          } catch (e: any) {
+            box.error = e instanceof Error ? e.message : String(e);
+            this.logger.error(`Clearstory tags listTags failed strategy=${label} skip=${skip}: ${box.error}`);
+            break;
+          }
+
+          if (!list.length) break;
+
+          box.pages += 1;
+          box.rowsSeen += list.length;
+
+          // Dedupe rows that showed up under a previous strategy.
+          const fresh = list.filter((t) => {
+            const id = Number(t?.id);
+            return Number.isFinite(id) && !seen.has(id);
+          });
+          if (!fresh.length) {
+            skip += take;
+            if (skip >= Number(countRaw ?? 0)) break;
+            continue;
+          }
+
+          const ids = fresh.map((t) => Number(t.id));
+          const projectIds = [
+            ...new Set(
+              fresh
+                .map((t) => Number(t?.projectId))
+                .filter((id): id is number => Number.isFinite(id)),
+            ),
+          ];
+
+          const [existingRows, projectRows] = await Promise.all([
+            this.tagRepo.findBy({ id: In(ids) }),
+            projectIds.length
+              ? this.projectRepo.findBy({ id: In(projectIds) })
+              : Promise.resolve([] as { id: number; jobNumber: string | null }[]),
+          ]);
+          const existingById = new Map(existingRows.map((r) => [r.id, r]));
+          const jobNumberByProject = new Map(projectRows.map((p) => [p.id, p.jobNumber ?? null]));
+
+          const entitiesToSave: ClearstoryTag[] = [];
+          const payloadRows: { resourceType: string; resourceKey: string; payloadJson: string; lastFetchedAt: Date }[] = [];
+          const now = new Date();
+
+          for (const t of fresh) {
+            const id = Number(t.id);
+            seen.add(id);
+
+            let mergedTag: unknown = t;
+            if (wantDetail) {
+              try {
+                const detail = await this.api.getTag(id);
+                mergedTag = mergeClearstoryApiObjects(t, detail);
+              } catch (err: any) {
+                this.logger.warn(`Clearstory tag detail failed for ${id}: ${err?.message ?? err}`);
+              }
+            }
+
+            const entity = existingById.get(id) ?? this.tagRepo.create({ id });
+            this.mapTagFromPayload(entity, t, wantDetail ? (mergedTag as any) : null);
+            if (entity.projectId && !entity.jobNumber) {
+              entity.jobNumber = jobNumberByProject.get(entity.projectId) ?? null;
+            }
+            entity.lastSyncedAt = now;
+            entitiesToSave.push(entity);
+
+            let json = '';
+            try {
+              json = JSON.stringify(mergedTag ?? null);
+            } catch (e: any) {
+              this.logger.warn(`Clearstory tag payload stringify failed id=${id}: ${e?.message ?? e}`);
+              continue;
+            }
+            payloadRows.push({
+              resourceType: 'tag',
+              resourceKey: String(id).slice(0, 400),
+              payloadJson: json,
+              lastFetchedAt: now,
+            });
+          }
+
+          if (entitiesToSave.length) await this.tagRepo.save(entitiesToSave);
+          if (payloadRows.length) await this.apiPayloadRepo.save(payloadRows);
+          saved += entitiesToSave.length;
+
+          this.logger.log(
+            `Clearstory tags strategy=${label} skip=${skip} listLen=${list.length} fresh=${fresh.length} saved=${entitiesToSave.length} apiCount=${countRaw ?? 'n/a'}`,
+          );
+
+          skip += take;
+          if (skip >= Number(countRaw ?? 0)) break;
+        }
+      }
+
+      diag.saved = saved;
+      diag.uniqueIds = seen.size;
+      return saved;
+    } finally {
+      diag.saved = saved;
+      diag.uniqueIds = seen.size;
+      await persistDiag();
     }
-    return saved;
   }
 
   private async syncCorAggregateSnapshots(): Promise<number> {

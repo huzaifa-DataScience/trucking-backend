@@ -23,10 +23,10 @@ export class ClearstoryCor {
   @Column({ name: 'IssueNumber', type: 'nvarchar', length: 100, nullable: true })
   issueNumber!: string | null;
 
-  @Column({ name: 'Title', type: 'nvarchar', length: 500, nullable: true })
+  @Column({ name: 'Title', type: 'nvarchar', length: 'MAX', nullable: true })
   title!: string | null;
 
-  @Column({ name: 'Description', type: 'nvarchar', length: 4000, nullable: true })
+  @Column({ name: 'Description', type: 'nvarchar', length: 'MAX', nullable: true })
   description!: string | null;
 
   @Column({ name: 'EntryMethod', type: 'nvarchar', length: 100, nullable: true })
@@ -50,22 +50,22 @@ export class ClearstoryCor {
   @Column({ name: 'CustomerJobNumber', type: 'nvarchar', length: 100, nullable: true })
   customerJobNumber!: string | null;
 
-  @Column({ name: 'CustomerReferenceNumber', type: 'nvarchar', length: 200, nullable: true })
+  @Column({ name: 'CustomerReferenceNumber', type: 'nvarchar', length: 'MAX', nullable: true })
   customerReferenceNumber!: string | null;
 
   @Column({ name: 'ChangeNotificationId', type: 'int', nullable: true })
   changeNotificationId!: number | null;
 
-  @Column({ name: 'ProjectName', type: 'nvarchar', length: 255, nullable: true })
+  @Column({ name: 'ProjectName', type: 'nvarchar', length: 'MAX', nullable: true })
   projectName!: string | null;
 
   @Column({ name: 'ContractId', type: 'int', nullable: true })
   contractId!: number | null;
 
-  @Column({ name: 'CustomerName', type: 'nvarchar', length: 255, nullable: true })
+  @Column({ name: 'CustomerName', type: 'nvarchar', length: 'MAX', nullable: true })
   customerName!: string | null;
 
-  @Column({ name: 'ContractorName', type: 'nvarchar', length: 255, nullable: true })
+  @Column({ name: 'ContractorName', type: 'nvarchar', length: 'MAX', nullable: true })
   contractorName!: string | null;
 
   @Column({ name: 'CustomerCoNumber', type: 'nvarchar', length: 100, nullable: true })

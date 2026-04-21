@@ -129,9 +129,14 @@ export class ClearstoryController {
       return { ok: false, message: 'Clearstory sync is already running.' };
     }
     await this.clearstorySync.syncNow();
+    const h = await this.clearstorySync.getHealthInfo();
     return {
       ok: true,
-      message: 'Sync run completed or logged errors; see server logs for per-phase counts.',
+      message:
+        'Sync run completed or logged errors; see server logs for per-phase counts. Use tags.* for tag inbox diagnostics.',
+      syncRunning: h.syncRunning,
+      lastSuccessfulRunAt: h.lastSuccessfulRunAt,
+      tags: h.tags,
     };
   }
 
@@ -431,7 +436,9 @@ export class ClearstoryController {
       ready: true,
       syncRunning: h.syncRunning,
       lastSuccessfulRunAt: h.lastSuccessfulRunAt,
-      message: 'Clearstory mirror (DB-backed sync). Use lastSuccessfulRunAt as “data freshness” hint after a full successful sync.',
+      tags: h.tags,
+      message:
+        'Clearstory mirror (DB-backed sync). tags.lastPhase is the latest tags sync attempt (per inbox list lengths, API errors). tags.payloadRowCount / typedRowCount are live SQL counts.',
     };
   }
 }

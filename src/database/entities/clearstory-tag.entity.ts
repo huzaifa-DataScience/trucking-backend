@@ -20,13 +20,13 @@ export class ClearstoryTag {
   @Column({ name: 'PaddedTagNumber', type: 'nvarchar', length: 100, nullable: true })
   paddedTagNumber!: string | null;
 
-  @Column({ name: 'Title', type: 'nvarchar', length: 255, nullable: true })
+  @Column({ name: 'Title', type: 'nvarchar', length: 'MAX', nullable: true })
   title!: string | null;
 
   @Column({ name: 'Status', type: 'nvarchar', length: 50, nullable: true })
   status!: string | null;
 
-  @Column({ name: 'CustomerReferenceNumber', type: 'nvarchar', length: 200, nullable: true })
+  @Column({ name: 'CustomerReferenceNumber', type: 'nvarchar', length: 'MAX', nullable: true })
   customerReferenceNumber!: string | null;
 
   @Column({ name: 'DateOfWorkPerformed', type: 'datetime2', nullable: true })
