@@ -16,6 +16,7 @@ import { SitelineModule } from './siteline/siteline.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { ClearstoryMockModule } from './clearstory-mock/clearstory-mock.module';
 import { ClearstoryModule } from './clearstory/clearstory.module';
+import { TrimbleModule } from './trimble/trimble.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ClearstoryModule } from './clearstory/clearstory.module';
     TicketsModule,
     ClearstoryMockModule,
     ClearstoryModule,
+    TrimbleModule,
   ],
   controllers: [AppController],
 })

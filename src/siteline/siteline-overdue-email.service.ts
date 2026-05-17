@@ -5,19 +5,24 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as nodemailer from 'nodemailer';
 import { AppSettingsService } from '../app-settings/app-settings.service';
-import { SitelinePayApp } from '../database/entities';
+import { SitelineAgingContract, SitelineAgingSummary } from '../database/entities';
 import { EmailTemplateService } from '../email/email-template.service';
+import {
+  agingCentsToDollars,
+  overdueCentsFromAgingContract,
+  totalAgedCentsFromAgingContract,
+} from './siteline-aging-overdue.util';
+import { resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 
 type OverdueRow = {
-  payAppId: string;
+  /** Contract id — stored in Siteline_OverdueEmailLog.PayAppId for dedupe. */
   contractId: string;
   projectName: string | null;
   projectNumber: string | null;
   internalProjectNumber: string | null;
-  invoiceNumber: number | null;
-  dueDate: Date;
-  daysPastDue: number;
-  netDollars: number;
+  overdueDollars: number;
+  totalAgedDollars: number;
+  averageDaysToPaid: number | null;
   leadPmName: string | null;
   leadPmEmail: string;
 };
@@ -30,9 +35,12 @@ export class SitelineOverdueEmailService {
     private readonly config: ConfigService,
     private readonly appSettings: AppSettingsService,
     private readonly emailTemplates: EmailTemplateService,
-    @InjectRepository(SitelinePayApp)
-    private readonly payAppRepo: Repository<SitelinePayApp>,
+    @InjectRepository(SitelineAgingSummary)
+    private readonly agingSummaryRepo: Repository<SitelineAgingSummary>,
+    @InjectRepository(SitelineAgingContract)
+    private readonly agingContractRepo: Repository<SitelineAgingContract>,
   ) {}
+
   @Cron('0 */5 * * * *')
   async sendOverdueEmails(): Promise<void> {
     if (this.config.get<string>('OVERDUE_EMAIL_ENABLED', 'false') !== 'true') {
@@ -48,6 +56,7 @@ export class SitelineOverdueEmailService {
     const smtpPass = this.config.get<string>('SMTP_PASS', '').trim();
     const fromEmail = this.config.get<string>('OVERDUE_EMAIL_FROM', smtpUser || '').trim();
     const daysThreshold = parseInt(this.config.get<string>('OVERDUE_EMAIL_DAYS', '50'), 10);
+    const testRecipient = this.config.get<string>('OVERDUE_EMAIL_TEST_TO', '').trim().toLowerCase();
 
     if (!smtpHost || !smtpUser || !smtpPass || !fromEmail) {
       this.logger.warn(
@@ -58,17 +67,26 @@ export class SitelineOverdueEmailService {
 
     await this.ensureNotificationLogTable();
 
-    const overdue = await this.getOverdueRows(daysThreshold);
+    const overdue = await this.getOverdueRowsFromAgingContracts(daysThreshold);
     if (!overdue.length) {
-      this.logger.log(`Overdue email job: no rows past ${daysThreshold} days.`);
+      this.logger.log(
+        `Overdue email job: no contracts with AR past ${daysThreshold} days in latest Siteline_AgingContracts snapshot.`,
+      );
       return;
     }
 
     const todaysNotified = await this.getNotifiedTodaySet();
-    const pending = overdue.filter((r) => !todaysNotified.has(this.keyForToday(r.payAppId, r.leadPmEmail)));
+    const pending = overdue.filter(
+      (r) => !todaysNotified.has(this.keyForToday(r.contractId, testRecipient || r.leadPmEmail)),
+    );
     if (!pending.length) {
       this.logger.log('Overdue email job: all overdue rows already notified today.');
       return;
+    }
+    if (testRecipient) {
+      this.logger.warn(
+        `Overdue email TEST override active: redirecting all PM emails to ${testRecipient}.`,
+      );
     }
 
     const grouped = new Map<string, OverdueRow[]>();
@@ -87,29 +105,30 @@ export class SitelineOverdueEmailService {
 
     let sent = 0;
     let failed = 0;
-    for (const [email, items] of grouped.entries()) {
+    for (const [pmEmail, items] of grouped.entries()) {
       const name = items.find((i) => i.leadPmName)?.leadPmName ?? 'PM';
-      const itemsTableHtml = this.buildItemsTableHtml(items);
+      const itemsTableHtml = this.buildItemsTableHtml(items, daysThreshold);
       const { subject, html } = await this.emailTemplates.renderSitelineOverdueEmail({
         leadPmName: name,
         daysThreshold,
         itemCount: items.length,
         itemsTableHtml,
       });
+      const recipientEmail = testRecipient || pmEmail;
 
       try {
         await transporter.sendMail({
           from: fromEmail,
-          to: email,
+          to: recipientEmail,
           subject,
           html,
         });
 
-        await this.logSentNotifications(items);
+        await this.logSentNotifications(items, recipientEmail);
         sent += 1;
       } catch (err: any) {
         failed += 1;
-        this.logger.error(`Overdue email send failed for ${email}: ${err?.message ?? err}`);
+        this.logger.error(`Overdue email send failed for ${recipientEmail}: ${err?.message ?? err}`);
       }
     }
 
@@ -125,17 +144,16 @@ export class SitelineOverdueEmailService {
       .replace(/"/g, '&quot;');
   }
 
-  private buildItemsTableHtml(items: OverdueRow[]): string {
+  private buildItemsTableHtml(items: OverdueRow[], daysThreshold: number): string {
     const htmlRows = items
       .map(
         (i) => `
             <tr>
               <td>${this.escapeHtml(i.projectName)}</td>
               <td>${this.escapeHtml(i.internalProjectNumber)}</td>
-              <td>${i.invoiceNumber ?? ''}</td>
-              <td>${i.dueDate.toISOString().slice(0, 10)}</td>
-              <td>${i.daysPastDue}</td>
-              <td>$${i.netDollars.toLocaleString()}</td>
+              <td>$${i.overdueDollars.toLocaleString()}</td>
+              <td>$${i.totalAgedDollars.toLocaleString()}</td>
+              <td>${i.averageDaysToPaid != null ? i.averageDaysToPaid.toFixed(1) : '—'}</td>
             </tr>`,
       )
       .join('');
@@ -145,62 +163,70 @@ export class SitelineOverdueEmailService {
             <tr>
               <th>Project</th>
               <th>Internal Project #</th>
-              <th>Invoice #</th>
-              <th>Due Date</th>
-              <th>Days Past Due</th>
-              <th>Net Dollars</th>
+              <th>Overdue AR (&gt;${daysThreshold} days)</th>
+              <th>Total AR</th>
+              <th>Avg days to paid</th>
             </tr>
           </thead>
           <tbody>${htmlRows}</tbody>
         </table>`;
   }
 
-  private async getOverdueRows(daysThreshold: number): Promise<OverdueRow[]> {
-    const payApps = await this.payAppRepo.find({ relations: ['contract'] });
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  /** Latest `Siteline_AgingContracts` snapshot; same basis as `GET /siteline/aging-report`. */
+  private async getOverdueRowsFromAgingContracts(
+    daysThreshold: number,
+  ): Promise<OverdueRow[]> {
+    const latestRows = await this.agingSummaryRepo.find({
+      order: { id: 'DESC' },
+      take: 1,
+    });
+    const latest = latestRows[0];
+    if (!latest) {
+      this.logger.warn('Overdue email job: no Siteline_AgingSummary snapshot — run aging sync first.');
+      return [];
+    }
+
+    const contracts = await this.agingContractRepo.find({
+      where: { snapshotId: latest.id },
+    });
 
     const rows: OverdueRow[] = [];
-    for (const pa of payApps) {
-      if (pa.status === 'PAID' || pa.status === 'DRAFT') continue;
-      const contract = pa.contract as any;
-      if (!contract) continue;
-      if (!contract.leadPmEmail) continue;
-      if (!pa.dueDate) continue;
+    for (const row of contracts) {
+      const leadPmEmail = resolveLeadPmEmailFromFullName(row.leadPmEmail, row.leadPmName);
+      if (!leadPmEmail) continue;
 
-      const dueDate = new Date(pa.dueDate);
-      const daysPastDue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysPastDue <= daysThreshold) continue;
+      const overdueCents = overdueCentsFromAgingContract(row, daysThreshold);
+      if (overdueCents <= 0) continue;
 
-      const billed = Number(pa.billed ?? 0);
-      const retention = Number(pa.retention ?? 0);
-      const netDollars = (billed - retention) / 100;
-      if (netDollars <= 0) continue;
+      const totalCents = totalAgedCentsFromAgingContract(row);
+      const avgRaw = row.averageDaysToPaid;
+      const averageDaysToPaid =
+        avgRaw != null && String(avgRaw).trim() !== '' && Number.isFinite(Number(avgRaw))
+          ? Number(avgRaw)
+          : null;
 
       rows.push({
-        payAppId: pa.id,
-        contractId: contract.id,
-        projectName: contract.projectName ?? null,
-        projectNumber: contract.projectNumber ?? null,
-        internalProjectNumber: contract.internalProjectNumber ?? null,
-        invoiceNumber: pa.number ?? null,
-        dueDate,
-        daysPastDue,
-        netDollars,
-        leadPmName: contract.leadPmName ?? null,
-        leadPmEmail: contract.leadPmEmail,
+        contractId: row.contractId,
+        projectName: row.projectName ?? null,
+        projectNumber: row.projectNumber ?? null,
+        internalProjectNumber: row.internalProjectNumber ?? null,
+        overdueDollars: agingCentsToDollars(overdueCents),
+        totalAgedDollars: agingCentsToDollars(totalCents),
+        averageDaysToPaid,
+        leadPmName: row.leadPmName ?? null,
+        leadPmEmail,
       });
     }
     return rows;
   }
 
-  private keyForToday(payAppId: string, leadPmEmail: string): string {
+  private keyForToday(contractId: string, recipientEmail: string): string {
     const day = new Date().toISOString().slice(0, 10);
-    return `${payAppId}|${leadPmEmail.toLowerCase()}|${day}`;
+    return `${contractId}|${recipientEmail.toLowerCase()}|${day}`;
   }
 
   private async ensureNotificationLogTable(): Promise<void> {
-    await this.payAppRepo.query(`
+    await this.agingSummaryRepo.query(`
       IF OBJECT_ID('dbo.Siteline_OverdueEmailLog', 'U') IS NULL
       BEGIN
         CREATE TABLE dbo.Siteline_OverdueEmailLog (
@@ -218,7 +244,7 @@ export class SitelineOverdueEmailService {
 
   private async getNotifiedTodaySet(): Promise<Set<string>> {
     const rows: Array<{ PayAppId: string; LeadPmEmail: string; NotificationDate: string }> =
-      await this.payAppRepo.query(`
+      await this.agingSummaryRepo.query(`
         SELECT PayAppId, LeadPmEmail, CONVERT(varchar(10), NotificationDate, 23) AS NotificationDate
         FROM dbo.Siteline_OverdueEmailLog
         WHERE NotificationDate = CONVERT(date, SYSUTCDATETIME())
@@ -231,15 +257,15 @@ export class SitelineOverdueEmailService {
     return set;
   }
 
-  private async logSentNotifications(items: OverdueRow[]): Promise<void> {
+  private async logSentNotifications(items: OverdueRow[], recipientEmail: string): Promise<void> {
     for (const item of items) {
-      const payAppId = item.payAppId.replace(/'/g, "''");
-      const leadPmEmail = item.leadPmEmail.replace(/'/g, "''");
-      await this.payAppRepo.query(
+      const contractId = item.contractId.replace(/'/g, "''");
+      const loggedRecipient = recipientEmail.replace(/'/g, "''");
+      await this.agingSummaryRepo.query(
         `
         MERGE dbo.Siteline_OverdueEmailLog AS target
         USING (
-          SELECT '${payAppId}' AS PayAppId, '${leadPmEmail}' AS LeadPmEmail, CONVERT(date, SYSUTCDATETIME()) AS NotificationDate
+          SELECT '${contractId}' AS PayAppId, '${loggedRecipient}' AS LeadPmEmail, CONVERT(date, SYSUTCDATETIME()) AS NotificationDate
         ) AS src
         ON target.PayAppId = src.PayAppId
           AND target.LeadPmEmail = src.LeadPmEmail
@@ -252,4 +278,3 @@ export class SitelineOverdueEmailService {
     }
   }
 }
-

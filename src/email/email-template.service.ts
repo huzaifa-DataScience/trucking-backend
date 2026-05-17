@@ -27,6 +27,12 @@ export class EmailTemplateService implements OnModuleInit {
   // Runtime selector key used by the cron email job.
   static readonly SITELINE_OVERDUE_PURPOSE = 'siteline.overdue_leadpm';
 
+  /** Weekly PM digest: AR aging + Clearstory vs Siteline contract totals. */
+  static readonly SITELINE_PM_WEEKLY_PURPOSE = 'siteline.pm_weekly_report';
+
+  /** Weekly PM COR logs: approved table + open CORs (Clearstory). */
+  static readonly PJ_COR_WEEKLY_PURPOSE = 'clearstory.pj_cor_weekly_report';
+
   // Runtime selector key for OTP emails (when/if wired by backend auth flows).
   static readonly AUTH_OTP_PURPOSE = 'auth.otp';
 
@@ -36,6 +42,28 @@ export class EmailTemplateService implements OnModuleInit {
       '{{daysThreshold}}',
       '{{itemCount}}',
       '{{itemsTableHtml}}',
+    ],
+    [EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE]: [
+      '{{leadPmName}}',
+      '{{weekEnding}}',
+      '{{daysThreshold}}',
+      '{{contractCount}}',
+      '{{corDataQualityCount}}',
+      '{{reportTableHtml}}',
+      '{{corDataQualityTableHtml}}',
+    ],
+    [EmailTemplateService.PJ_COR_WEEKLY_PURPOSE]: [
+      '{{leadPmName}}',
+      '{{weekEnding}}',
+      '{{daysThreshold}}',
+      '{{portfolioCount}}',
+      '{{approvedCount}}',
+      '{{openCount}}',
+      '{{dataQualityCount}}',
+      '{{portfolioTableHtml}}',
+      '{{approvedTableHtml}}',
+      '{{openTableHtml}}',
+      '{{dataQualityTableHtml}}',
     ],
     [EmailTemplateService.AUTH_OTP_PURPOSE]: [
       '{{appName}}',
@@ -52,6 +80,45 @@ export class EmailTemplateService implements OnModuleInit {
       name: 'Siteline overdue lead PM (default)',
       subject: 'Action needed: {{itemCount}} overdue pay app(s) (> {{daysThreshold}} days)',
       html: `<!-- Best-practice HTML email: table layout + inline styles -->\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#f3f4f6; margin:0; padding:0; width:100%;\">\n  <tr>\n    <td align=\"center\" style=\"padding:24px 12px;\">\n      <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:600px; max-width:600px; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.06);\">\n        <tr>\n          <td style=\"padding:22px 24px; background:#0f172a; color:#ffffff; font-family:Arial,Helvetica,sans-serif;\">\n            <div style=\"font-size:16px; line-height:22px; font-weight:700;\">Trucking Dashboard</div>\n            <div style=\"font-size:12px; line-height:18px; opacity:0.85;\">Automated AR alert</div>\n          </td>\n        </tr>\n        <tr>\n          <td style=\"padding:24px; font-family:Arial,Helvetica,sans-serif; color:#111827;\">\n            <div style=\"font-size:16px; line-height:24px; margin:0 0 12px 0;\">Hi <strong>{{leadPmName}}</strong>,</div>\n            <div style=\"font-size:14px; line-height:22px; margin:0 0 14px 0; color:#374151;\">\n              The following pay app item(s) are now <strong>over {{daysThreshold}} days past due</strong>.\n            </div>\n            <div style=\"margin:16px 0; padding:14px 16px; border:1px solid #e5e7eb; border-radius:10px; background:#f9fafb;\">\n              <div style=\"font-size:13px; line-height:20px; color:#111827;\">\n                <strong>Summary</strong>\n              </div>\n              <div style=\"font-size:13px; line-height:20px; color:#374151; margin-top:6px;\">\n                Items: <strong>{{itemCount}}</strong>\n              </div>\n            </div>\n\n            <div style=\"font-size:13px; line-height:20px; color:#111827; margin:0 0 8px 0;\"><strong>Details</strong></div>\n            <div style=\"font-size:13px; line-height:20px; color:#374151; margin:0 0 12px 0;\">\n              (Table may render best on desktop email clients.)\n            </div>\n            {{itemsTableHtml}}\n\n            <div style=\"margin-top:18px; font-size:12px; line-height:18px; color:#6b7280;\">\n              If this email reached you in error, please ignore it.\n            </div>\n          </td>\n        </tr>\n        <tr>\n          <td style=\"padding:16px 24px; background:#f3f4f6; font-family:Arial,Helvetica,sans-serif; color:#6b7280; font-size:12px; line-height:18px;\">\n            Sent automatically by Trucking Dashboard.\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n</table>`,
+    },
+    [EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE]: {
+      name: 'Siteline PM weekly report (default)',
+      subject: 'Weekly project report — {{contractCount}} contract(s) (week of {{weekEnding}})',
+      html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;">
+  <tr><td align="center" style="padding:24px 12px;">
+    <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#fff;border-radius:12px;">
+      <tr><td style="padding:22px 24px;background:#0f172a;color:#fff;font-family:Arial,sans-serif;">
+        <div style="font-size:16px;font-weight:700;">Weekly PM report</div>
+        <div style="font-size:12px;opacity:0.85;">AR aging + Clearstory vs Siteline</div>
+      </td></tr>
+      <tr><td style="padding:24px;font-family:Arial,sans-serif;color:#111827;">
+        <div style="font-size:16px;margin:0 0 12px;">Hi <strong>{{leadPmName}}</strong>,</div>
+        <div style="font-size:14px;color:#374151;margin:0 0 14px;">
+          Your portfolio snapshot for the week ending <strong>{{weekEnding}}</strong>.
+          Overdue AR uses the &gt;{{daysThreshold}} day bucket from Siteline aging.
+          Clearstory bill is approved-to-proceed + CO issued; Siteline is latest contract total.
+        </div>
+        <div style="font-size:13px;margin:0 0 10px;"><strong>{{contractCount}}</strong> contract(s)</div>
+        {{reportTableHtml}}
+        {{corDataQualityTableHtml}}
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`,
+    },
+    [EmailTemplateService.PJ_COR_WEEKLY_PURPOSE]: {
+      name: 'PJ weekly COR report (default)',
+      subject: 'Weekly PJ COR report — {{approvedCount}} CO issued, {{openCount}} ATP ({{weekEnding}})',
+      html: `<table role="presentation" width="100%" style="background:#f3f4f6;font-family:Arial,sans-serif;">
+  <tr><td style="padding:20px;">
+    <p>Hi <strong>{{leadPmName}}</strong>,</p>
+    <p>Week ending <strong>{{weekEnding}}</strong>. Clearstory COR log for PM weekly portfolio jobs (<strong>{{portfolioCount}}</strong> job numbers in scope).</p>
+    <p style="margin:20px 0 8px;font-size:14px;"><strong>Clearstory CORs</strong> — split by Status.</p>
+    {{approvedTableHtml}}
+    {{openTableHtml}}
+    {{dataQualityTableHtml}}
+  </td></tr>
+</table>`,
     },
     [EmailTemplateService.AUTH_OTP_PURPOSE]: {
       name: 'OTP (default)',
@@ -221,6 +288,7 @@ export class EmailTemplateService implements OnModuleInit {
     context: Record<string, string | number | null | undefined>,
   ): Promise<{ subject: string; html: string }> {
     await this.ensureDefaultTemplates();
+    await this.repairActiveTemplatePlaceholders(purpose);
     const row = await this.repo.findOne({
       where: { purpose, isActive: true as any },
       order: { updatedAt: 'DESC' },
@@ -237,9 +305,12 @@ export class EmailTemplateService implements OnModuleInit {
       throw new Error(`No active email template for purpose: ${purpose}`);
     }
 
+    let html = this.applyPlaceholders(row.bodyHtmlTemplate, context);
+    html = this.ensureInjectedTableBlocks(purpose, html, context);
+
     return {
       subject: this.applyPlaceholders(row.subjectTemplate, context),
-      html: this.applyPlaceholders(row.bodyHtmlTemplate, context),
+      html,
     };
   }
 
@@ -305,6 +376,86 @@ export class EmailTemplateService implements OnModuleInit {
     });
   }
 
+  /** Patch active DB templates when new placeholders were added in code defaults. */
+  private async repairActiveTemplatePlaceholders(purpose: string): Promise<void> {
+    const d = EmailTemplateService.DEFAULTS_BY_PURPOSE[purpose];
+    if (!d) return;
+
+    const row = await this.repo.findOne({
+      where: { purpose, isActive: true as any },
+      order: { updatedAt: 'DESC' },
+    });
+    if (!row?.bodyHtmlTemplate) return;
+
+    let body = row.bodyHtmlTemplate;
+    let changed = false;
+
+    if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
+      if (!body.includes('{{reportTableHtml}}')) {
+        body = d.html;
+        changed = true;
+      } else if (!body.includes('{{corDataQualityTableHtml}}')) {
+        body = body.replace(
+          '{{reportTableHtml}}',
+          '{{reportTableHtml}}\n        {{corDataQualityTableHtml}}',
+        );
+        changed = true;
+      }
+    }
+
+    if (purpose === EmailTemplateService.PJ_COR_WEEKLY_PURPOSE) {
+      if (
+        body.includes('{{portfolioTableHtml}}') ||
+        body.includes('PM portfolio') ||
+        !body.includes('{{approvedTableHtml}}')
+      ) {
+        body = d.html;
+        changed = true;
+      } else if (!body.includes('{{dataQualityTableHtml}}')) {
+        body = body.replace(
+          '{{openTableHtml}}',
+          '{{openTableHtml}}\n    {{dataQualityTableHtml}}',
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      row.bodyHtmlTemplate = body;
+      row.updatedAt = new Date();
+      await this.repo.save(row);
+    }
+  }
+
+  /** If a table block was not in the template, append it so sends never drop columns/sections. */
+  private ensureInjectedTableBlocks(
+    purpose: string,
+    html: string,
+    context: Record<string, string | number | null | undefined>,
+  ): string {
+    let out = html;
+
+    if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
+      const reportTable = String(context.reportTableHtml ?? '').trim();
+      if (reportTable && !out.includes('Clearstory bill')) {
+        out += `\n${reportTable}`;
+      }
+      const corDq = String(context.corDataQualityTableHtml ?? '').trim();
+      if (corDq && !out.includes('In Review with T&amp;M tags')) {
+        out += `\n${corDq}`;
+      }
+    }
+
+    if (purpose === EmailTemplateService.PJ_COR_WEEKLY_PURPOSE) {
+      const dq = String(context.dataQualityTableHtml ?? '').trim();
+      if (dq && !out.includes('In Review with T&amp;M tags')) {
+        out += `\n${dq}`;
+      }
+    }
+
+    return out;
+  }
+
   private async ensureTable(): Promise<void> {
     await this.repo.query(`
       IF OBJECT_ID('dbo.App_EmailTemplates', 'U') IS NULL
@@ -343,7 +494,11 @@ export class EmailTemplateService implements OnModuleInit {
     });
     if (active) {
       // Still ensure any other known purposes have at least one active template.
-      await this.ensurePurposeDefaults([EmailTemplateService.AUTH_OTP_PURPOSE]);
+      await this.ensurePurposeDefaults([
+        EmailTemplateService.AUTH_OTP_PURPOSE,
+        EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
+        EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+      ]);
       return;
     }
 
@@ -363,7 +518,11 @@ export class EmailTemplateService implements OnModuleInit {
         existingLegacy.bodyHtmlTemplate || d.html;
       await this.repo.save(existingLegacy);
       await this.activateTemplateForPurpose(existingLegacy.templateKey, existingLegacy.purpose);
-      await this.ensurePurposeDefaults([EmailTemplateService.AUTH_OTP_PURPOSE]);
+      await this.ensurePurposeDefaults([
+        EmailTemplateService.AUTH_OTP_PURPOSE,
+        EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
+        EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+      ]);
       return;
     }
 
@@ -377,7 +536,11 @@ export class EmailTemplateService implements OnModuleInit {
       isActive: true,
     });
 
-    await this.ensurePurposeDefaults([EmailTemplateService.AUTH_OTP_PURPOSE]);
+    await this.ensurePurposeDefaults([
+        EmailTemplateService.AUTH_OTP_PURPOSE,
+        EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
+        EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+      ]);
   }
 
   private async ensurePurposeDefaults(purposes: string[]): Promise<void> {

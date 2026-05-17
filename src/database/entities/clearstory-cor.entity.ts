@@ -98,6 +98,19 @@ export class ClearstoryCor {
   @Column({ name: 'CoIssueDate', type: 'datetime2', nullable: true })
   coIssueDate!: Date | null;
 
+  /** Comma-separated `tmTags[].paddedTagNumber` from Clearstory COR API. */
+  @Column({ name: 'TmTagNumbers', type: 'nvarchar', length: 500, nullable: true })
+  tmTagNumbers!: string | null;
+
+  @Column({ name: 'ManualTmTag', type: 'nvarchar', length: 255, nullable: true })
+  manualTmTag!: string | null;
+
+  @Column({ name: 'TmTagCount', type: 'int', nullable: true })
+  tmTagCount!: number | null;
+
+  @Column({ name: 'DaysInReview', type: 'decimal', precision: 18, scale: 4, nullable: true })
+  daysInReview!: string | null;
+
   @Column({ name: 'ApprovedToProceedDate', type: 'datetime2', nullable: true })
   approvedToProceedDate!: Date | null;
 

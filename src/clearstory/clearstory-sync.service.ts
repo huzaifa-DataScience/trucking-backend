@@ -24,6 +24,8 @@ import {
   ClearstoryUser,
 } from '../database/entities';
 import { ClearstoryService } from './clearstory.service';
+import { extractCorTmFields } from './clearstory-cor-fields.util';
+import { ClearstoryOfficeScopeService } from './clearstory-office-scope.service';
 const RATE_TYPES = ['labor', 'material', 'equipment', 'other'] as const;
 
 type BackfillMode = 'ALL' | 'ONLY_MISSING';
@@ -137,10 +139,14 @@ const CLEARSTORY_CRON_EXPR = (process.env.CLEARSTORY_SYNC_CRON ?? '0 */10 * * * 
 export class ClearstorySyncService implements OnModuleInit {
   private readonly logger = new Logger(ClearstorySyncService.name);
   private syncInFlight = false;
+  /** Set at the start of each sync run when office scope is enabled. */
+  private allowedOfficeIds: number[] | null = null;
+  private scopedProjectIds: Set<number> | null = null;
 
   constructor(
     private readonly config: ConfigService,
     private readonly api: ClearstoryService,
+    private readonly officeScope: ClearstoryOfficeScopeService,
     private readonly dataSource: DataSource,
     @InjectRepository(ClearstoryProject) private readonly projectRepo: Repository<ClearstoryProject>,
     @InjectRepository(ClearstoryCor) private readonly corRepo: Repository<ClearstoryCor>,
@@ -612,6 +618,17 @@ export class ClearstorySyncService implements OnModuleInit {
         END
       `);
     }
+
+    await this.dataSource.query(`
+      IF COL_LENGTH('dbo.Clearstory_Cors', 'TmTagNumbers') IS NULL
+        ALTER TABLE dbo.Clearstory_Cors ADD TmTagNumbers nvarchar(500) NULL;
+      IF COL_LENGTH('dbo.Clearstory_Cors', 'ManualTmTag') IS NULL
+        ALTER TABLE dbo.Clearstory_Cors ADD ManualTmTag nvarchar(255) NULL;
+      IF COL_LENGTH('dbo.Clearstory_Cors', 'TmTagCount') IS NULL
+        ALTER TABLE dbo.Clearstory_Cors ADD TmTagCount int NULL;
+      IF COL_LENGTH('dbo.Clearstory_Cors', 'DaysInReview') IS NULL
+        ALTER TABLE dbo.Clearstory_Cors ADD DaysInReview decimal(18,4) NULL;
+    `);
   }
 
   /**
@@ -735,6 +752,9 @@ export class ClearstorySyncService implements OnModuleInit {
             ? new Date(new Date(lastRun).getTime() - overlapMinutes * 60_000).toISOString()
             : undefined;
 
+        this.allowedOfficeIds = await this.officeScope.resolveAllowedOfficeIds();
+        this.scopedProjectIds = null;
+
         const counts: Record<string, number> = {};
         // Phase order: tags first (highest-priority data and independent of other resources),
         // then cheap lookups → projects → cors → slower relational → derived snapshots/rates.
@@ -746,6 +766,7 @@ export class ClearstorySyncService implements OnModuleInit {
         counts.divisions = await this.runSyncPhase('divisions', () => this.syncDivisions());
         counts.labels = await this.runSyncPhase('labels', () => this.syncLabels());
         counts.projects = await this.runSyncPhase('projects', () => this.syncProjects());
+        await this.refreshScopedProjectIds();
         counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(fromUpdatedAt), { swallowErrors: true });
         counts.customers = await this.runSyncPhase('customers', () => this.syncCustomers());
         counts.contracts = await this.runSyncPhase('contracts', () => this.syncContracts());
@@ -755,6 +776,12 @@ export class ClearstorySyncService implements OnModuleInit {
         counts.snapshots = await this.runSyncPhase('corSnapshots', () => this.syncCorAggregateSnapshots());
         counts.companyRates = await this.runSyncPhase('companyRates', () => this.syncCompanyRates());
         counts.projectRates = await this.runSyncPhase('projectRates', () => this.syncProjectRates());
+
+        if (this.allowedOfficeIds?.length && this.officeScope.pruneAfterSync()) {
+          counts.pruned = await this.runSyncPhase('officeScopePrune', () =>
+            this.pruneOutOfScopeMirrorData(this.allowedOfficeIds!),
+          );
+        }
 
         await this.setState('lastSuccessfulRunAt', new Date().toISOString());
         const elapsedMs = Date.now() - started;
@@ -767,6 +794,62 @@ export class ClearstorySyncService implements OnModuleInit {
     } finally {
       this.syncInFlight = false;
     }
+  }
+
+  private officeScopeApiParams(): Record<string, number[]> {
+    return this.officeScope.officeIdsApiFilter(this.allowedOfficeIds);
+  }
+
+  private shouldPersistProjectOffice(officeId: number | null | undefined): boolean {
+    return this.officeScope.isOfficeInScope(officeId, this.allowedOfficeIds);
+  }
+
+  private projectIdInScope(projectId: number | null | undefined): boolean {
+    if (!this.allowedOfficeIds?.length) return true;
+    const pid = Number(projectId);
+    if (!Number.isFinite(pid)) return false;
+    if (!this.scopedProjectIds) return true;
+    return this.scopedProjectIds.has(Math.trunc(pid));
+  }
+
+  private async refreshScopedProjectIds(): Promise<void> {
+    if (!this.allowedOfficeIds?.length) {
+      this.scopedProjectIds = null;
+      return;
+    }
+    const rows = await this.projectRepo.find({
+      select: ['id'],
+      where: { officeId: In(this.allowedOfficeIds) },
+    });
+    this.scopedProjectIds = new Set(rows.map((r) => r.id));
+    this.logger.log(`Clearstory office scope: ${this.scopedProjectIds.size} in-scope projects in DB`);
+  }
+
+  private async pruneOutOfScopeMirrorData(officeIds: number[]): Promise<number> {
+    const stale = await this.projectRepo
+      .createQueryBuilder('p')
+      .select(['p.id'])
+      .where('p.officeId IS NOT NULL')
+      .andWhere('p.officeId NOT IN (:...officeIds)', { officeIds })
+      .getMany();
+    const ids = stale.map((p) => p.id);
+    if (!ids.length) return 0;
+
+    const [tagDel, corDel, rateDel, projDel] = await Promise.all([
+      this.tagRepo.delete({ projectId: In(ids) }),
+      this.corRepo.delete({ projectId: In(ids) }),
+      this.projectRateRepo.delete({ projectId: In(ids) }),
+      this.projectRepo.delete({ id: In(ids) }),
+    ]);
+    const removed =
+      (tagDel.affected ?? 0) + (corDel.affected ?? 0) + (rateDel.affected ?? 0) + (projDel.affected ?? 0);
+
+    this.scopedProjectIds = null;
+    await this.refreshScopedProjectIds();
+    this.logger.log(
+      `Clearstory office scope prune: ${ids.length} projects, ~${removed} related rows removed`,
+    );
+    return removed;
   }
 
   private mapCustomerFromPayload(row: ClearstoryCustomer, src: any): void {
@@ -898,6 +981,11 @@ export class ClearstorySyncService implements OnModuleInit {
     row.coIssueDate = toDate(d?.coIssueDate ?? d?.coIssuedDate ?? l?.coIssueDate);
     row.approvedToProceedDate = toDate(d?.approvedToProceedDate ?? l?.approvedToProceedDate);
     row.approvedOrVoidDate = toDate(d?.approvedOrVoidDate ?? l?.approvedOrVoidDate);
+    const tm = extractCorTmFields(l, d);
+    row.tmTagNumbers = tm.tmTagNumbers;
+    row.manualTmTag = tm.manualTmTag;
+    row.tmTagCount = tm.tmTagCount;
+    row.daysInReview = toDecimalString(d?.daysInReview ?? l?.daysInReview);
     row.updatedAt = toDate(d?.updatedAt ?? l?.updatedAt);
     row.createdAt = toDate(d?.createdAt ?? l?.createdAt);
   }
@@ -1075,6 +1163,7 @@ export class ClearstorySyncService implements OnModuleInit {
       for (const o of list) {
         const id = Number(o?.id);
         if (!Number.isFinite(id)) continue;
+        if (!this.officeScope.isOfficeInScope(id, this.allowedOfficeIds)) continue;
         let row = byId.get(id);
         if (!row) {
           row = this.officeRepo.create({ id });
@@ -1146,6 +1235,7 @@ export class ClearstorySyncService implements OnModuleInit {
     for (const o of detail.offices) {
       const oid = Number(typeof o === 'object' && o !== null ? o.id : o);
       if (!Number.isFinite(oid)) continue;
+      if (!this.officeScope.isOfficeInScope(oid, this.allowedOfficeIds)) continue;
       officeIds.push(oid);
       officePayloads.set(oid, typeof o === 'object' && o !== null ? o : { id: oid });
     }
@@ -1298,6 +1388,7 @@ export class ClearstorySyncService implements OnModuleInit {
             this.logger.warn(`Clearstory project detail failed for ${id}: ${err?.message ?? err}`);
             this.mapProjectFromPayload(entity, p, null);
           }
+          if (!this.shouldPersistProjectOffice(entity.officeId)) continue;
           await this.persistClearstoryApiPayload('project', String(id), mergedProject);
           await this.projectRepo.save(entity);
           saved += 1;
@@ -1410,6 +1501,13 @@ export class ClearstorySyncService implements OnModuleInit {
       for (const c of list) {
         const id = Number(c?.id);
         if (!Number.isFinite(id)) continue;
+        const contractorProjectId = Number(c?.contractorProjectId);
+        if (
+          this.allowedOfficeIds?.length &&
+          (!Number.isFinite(contractorProjectId) || !this.projectIdInScope(contractorProjectId))
+        ) {
+          continue;
+        }
         let row = await this.contractRepo.findOne({ where: { id } });
         if (!row) row = this.contractRepo.create({ id });
         row.name = c?.name ? String(c.name) : null;
@@ -1436,7 +1534,12 @@ export class ClearstorySyncService implements OnModuleInit {
       let offset = 0;
       const limit = 100;
       while (true) {
-        const { records, count } = await this.api.listChangeNotifications({ inbox, offset, limit });
+        const { records, count } = await this.api.listChangeNotifications({
+          inbox,
+          offset,
+          limit,
+          ...this.officeScopeApiParams(),
+        });
         const list = Array.isArray(records) ? records : [];
         if (!list.length) break;
 
@@ -1505,6 +1608,7 @@ export class ClearstorySyncService implements OnModuleInit {
         offset,
         limit,
         inbox,
+        ...this.officeScopeApiParams(),
         ...(fromUpdatedAt ? { fromUpdatedAt } : {}),
       });
       const list = Array.isArray(records) ? records : [];
@@ -1538,6 +1642,8 @@ export class ClearstorySyncService implements OnModuleInit {
           entity.jobNumber = proj?.jobNumber ?? null;
         }
 
+        if (!this.projectIdInScope(entity.projectId)) continue;
+
         await this.persistClearstoryApiPayload('cor', id, mergedCor);
         await this.corRepo.save(entity);
         saved += 1;
@@ -1568,9 +1674,10 @@ export class ClearstorySyncService implements OnModuleInit {
      *   3. One IN(projectIds) lookup to backfill jobNumber in bulk.
      *   4. Batch save tag rows + batch save raw payloads.
      */
+    const officeFilter = this.officeScopeApiParams();
     const strategies: { label: string; params: Record<string, unknown> }[] = [
-      { label: 'sent', params: { inbox: 'sent' } },
-      { label: 'received', params: { inbox: 'received' } },
+      { label: 'sent', params: { inbox: 'sent', ...officeFilter } },
+      { label: 'received', params: { inbox: 'received', ...officeFilter } },
     ];
 
     const diag: ClearstoryTagsPhaseDiag = {
@@ -1716,7 +1823,7 @@ export class ClearstorySyncService implements OnModuleInit {
     let n = 0;
     for (const inbox of ['sent', 'received'] as const) {
       try {
-        const overview = await this.api.getCorOverview({ inbox });
+        const overview = await this.api.getCorOverview({ inbox, ...this.officeScopeApiParams() });
         await this.appendSnapshot('cors_overview', `inbox=${inbox}`, overview);
         await this.persistClearstoryApiPayload('cors_overview', `inbox=${inbox}`, overview);
         n += 1;
@@ -1724,7 +1831,7 @@ export class ClearstorySyncService implements OnModuleInit {
         this.logger.warn(`Clearstory cors/overview ${inbox}: ${e?.message ?? e}`);
       }
       try {
-        const summary = await this.api.getCorContractSummary({ inbox });
+        const summary = await this.api.getCorContractSummary({ inbox, ...this.officeScopeApiParams() });
         await this.appendSnapshot('cors_contract_summary', `inbox=${inbox}`, summary);
         await this.persistClearstoryApiPayload('cors_contract_summary', `inbox=${inbox}`, summary);
         n += 1;

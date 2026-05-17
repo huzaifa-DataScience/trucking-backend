@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SitelineService } from './siteline.service';
+import { resolveLeadPmEmail, resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 import {
   SitelineContract,
   SitelinePayApp,
@@ -12,8 +13,9 @@ import {
 } from '../database/entities';
 
 /**
- * Periodically pulls billing data from Siteline.
- * For now this only logs what it would sync; later we can upsert into SQL Server tables.
+ * Periodically pulls billing data from Siteline into SQL (`Siteline_Contracts`, `Siteline_PayApps`,
+ * aging tables). Contract sync uses **`paginatedPayApps`** + optional **`paginatedContracts`**
+ * (`ACTIVE`) for discovery, then **`contract(id)`** hydrate.
  */
 @Injectable()
 export class SitelineSyncService {
@@ -173,9 +175,7 @@ export class SitelineSyncService {
             const first = primaryPm?.firstName ?? '';
             const last = primaryPm?.lastName ?? '';
             const fullName = `${first} ${last}`.trim() || null;
-            const emailRaw = primaryPm?.email;
-            const email =
-              emailRaw != null && String(emailRaw).trim() ? String(emailRaw).trim() : null;
+            const email = resolveLeadPmEmail(primaryPm?.email, first, last);
 
             const proj = contract.project ?? {};
             const row = em.create(SitelineAgingContract, {
@@ -216,7 +216,9 @@ export class SitelineSyncService {
   }
 
   /**
-   * Optional: contract/pay-app sync (NOT used by /siteline/aging-report).
+   * Contract + pay-app sync: discovery from **`paginatedPayApps`** plus optional **`paginatedContracts`**
+   * with `contractStatus: ACTIVE`; union **contract ids**; then **`contract(id)`** hydrates each unique
+   * contract into `Siteline_Contracts` / `Siteline_PayApps`.
    * Runs every 10 minutes at second 0.
    */
   @Cron('0 */10 * * * *')
@@ -233,105 +235,266 @@ export class SitelineSyncService {
       return;
     }
     this.contractsSyncInFlight = true;
+    const pageSizeRaw = Math.floor(
+      Number(this.config.get<string>('SITELINE_PAY_APPS_SYNC_PAGE_SIZE', '100')) || 100,
+    );
+    const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
+    const delayMs = Math.max(
+      0,
+      Math.floor(Number(this.config.get<string>('SITELINE_GET_CONTRACT_DELAY_MS', '0')) || 0),
+    );
+
+    const contractIdsToHydrate = new Set<string>();
     let cursor: string | undefined;
-    let totalContracts = 0;
+    let payAppsListed = 0;
+    let contractsActiveListed = 0;
+    let apiTotalCount: number | null = null;
+    let hydrated = 0;
+    let hydrateErrors = 0;
+
     try {
-      this.logger.log('Starting Siteline contract sync (paginatedContracts: limit + cursor only, all pages).');
+      this.logger.log(
+        `Starting Siteline contract sync (paginatedPayApps + optional paginatedContracts ACTIVE → getContract hydrate, pageSize=${pageSize}, delayMs=${delayMs}).`,
+      );
 
       do {
-        const result = (await this.siteline.getPaginatedContracts({
-          limit: 100,
+        const result = (await this.siteline.getPaginatedPayAppsDiscovery({
+          limit: pageSize,
           cursor,
         })) as any;
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errMsg = String(result.error);
-          this.logger.warn(`Siteline paginatedContracts failed: ${errMsg}`);
+          this.logger.warn(`Siteline paginatedPayApps (discovery) failed: ${errMsg}`);
           sitelineAuthFailureHint(this.logger, errMsg);
           break;
         }
 
-        const page = result?.paginatedContracts ?? result;
-        const contracts: any[] = page?.contracts ?? [];
-        cursor = page?.hasNext ? page.cursor : undefined;
+        const page = result?.paginatedPayApps ?? result;
+        const payApps: any[] = page?.payApps ?? [];
+        if (apiTotalCount == null && typeof page?.totalCount === 'number') {
+          apiTotalCount = page.totalCount;
+        }
+
+        const nextCursor =
+          page?.hasNext && page?.cursor != null && page?.cursor !== '' ? String(page.cursor) : undefined;
         this.logger.log(
-          `Siteline contract sync page: fetched ${contracts.length} contracts (cursor=${cursor ?? 'end'})`,
+          `Siteline pay-apps page: rows=${payApps.length}, hasNext=${!!page?.hasNext}, totalCount(api)=${page?.totalCount ?? '?'}`,
         );
 
-        for (const c of contracts) {
-          if (!c?.id) continue;
-          totalContracts += 1;
-          const detail = (await this.siteline.getContract(c.id)) as any;
-          if (this.config.get<string>('SITELINE_CRON_LOG_CONTRACT_DETAIL', 'false') === 'true') {
-            this.logger.log(`Siteline getContract(${c.id}) detail fetched.`);
-          } else {
-            this.logger.log(
-              `Siteline getContract(${c.id}) summary: payApps=${Array.isArray(detail?.payApps) ? detail.payApps.length : 0}, leadPMs=${Array.isArray(detail?.leadPMs) ? detail.leadPMs.length : 0}.`,
-            );
-          }
-          const primaryPm = detail?.leadPMs?.[0];
-          const leadPmFirst = primaryPm?.firstName ?? '';
-          const leadPmLast = primaryPm?.lastName ?? '';
-          const fullName = `${leadPmFirst} ${leadPmLast}`.trim();
-          const leadPmName: string | null = fullName.length ? fullName : null;
-          const leadPmEmail: string | null = primaryPm?.email ?? null;
-          const payApps: any[] = detail?.payApps ?? [];
-
+        for (const pa of payApps) {
+          const cid = pa?.contract?.id;
+          if (!pa?.id || !cid) continue;
+          payAppsListed += 1;
+          contractIdsToHydrate.add(String(cid));
           try {
-            const contractEntity = this.contractRepo.create({
-              id: c.id,
-              projectNumber: c.project?.projectNumber ?? null,
-              projectName: c.project?.name ?? null,
-              internalProjectNumber: c.internalProjectNumber ?? null,
-              billingType: c.billingType ?? null,
-              percentComplete: c.percentComplete ?? null,
-              status: c.status ?? null,
-              timeZone: c.timeZone ?? null,
-              leadPmName,
-              leadPmEmail,
-              lastSyncedAt: new Date(),
-            });
-            await this.contractRepo.save(contractEntity);
-          } catch (dbErr: any) {
-            this.logger.error(
-              `Siteline contract sync: DB error saving contract ${c.id}: ${dbErr?.message ?? dbErr}. Skipping contract.`,
-            );
-            continue;
-          }
-
-          for (const pa of payApps) {
-            if (!pa?.id) continue;
-            try {
-              const payAppEntity = this.payAppRepo.create({
-                id: pa.id,
-                contractId: c.id,
-                number: pa.payAppNumber ?? null,
-                status: pa.status ?? null,
-                billed: pa.currentBilled ?? null,
-                retention: pa.currentRetention ?? null,
-                totalValue: pa.totalValue ?? null,
-                startDate: pa.billingStart ? new Date(pa.billingStart) : null,
-                endDate: pa.billingEnd ? new Date(pa.billingEnd) : null,
-                dueDate: pa.payAppDueDate ? new Date(pa.payAppDueDate) : null,
-                updatedAt: pa.updatedAt ? new Date(pa.updatedAt) : null,
-                createdAt: pa.createdAt ? new Date(pa.createdAt) : null,
+            await this.payAppRepo.save(
+              this.payAppRepo.create({
+                id: String(pa.id),
+                contractId: String(cid),
+                number:
+                  typeof pa.payAppNumber === 'number'
+                    ? pa.payAppNumber
+                    : pa.payAppNumber != null
+                      ? parseInt(String(pa.payAppNumber), 10)
+                      : null,
+                billingType: pa.billingType != null ? String(pa.billingType) : null,
+                status: null,
+                billed: null,
+                retention: null,
+                totalValue: null,
+                startDate: null,
+                endDate: null,
+                dueDate: null,
+                updatedAt: null,
+                createdAt: null,
                 lastSyncedAt: new Date(),
-              });
-              await this.payAppRepo.save(payAppEntity);
-            } catch (paErr: any) {
-              this.logger.warn(
-                `Siteline contract sync: DB error saving pay app ${pa.id}: ${paErr?.message ?? paErr}. Skipping.`,
-              );
-            }
+              }),
+            );
+          } catch (stubErr: any) {
+            this.logger.warn(
+              `Siteline sync: stub save pay app ${pa.id}: ${stubErr?.message ?? stubErr}. Skipping stub.`,
+            );
           }
         }
+
+        cursor = nextCursor;
       } while (cursor);
 
-      this.logger.log(`Siteline contract sync finished. Total contracts processed: ${totalContracts}.`);
+      const contractsPagedEnabled =
+        (this.config.get<string>('SITELINE_CONTRACTS_PAGINATED_SYNC_ENABLED', 'true') || '')
+          .trim()
+          .toLowerCase() !== 'false';
+      const contractsPageLimit = Math.min(
+        500,
+        Math.max(
+          1,
+          Math.floor(
+            Number(this.config.get<string>('SITELINE_CONTRACTS_PAGINATED_SYNC_PAGE_SIZE', '500')) ||
+              500,
+          ),
+        ),
+      );
+      const optionalPayAppStatus = (
+        this.config.get<string>('SITELINE_CONTRACTS_PAGINATED_PAY_APP_STATUS') || ''
+      ).trim();
+      let contractsCursor: string | undefined;
+      if (contractsPagedEnabled) {
+        let pcPage = 0;
+        do {
+          pcPage += 1;
+          const pcRes = (await this.siteline.getPaginatedContractsActiveDiscovery({
+            limit: contractsPageLimit,
+            cursor: contractsCursor,
+            contractStatus: 'ACTIVE',
+            payAppStatus: optionalPayAppStatus || undefined,
+          })) as any;
+          if (pcRes && typeof pcRes === 'object' && 'error' in pcRes) {
+            this.logger.warn(
+              `Siteline paginatedContracts ACTIVE discovery failed: ${String(pcRes.error)}`,
+            );
+            sitelineAuthFailureHint(this.logger, String(pcRes.error));
+            break;
+          }
+          const pcPageData = pcRes;
+          const contracts: any[] = pcPageData?.contracts ?? [];
+          for (const c of contracts) {
+            if (c?.id) contractIdsToHydrate.add(String(c.id));
+          }
+          contractsActiveListed += contracts.length;
+          contractsCursor =
+            pcPageData?.hasNext &&
+            pcPageData?.cursor != null &&
+            String(pcPageData.cursor) !== ''
+              ? String(pcPageData.cursor)
+              : undefined;
+          this.logger.log(
+            `Siteline paginatedContracts ACTIVE: page=${pcPage}, rows=${contracts.length}, hasNext=${!!pcPageData?.hasNext}, uniqueContractsSoFar=${contractIdsToHydrate.size}`,
+          );
+        } while (contractsCursor);
+      } else {
+        this.logger.log('Siteline paginatedContracts ACTIVE discovery skipped (SITELINE_CONTRACTS_PAGINATED_SYNC_ENABLED=false).');
+      }
+
+      this.logger.log(
+        `Siteline discovery done. payAppRows=${payAppsListed}, contractsActiveRows=${contractsActiveListed}, uniqueContracts=${contractIdsToHydrate.size}, payAppsTotalCount(api)=${apiTotalCount ?? '?'}.`,
+      );
+
+      for (const cid of contractIdsToHydrate) {
+        if (delayMs > 0) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+        const detail = (await this.siteline.getContractFull(cid)) as any;
+        if (detail && typeof detail === 'object' && 'error' in detail) {
+          this.logger.warn(`Siteline getContract(${cid}): ${String(detail.error)}`);
+          hydrateErrors += 1;
+          continue;
+        }
+        if (!detail || typeof detail !== 'object') {
+          this.logger.warn(`Siteline getContract(${cid}): empty response`);
+          hydrateErrors += 1;
+          continue;
+        }
+        try {
+          await this.persistContractDetail(cid, detail);
+          hydrated += 1;
+        } catch (persistErr: any) {
+          this.logger.error(
+            `Siteline sync: persist contract ${cid}: ${persistErr?.message ?? persistErr}. Skipping.`,
+          );
+          hydrateErrors += 1;
+        }
+        if (this.config.get<string>('SITELINE_CRON_LOG_CONTRACT_DETAIL', 'false') === 'true') {
+          const payAppsArr = Array.isArray(detail?.payApps) ? detail.payApps : [];
+          this.logger.log(
+            `Siteline getContract(${cid}) detail: payApps=${payAppsArr.length}, leadPMs=${Array.isArray(detail?.leadPMs) ? detail.leadPMs.length : 0}.`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `Siteline contract sync finished. Hydrated=${hydrated}/${contractIdsToHydrate.size}, hydrateErrors=${hydrateErrors}.`,
+      );
     } catch (err: any) {
       this.logger.error(`Siteline contract sync failed (will retry next run): ${err?.message ?? err}`);
     } finally {
       this.contractsSyncInFlight = false;
+    }
+  }
+
+  /** Upsert one contract + nested pay apps from `contract(id)` response. */
+  private async persistContractDetail(contractId: string, detail: any): Promise<void> {
+    const existing = await this.contractRepo.findOne({ where: { id: contractId } });
+    const proj = detail.project ?? {};
+    const primaryPm = detail?.leadPMs?.[0];
+    const leadPmFirst = primaryPm?.firstName ?? '';
+    const leadPmLast = primaryPm?.lastName ?? '';
+    const fullName = `${leadPmFirst} ${leadPmLast}`.trim();
+    const leadPmName: string | null = fullName.length ? fullName : null;
+    const leadPmEmail = resolveLeadPmEmail(primaryPm?.email, leadPmFirst, leadPmLast);
+
+    const latestTotal =
+      detail.latestTotalValue != null && detail.latestTotalValue !== ''
+        ? String(detail.latestTotalValue)
+        : null;
+    const contractNumber =
+      detail.contractNumber != null && String(detail.contractNumber).trim() !== ''
+        ? String(detail.contractNumber).trim()
+        : null;
+    const projectNumber =
+      (detail.projectNumber != null && String(detail.projectNumber).trim() !== ''
+        ? String(detail.projectNumber).trim()
+        : null) ??
+      (proj.projectNumber != null ? String(proj.projectNumber) : null) ??
+      null;
+
+    const patch = {
+      id: contractId,
+      projectNumber,
+      projectName: typeof proj.name === 'string' ? proj.name : null,
+      internalProjectNumber: detail.internalProjectNumber ?? null,
+      latestTotalValue: latestTotal,
+      contractNumber,
+      billingType: detail.billingType ?? null,
+      percentComplete: parsePercentComplete(detail.percentComplete),
+      status: detail.status ?? null,
+      timeZone: detail.timeZone ?? null,
+      leadPmName,
+      leadPmEmail,
+      lastSyncedAt: new Date(),
+    };
+    const contractEntity = this.contractRepo.merge(
+      existing ?? this.contractRepo.create({ id: contractId }),
+      patch,
+    );
+    await this.contractRepo.save(contractEntity);
+
+    const payApps: any[] = detail?.payApps ?? [];
+    for (const pa of payApps) {
+      if (!pa?.id) continue;
+      try {
+        const payAppEntity = this.payAppRepo.create({
+          id: String(pa.id),
+          contractId,
+          number: pa.payAppNumber ?? null,
+          billingType: pa.billingType != null ? String(pa.billingType) : null,
+          status: pa.status ?? null,
+          billed: pa.currentBilled ?? null,
+          retention: pa.currentRetention ?? null,
+          totalValue: pa.totalValue ?? null,
+          startDate: pa.billingStart ? new Date(pa.billingStart) : null,
+          endDate: pa.billingEnd ? new Date(pa.billingEnd) : null,
+          dueDate: pa.payAppDueDate ? new Date(pa.payAppDueDate) : null,
+          updatedAt: pa.updatedAt ? new Date(pa.updatedAt) : null,
+          createdAt: pa.createdAt ? new Date(pa.createdAt) : null,
+          lastSyncedAt: new Date(),
+        });
+        await this.payAppRepo.save(payAppEntity);
+      } catch (paErr: any) {
+        this.logger.warn(
+          `Siteline contract sync: DB error saving pay app ${pa.id}: ${paErr?.message ?? paErr}. Skipping.`,
+        );
+      }
     }
   }
 
@@ -405,7 +568,10 @@ export class SitelineSyncService {
           projectName: pa.contract.projectName ?? null,
           projectNumber: pa.contract.projectNumber ?? null,
           leadPmName: (pa.contract as any).leadPmName ?? null,
-          leadPmEmail: (pa.contract as any).leadPmEmail ?? null,
+          leadPmEmail: resolveLeadPmEmailFromFullName(
+            (pa.contract as any).leadPmEmail,
+            (pa.contract as any).leadPmName,
+          ),
           numCurrent: 0,
           numAged30Days: 0,
           numAged60Days: 0,
@@ -529,6 +695,13 @@ export class SitelineSyncService {
 
 }
 
+/** Maps Siteline percentComplete to entity `decimal(5,2)` / number. */
+function parsePercentComplete(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Logs once when Siteline rejects credentials (GraphQL error text varies by spelling). */
 function sitelineAuthFailureHint(logger: Logger, errMsg: string): void {
   const m = String(errMsg).toLowerCase();
@@ -538,7 +711,7 @@ function sitelineAuthFailureHint(logger: Logger, errMsg: string): void {
     m.includes('unauthorized')
   ) {
     logger.error(
-      'Siteline API rejected this app token (Not Authorised). Create or rotate the API token in Siteline, set SITELINE_API_TOKEN in .env to match what works in Postman, restart the server, and confirm SITELINE_API_URL. If Postman uses a non-Bearer header, set SITELINE_AUTH_HEADER.',
+      'Siteline API rejected this app token (Not Authorised). Fix: (1) GET /siteline/status — if dotEnvTokenMatchesLoaded is false, process.env overrides .env (unset SITELINE_API_TOKEN in shell/Docker/IDE). (2) Match SITELINE_API_URL to Postman (often https://api-external.siteline.com). (3) SITELINE_API_TOKEN = same value as Postman after "Bearer ".',
     );
   }
 }

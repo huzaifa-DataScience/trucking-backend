@@ -46,10 +46,25 @@ export class SitelineController {
   @Public()
   @Get('status')
   getStatus() {
+    const diagnostics = this.siteline.getConnectionDiagnostics();
+    const hints: string[] = [];
+    if (diagnostics.dotEnvTokenMatchesLoaded === false) {
+      hints.push(
+        'SITELINE_API_TOKEN in .env does not match what the app loaded — process.env overrides .env (shell/Docker/IDE). Unset the variable in the environment or update it there.',
+      );
+    }
+    if (diagnostics.dotEnvUrlMatchesLoaded === false) {
+      hints.push(
+        'SITELINE_API_URL in .env differs from loaded URL — align process env with Postman (often https://api-external.siteline.com).',
+      );
+    }
     return {
-      configured: this.siteline.isConfigured(),
-      message: this.siteline.isConfigured()
-        ? 'Siteline module ready'
+      ...diagnostics,
+      hints,
+      message: diagnostics.configured
+        ? hints.length
+          ? 'Siteline is configured but env precedence or URL may be wrong — see hints.'
+          : 'Siteline module ready'
         : 'Set SITELINE_API_URL and SITELINE_API_TOKEN in .env',
     };
   }
@@ -81,7 +96,7 @@ export class SitelineController {
     });
   }
 
-  /** Get a single contract by id (real data). */
+  /** Get a single contract by id — **lean** Siteline payload (`ContractSummary`: id, totals, numbers, project name). For full pay apps/SOV use sync DB tables or extend API. */
   @UseGuards(JwtAuthGuard)
   @Get('contracts/:id')
   async getContract(@Param('id') id: string) {
@@ -130,8 +145,7 @@ export class SitelineController {
   }
 
   /**
-   * Overdue aging view: pay apps with netDollars > 0 and days past due at least `minDaysPastDue`
-   * (default 51, matching legacy "> 50 days"; pass 10, 23, etc. for a custom floor).
+   * Overdue aging view from latest `Siteline_AgingContracts` (default minDaysPastDue 51 → AR past 50 days).
    */
   @UseGuards(JwtAuthGuard)
   @Get('aging-overdue')
