@@ -14,6 +14,14 @@ export class SitelineContract {
   @Column({ type: 'nvarchar', length: 100, nullable: true })
   internalProjectNumber!: string | null;
 
+  /** Siteline `latestTotalValue` (often cents; BIGINT in SQL). */
+  @Column({ name: 'LatestTotalValue', type: 'bigint', nullable: true })
+  latestTotalValue!: string | null;
+
+  /** Siteline `contractNumber` (e.g. customer-facing CO / contract #). */
+  @Column({ name: 'ContractNumber', type: 'nvarchar', length: 100, nullable: true })
+  contractNumber!: string | null;
+
   @Column({ type: 'nvarchar', length: 50, nullable: true })
   billingType!: string | null;
 

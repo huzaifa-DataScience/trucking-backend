@@ -12,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
 import { ClearstoryApiPayload, ClearstoryCor, ClearstoryProject } from '../database/entities';
+import { ClearstoryContractComparisonService } from './clearstory-contract-comparison.service';
 import { ClearstorySyncService } from './clearstory-sync.service';
 
 type Bucket = 'APPROVED' | 'ATP' | 'IN_REVIEW' | 'PLACEHOLDER' | 'VOID';
@@ -119,6 +120,7 @@ export class ClearstoryController {
     @InjectRepository(ClearstoryProject) private readonly projects: Repository<ClearstoryProject>,
     @InjectRepository(ClearstoryCor) private readonly cors: Repository<ClearstoryCor>,
     @InjectRepository(ClearstoryApiPayload) private readonly apiPayloads: Repository<ClearstoryApiPayload>,
+    private readonly contractComparison: ClearstoryContractComparisonService,
     private readonly clearstorySync: ClearstorySyncService,
   ) {}
 
@@ -304,6 +306,8 @@ export class ClearstoryController {
       totals.inReview +
       totals.placeholder;
 
+    const contractComparison = await this.contractComparison.getByProject(project);
+
     return {
       project: {
         id: project.id,
@@ -319,15 +323,44 @@ export class ClearstoryController {
       },
       totals,
       revisedContractValue,
+      contractComparison,
       reconciliation: {
-        redFlag: false,
-        clearstory: revisedContractValue,
-        siteline: null,
+        redFlag: contractComparison.comparison.status === 'mismatch',
+        clearstory: contractComparison.clearstory.approvedToProceedAndCoIssuedContractValue,
+        siteline: contractComparison.siteline.latestTotalValue,
         foundation: null,
-        lastCheckedAt: new Date().toISOString(),
-        notes: [],
+        lastCheckedAt: contractComparison.comparison.lastCheckedAt,
+        notes:
+          contractComparison.comparison.status === 'missing_siteline'
+            ? ['No Siteline contract matched this Clearstory job number.']
+            : contractComparison.comparison.status === 'missing_job_number'
+              ? ['Clearstory project has no job number, so Siteline comparison could not run.']
+              : [],
       },
     };
+  }
+
+  @Get('contract-comparison')
+  async getContractComparison(
+    @Query('projectId') projectId?: string,
+    @Query('jobNumber') jobNumber?: string,
+  ) {
+    const pid = Number.parseInt(projectId ?? '', 10);
+    const job = String(jobNumber ?? '').trim();
+
+    if (Number.isFinite(pid)) {
+      const result = await this.contractComparison.getByProjectId(pid);
+      if (!result) throw new NotFoundException('Project not found');
+      return result;
+    }
+
+    if (job) {
+      const result = await this.contractComparison.getByJobNumber(job);
+      if (!result) throw new NotFoundException('Project not found for job number');
+      return result;
+    }
+
+    throw new BadRequestException('Provide query param "projectId" or "jobNumber".');
   }
 
   @Get('projects/:id/cors')
@@ -356,6 +389,10 @@ export class ClearstoryController {
         projectId: c.projectId,
         jobNumber: c.jobNumber,
         corNumber: c.corNumber,
+        tmTagNumbers: c.tmTagNumbers,
+        manualTmTag: c.manualTmTag,
+        tmTagCount: c.tmTagCount,
+        daysInReview: c.daysInReview != null ? Number(c.daysInReview) : null,
         issueNumber: c.issueNumber,
         type: c.type,
         status: c.status,

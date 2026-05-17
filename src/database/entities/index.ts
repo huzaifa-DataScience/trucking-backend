@@ -34,3 +34,7 @@ export { ClearstoryChangeNotificationContract } from './clearstory-change-notifi
 export { ClearstoryRate } from './clearstory-rate.entity';
 export { ClearstoryProjectRate } from './clearstory-project-rate.entity';
 export { ClearstorySyncSnapshot } from './clearstory-sync-snapshot.entity';
+export { TrimbleSyncState } from './trimble-sync-state.entity';
+export { TrimbleProject } from './trimble-project.entity';
+export { TrimbleLineItemRawExport } from './trimble-line-item-raw-export.entity';
+export { TrimbleProjectLineItem } from './trimble-project-line-item.entity';

@@ -8,6 +8,11 @@ import {
   SitelineAgingContract,
 } from '../database/entities';
 import { SitelineService } from './siteline.service';
+import {
+  agingCentsToDollars,
+  overdueCentsFromAgingContract,
+} from './siteline-aging-overdue.util';
+import { resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -587,118 +592,83 @@ export class SitelineReportService {
   }
 
   /**
-   * Overdue aging view: pay apps at least N days past due (default N=51 → legacy >50 days) with net > 0.
-   * Based on synced Siteline_PayApps + Siteline_Contracts, reusing the same
-   * net dollars and days-past-due calculations as the main aging report.
+   * Overdue aging view from latest `Siteline_AgingContracts` snapshot (same basis as overdue emails).
+   * Default `minDaysPastDue` is 51 (legacy >50 days). `netDollars` is overdue AR in those buckets.
    */
   async getOverdueOver50(filters: SitelineAgingFilters = {}): Promise<AgingOverdueResponse> {
-    const payApps = await this.payAppRepo.find({
-      relations: ['contract'],
+    const minDaysExclusive =
+      typeof filters.minDaysPastDue === 'number' && Number.isFinite(filters.minDaysPastDue)
+        ? Math.max(0, Math.floor(filters.minDaysPastDue) - 1)
+        : 50;
+
+    const latestRows = await this.agingSummaryRepo.find({
+      order: { id: 'DESC' },
+      take: 1,
+    });
+    const latest = latestRows[0];
+    if (!latest) {
+      return { items: [] };
+    }
+
+    const snapRows = await this.agingContractRepo.find({
+      where: { snapshotId: latest.id },
     });
 
-    const minDaysRequired =
-      typeof filters.minDaysPastDue === 'number' && Number.isFinite(filters.minDaysPastDue)
-        ? Math.max(0, Math.floor(filters.minDaysPastDue))
-        : 51;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const items: AgingOverdueRow[] = [];
-    const pmCache = new Map<string, { name: string | null; email: string | null }>();
-
     const search = (filters.search ?? '').trim().toLowerCase();
-    const includeStatuses =
-      filters.includeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
-    const excludeStatuses =
-      filters.excludeStatuses?.map((s) => s.trim()).filter(Boolean) ?? undefined;
+    const items: AgingOverdueRow[] = [];
 
-    for (const pa of payApps) {
-      // Skip explicitly paid/draft items, but allow null/other statuses through.
-      if (pa.status === 'PAID' || pa.status === 'DRAFT') continue;
-
-      const contract = pa.contract;
-      if (!contract) continue;
-
-      const billed = Number(pa.billed ?? 0);
-      const retention = Number(pa.retention ?? 0);
-      const netDollars = (billed - retention) / 100;
-
-      const dueDate = pa.dueDate ? new Date(pa.dueDate) : null;
-      const daysPastDue = dueDate
-        ? Math.floor((today.getTime() - dueDate.getTime()) / MS_PER_DAY)
-        : 0;
-
-      if (daysPastDue < minDaysRequired) continue;
+    for (const row of snapRows) {
+      const overdueCents = overdueCentsFromAgingContract(row, minDaysExclusive);
+      const netDollars = agingCentsToDollars(overdueCents);
       if (netDollars <= 0) continue;
 
-      const status = normalizeStatus(pa.status);
-      if (filters.overdueOnly && daysPastDue <= 0) continue;
+      const leadPmName = row.leadPmName ?? null;
+      const leadPmEmail = resolveLeadPmEmailFromFullName(row.leadPmEmail, row.leadPmName);
+
+      const avgRaw = row.averageDaysToPaid;
+      const daysPastDue =
+        avgRaw != null && String(avgRaw).trim() !== '' && Number.isFinite(Number(avgRaw))
+          ? Math.floor(Number(avgRaw))
+          : minDaysExclusive + 1;
+
+      if (filters.overdueOnly && netDollars <= 0) continue;
       if (typeof filters.maxDaysPastDue === 'number' && daysPastDue > filters.maxDaysPastDue)
         continue;
-      if (typeof filters.minNetDollars === 'number' && netDollars < filters.minNetDollars)
-        continue;
-      if (typeof filters.maxNetDollars === 'number' && netDollars > filters.maxNetDollars)
-        continue;
-      if (includeStatuses && includeStatuses.length) {
-        if (!status || !includeStatuses.includes(status)) continue;
-      }
-      if (excludeStatuses && excludeStatuses.length) {
-        if (status && excludeStatuses.includes(status)) continue;
-      }
-
-      // Try DB-cached PM first
-      let leadPmName: string | null = (contract as any).leadPmName ?? null;
-      let leadPmEmail: string | null = (contract as any).leadPmEmail ?? null;
-
-      // If still missing, fetch from Siteline aging data once per contract
-      if (!leadPmName && !leadPmEmail) {
-        let cached = pmCache.get(contract.id);
-        if (!cached) {
-          try {
-            const detail = (await this.siteline.getContract(contract.id)) as any;
-            const primaryPm = detail?.leadPMs?.[0];
-            const first = primaryPm?.firstName ?? '';
-            const last = primaryPm?.lastName ?? '';
-            const fullName = `${first} ${last}`.trim() || null;
-            const email = primaryPm?.email ?? null;
-            cached = { name: fullName, email };
-          } catch {
-            cached = { name: null, email: null };
-          }
-          pmCache.set(contract.id, cached);
-        }
-        leadPmName = cached.name;
-        leadPmEmail = cached.email;
-      }
+      if (typeof filters.minNetDollars === 'number' && netDollars < filters.minNetDollars) continue;
+      if (typeof filters.maxNetDollars === 'number' && netDollars > filters.maxNetDollars) continue;
 
       if (search) {
+        const projectName =
+          (row.projectName && String(row.projectName).trim()) ||
+          row.internalProjectNumber ||
+          row.contractId;
         const matches =
-          includesNormalized(contract.projectName ?? null, search) ||
-          includesNormalized(contract.projectNumber ?? null, search) ||
-          includesNormalized(contract.internalProjectNumber ?? null, search) ||
+          includesNormalized(projectName, search) ||
+          includesNormalized(row.projectNumber ?? null, search) ||
+          includesNormalized(row.internalProjectNumber ?? null, search) ||
           includesNormalized(leadPmName, search) ||
           includesNormalized(leadPmEmail, search);
         if (!matches) continue;
       }
 
       items.push({
-        contractId: contract.id,
-        projectName: contract.projectName ?? null,
-        projectNumber: contract.projectNumber ?? null,
-        internalProjectNumber: contract.internalProjectNumber ?? null,
-        companyId: null, // Siteline company id is not stored on contract entity today
+        contractId: row.contractId,
+        projectName: row.projectName ?? null,
+        projectNumber: row.projectNumber ?? null,
+        internalProjectNumber: row.internalProjectNumber ?? null,
+        companyId: row.companyId ?? null,
         leadPmName,
         leadPmEmail,
-        invoiceNumber: pa.number ?? null,
-        invoiceDate: pa.startDate ? new Date(pa.startDate).toISOString() : null,
-        dueDate: dueDate ? dueDate.toISOString() : null,
+        invoiceNumber: null,
+        invoiceDate: latest.endDate ?? null,
+        dueDate: null,
         daysPastDue,
         netDollars,
-        status: pa.status ?? null,
+        status: null,
       });
     }
 
+    items.sort((a, b) => b.netDollars - a.netDollars);
     return { items };
   }
 }

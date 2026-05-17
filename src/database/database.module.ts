@@ -38,6 +38,10 @@ import {
   ClearstoryRate,
   ClearstoryProjectRate,
   ClearstorySyncSnapshot,
+  TrimbleSyncState,
+  TrimbleProject,
+  TrimbleLineItemRawExport,
+  TrimbleProjectLineItem,
 } from './entities';
 
 @Module({
@@ -112,6 +116,10 @@ import {
             ClearstoryRate,
             ClearstoryProjectRate,
             ClearstorySyncSnapshot,
+            TrimbleSyncState,
+            TrimbleProject,
+            TrimbleLineItemRawExport,
+            TrimbleProjectLineItem,
           ],
           synchronize: false,
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
@@ -169,6 +177,10 @@ import {
       ClearstoryRate,
       ClearstoryProjectRate,
       ClearstorySyncSnapshot,
+      TrimbleSyncState,
+      TrimbleProject,
+      TrimbleLineItemRawExport,
+      TrimbleProjectLineItem,
     ]),
   ],
   exports: [TypeOrmModule],

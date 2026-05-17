@@ -17,6 +17,9 @@ export class SitelinePayApp {
   @Column({ type: 'int', nullable: true })
   number!: number | null;
 
+  @Column({ name: 'BillingType', type: 'nvarchar', length: 50, nullable: true })
+  billingType!: string | null;
+
   @Column({ type: 'nvarchar', length: 50, nullable: true })
   status!: string | null;
 

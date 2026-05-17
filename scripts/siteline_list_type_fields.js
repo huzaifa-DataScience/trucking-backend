@@ -66,9 +66,22 @@ function printHelpAndExit(code) {
   process.exit(code);
 }
 
+function normalizeSitelineToken(raw) {
+  let t = String(raw ?? '').trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
 function getHeaders(apiToken, authHeader) {
-  if (authHeader) return { [authHeader]: apiToken };
-  return { Authorization: `Bearer ${apiToken}` };
+  const token = normalizeSitelineToken(apiToken);
+  const name = String(authHeader || '').trim();
+  if (!name || name.toLowerCase() === 'authorization') {
+    const bearer = /^Bearer\s+/i.test(token) ? token : `Bearer ${token}`;
+    return { Authorization: bearer };
+  }
+  return { [name]: token };
 }
 
 async function listFields(apiUrl, apiToken, authHeader, gqlTypeName) {

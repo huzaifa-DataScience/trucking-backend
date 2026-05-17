@@ -1,0 +1,471 @@
+clearstoryProjectId,jobNumber,projectName,status,matches,clearstoryApprovedAtpAndCoIssuedUsd,sitelineLatestTotalUsd,differenceUsd,sitelineContractCount
+100948,02768,02768 - JPPM Expansion & Renovation (C&W),missing_siteline,,82000,,,0
+126894,02769,02769 - Univ. Of Baltimore Commons,missing_siteline,,54057.16,,,0
+151330,02779,02779 - USDA GWCC Chiller Replacement (Superior) (DCB-PW) (TS-LL),missing_siteline,,14560,,,0
+162350,02783,02783 - UMD NextGen Demo Abatement (Kiewit),missing_siteline,,314178.99,,,0
+208452,02785,02785 - UMD Atlantic Abatement (Davis),missing_siteline,,298705,,,0
+27017,09720,09720 - NRL - Building 65/75,missing_siteline,,5423487.64,,,0
+27018,09725,09725 - Martin Building Renovation,missing_siteline,,3900936.2,,,0
+52370,09749,09749 - NRL-66 Reno TTCP Facility,missing_siteline,,144966.22,,,0
+51450,09759,09759 - APWU Concrete Demo & rework,missing_siteline,,26650,,,0
+42420,09764,09764 - 800 F St. NW,missing_siteline,,174700.69,,,0
+54032,09766,09766 - APWU Concrete Demo History Center,missing_siteline,,28170,,,0
+66179,09767,09767 - 2005 11th St.,missing_siteline,,64380.62,,,0
+59527,09769,09769 - 3450 Eads (Platform USA),missing_siteline,,341000,,,0
+65859,09770,09770 - 1841 Columbia Road,missing_siteline,,60277.63,,,0
+67112,09771,09771 - GWU Guthridge Hall,missing_siteline,,161760,,,0
+80512,09774,09774 - Sink Hole Limit Determination & Repair,missing_siteline,,40039,,,0
+92340,09775,09775 - PNC Chevy Chase Tunnel Decom,missing_siteline,,36128.67,,,0
+100793,09777,09777 - OPM Data Ctr. (S&D) (Goel-PW) (TS-LL),missing_siteline,,136807.28,,,0
+118158,09778,09778 - MedStar Rehab (Christman) (Goel-NS) (TS-LL),missing_siteline,,305212.27,,,0
+149348,09781,09781 - LHOB Steam Replacement (Grimberg),missing_siteline,,364860,,,0
+151316,09782,09782 - Brennan Center for Justice (Rand Const) (Goel-NS) (TS-LL),missing_siteline,,44648.58,,,0
+39909,09837,09837 - OLD SPANISH BUILDING VDOT,missing_siteline,,109403,,,0
+45528,09838,09838 - USNA MacDonough Hall Repair - Building 102 (Consigli),missing_siteline,,1255994.08,,,0
+50819,09845,09845 - Meade Heights ES Kindergarten Addition,missing_siteline,,19800,,,0
+54048,09847,09847 - PG New Forensic Lab (Tuckman - Barbee - 1593-020-070S),missing_siteline,,357670,,,0
+51675,09848,09848 - WSSC Lab Expansion,missing_siteline,,118882,,,0
+49352,09849,09849 - MacDonough Hall - Piping,missing_siteline,,133051.63,,,0
+51908,09852,09852 - Wakefield Forest ES (Meridian),missing_siteline,,339931.71,,,0
+53792,09854,09854 - Hyattsville Public Safety HQ (019743-02A),missing_siteline,,360561.8,,,0
+53196,09857,09857 - USDA ARS BARC (Grunley),missing_siteline,,488295.21,,,0
+63705,09861,09861 - USG MIF (Langley - VA),missing_siteline,,25993,,,0
+67140,09863,09863 - Crossfield ES,missing_siteline,,616807.74,,,0
+67108,09864,09864 - Madeira Science Bldg,missing_siteline,,38074.3,,,0
+65345,09866,09866 - St Stephen's St Agnes Upper School,missing_siteline,,195000,,,0
+70332,09868,09868 - MCC Tenant Improvement (Hensley Cons.),missing_siteline,,94800,,,0
+69959,09871,09871 - Humphreys - Mold Abatement - Maintenance & Supply Facility Project,missing_siteline,,0,,,0
+78772,09872,"09872 - INSCOM, SOAF - Phase 4 Nolan Building",missing_siteline,,4615100.21,,,0
+108352,09875,09875 – Old Mt. Vernon HS (Smoot DC) (Goel-PW) (TS-LL),missing_siteline,,1558568.48,,,0
+164041,09875,09875 - Old Mount Vernon HS,missing_siteline,,0,,,0
+192262,09875,09875 – Old Mt. Vernon HS (Metro Mechanical LLC),missing_siteline,,0,,,0
+111812,09877,09877 - United Airlines In-Flight Training Center (Manhattan) (Goel-NS) (TS-LL),missing_siteline,,126065,,,0
+121344,09882,09882 - Muse Alley Park (LF Jennings) (Goel-NS) (TS-LL),missing_siteline,,50400.21,,,0
+171349,09887,09887 - FCC Children Center,missing_siteline,,27650,,,0
+130632,09889,09889 - LiDL 1583 Smoketown (HBW Construction) (Goel-NS) (TS-LL),missing_siteline,,94107.25,,,0
+136052,09890,09890 - Walmart Pasadena (Whiting Turner) (Goel-NS) (TS-LL),missing_siteline,,52406.99,,,0
+140245,09892,09892 - Withum Tysons (Rand Cons.) (Goel-NS) (TS-LL),missing_siteline,,48990,,,0
+136064,09893,"09893 - Walmart - Denton, MD (Whiting Turner) (Goel-NS) (TS-LL)",missing_siteline,,48519.34,,,0
+136067,09894,09894 - Walmart Glen Burnie - (Whiting Turner) (Goel-XX) (TS-LL),missing_siteline,,60222.42,,,0
+136467,09895,09895 - Montebello Bldg. (Morgan State) (Goel-NS) (TS-LL),missing_siteline,,11191.17,,,0
+176812,09896,09896 – Walmart Burke VA (Whiting Turner),missing_siteline,,5000,,,0
+149345,09897,09897 - JPMC - Dumfries (Corenic 250016-SC-009),missing_siteline,,54971.46,,,0
+146125,09898,09898 - NIH - Bldg 40 (Hensel Phelps),missing_siteline,,0,,,0
+26993,09911,09911 - Smothers ES,missing_siteline,,1321186.09,,,0
+28666,09912,09912 - American University Mechanical Demo,missing_siteline,,59000,,,0
+51812,09914,09914 - Aiton (Whitlock) Elementary,match,true,1111434.46,1111434.46,0,1
+82176,09915,09915 - Carl F West Estates - Wreck 6|21|202,match,true,81389.97,81389.97,0,1
+72198,09916,09916 - Carl  F West-SJS Renovation  6|21|202,match,true,112789.05,112789.05,0,1
+63796,09917,09917 - Truesdell Elementary - 1960 Annex,mismatch,false,861359.34,721575.01,139784.33,1
+134422,09920,09920 - Brent ES (Smoot) (GoelDC-PW) (TS-LL),mismatch,false,3210220,3455370,-245150,1
+131969,09921,09921 - American Univ. Roper Hall (James D Davis),match,true,176559.44,176559.44,0,1
+173110,09923,09923 - Belmont Crossing Phase 3,mismatch,false,52600.45,1157399.45,-1104799,1
+142299,09924,09924 - Capital One Arena (COAT) MDE Loft,missing_siteline,,0,,,0
+142300,09925,09925 - Cap One Reana (COAT) Package 2,missing_siteline,,0,,,0
+142289,09926,09926 - Cap One Arena (COAT) Enablement,inactive_siteline,,0,,,0
+140699,11111,11111 - Budget Prices for Goel Jobs,missing_siteline,,1,,,0
+58823,12135,12135 - Project C.O.R.E. Demo COR-028,missing_siteline,,2761239.23,,,0
+68700,12136,12136 - Sharp Ledenhall ES - Project C.O.R.E. COR-030 // DD-014,missing_siteline,,341500,,,0
+73490,12137,12137 - CORE Demo COR-031,missing_siteline,,1152087.33,,,0
+161388,12201 - 02,12201 - 2718 - 2734 Prospect St,missing_siteline,,0,,,0
+166039,12201 - 03,12201 - 2525-2533 Pennsylvania Ave,missing_siteline,,0,,,0
+189351,12201-04,12201,missing_siteline,,0,,,0
+31030,13223,"13223 - Langston Hughes Middle School (Procure, and install tarps for WM)",missing_siteline,,1027.69,,,0
+35028,"13400 - B-1450 Asbestos Abatement, On-Call, Term Contract","13400 - B-1450 Asbestos Abatement, On-Call, Term Contract (Master Agreement",missing_siteline,,0,,,0
+118758,13800,13800 - MNCPPC - Emergency response,missing_siteline,,75000,,,0
+89094,14004,14004 - 5419 Crismer Ave - Lead,missing_siteline,,5350,,,0
+70811,14501,14501 - Cardinal FES (FCPS),missing_siteline,,1,,,0
+97396,14522,14522 - Mosaic ES (FCPS Hazmat),missing_siteline,,28524.24,,,0
+64564,14700,"14700 - Asbestos Abatement Services, City of Baltimore (B50006097)",missing_siteline,,918335.08,,,0
+76673,15000,"15000 - Demolition Services, On-Call, Term Contract (Baltimore County)",missing_siteline,,0,,,0
+207123,15002,15002 - 12074 Falls Road Demo (Balt County) (Goel- NS) (TS-LL),missing_siteline,,51654.6,,,0
+76265,15200,"15200 - ANNUAL CONTRACT FOR HAZARDOUS MATERIAL ABATEMENT, DEMOLITION, AND ROUGH GRADING CONSTRUCTION SERVICES PROJECT NO. 2G40-162-004",missing_siteline,,0,,,0
+77771,15400,15400 - Arlington County On-Call Residential Demolition Services,missing_siteline,,0,,,0
+115369,16000,16000 - FCPS Hazmat Contract 2024,missing_siteline,,0,,,0
+175286,16051,16051 - Wilton Woods Center,missing_siteline,,94510,,,0
+179881,16056,16056 - Lorton Center-Phase 2,missing_siteline,,0,,,0
+83219,18900,18900 - Amtrak BP Tunnel Demo (DCB),missing_siteline,,0,,,0
+73309,18900,18900 - Amtrak BP Tunnel Demo,missing_siteline,,272744.4,,,0
+85183,18901,"18901 - 900 W. North, Baltimore, MD",missing_siteline,,633765.36,,,0
+86396,18902,"18902 - 920 W. North Baltimore, MD",missing_siteline,,0,,,0
+116131,18906,"18906 - 813 N. Pulaski, Baltimore, MD",missing_siteline,,0,,,0
+99504,19000,19000 - Baltimore City Building Demolition (PRIME) Term Contract,missing_siteline,,0,,,0
+185603,19000,19000 - ISSUE #2 - Emergency Response with Partial Demolition - additional labor and equipment,missing_siteline,,10000000,,,0
+125150,19000,P&J Supplemental Work,missing_siteline,,0,,,0
+186190,19000,19000 - Issue 1 Regulated asbestos containing materials (RACM),missing_siteline,,10000000,,,0
+187294,19000,19000 - Issue 2 Accessible RACM removal from party walls - excluded from the contract,missing_siteline,,10000000,,,0
+187306,19000,19000 - Issue 3 Emergency response without full demolition requiring additional labor and equipment,missing_siteline,,10000000,,,0
+187308,19000,19000 - Issue 5 Concrete removal or replacement for steps added post emergency as punchlist work requiring extra time and labor,missing_siteline,,10000000,,,0
+187861,19000,19000 - Issue 5A Non Emergency Concrete removal or replacement for steps and pre existing sidewalk conditions unpaid by DHCD,missing_siteline,,10000000,,,0
+141635,19029,19029 - 607 Bartlett Avenue,missing_siteline,,0,,,0
+161402,19053,19053 -1902 & 1904 Dukeland St. - EMG,missing_siteline,,0,,,0
+28108,21001,21001 - Central HS,missing_siteline,,771945,,,0
+27569,21002,21002 - New Residence Hall,missing_siteline,,942000,,,0
+31060,21003,21003 - UMCP New Residence TAB,missing_siteline,,270000,,,0
+29341,21004,21004 - UMCP New Residence Sheet Metal (JCM),missing_siteline,,3192975,,,0
+39412,21005,21005 - UMCP - New Residence Hall ATC (JCM),missing_siteline,,1044315,,,0
+28432,21007,21007 - UMMC Sheet Metal (JCM),missing_siteline,,1399444,,,0
+27571,21010,21010 - City Hall College Park,missing_siteline,,211690,,,0
+29881,21011,21011 - Stone Ridge Student Life Center,missing_siteline,,206850,,,0
+28068,21012,21012 - Govans ES,missing_siteline,,490000,,,0
+27574,21014,21014 -  IDEA Factory - (Mallick) (DCB-NS)(DR-AS),missing_siteline,,499020,,,0
+28067,21015,21015 - Carroll County Career Tech Center (Warner)(DCB-PW)(DR-AS),missing_siteline,,1080431.76,,,0
+27570,21016,21016 - Dining Facility,missing_siteline,,370131,,,0
+35436,21017,21017 - Bowie State University Chiller Replacement,missing_siteline,,14600,,,0
+28468,21018,21018 - IDEA Factory Sheet Metal (Mallick),missing_siteline,,898380,,,0
+28519,21019,21019 - IDEA Factory Controls (Mallick),missing_siteline,,821583,,,0
+28114,21021,21021 - UM BRB 11 Lab Renovation-Phase 2,missing_siteline,,23730,,,0
+28282,21023,21023 - WMATA HQ Office - (S&D) (DCB-NS)(DR-AS),missing_siteline,,1736430,,,0
+28084,21025,21025 - UMB Bressler Lab Renovation,missing_siteline,,24320,,,0
+28118,21026,21026 - UM-Baltimore Medical Center,missing_siteline,,168610,,,0
+28124,21027,21027 - Gaithersburg Cluster ES (Rommel) (DCB - NS) (DRo/SU),missing_siteline,,322000,,,0
+28302,21028,21028 - UMD - Chemistry Building,missing_siteline,,14000,,,0
+47646,21032,21032 - Fallsmead ES - (Warner)(DCB-NS)(HP/CC),missing_siteline,,231800,,,0
+33620,21033,21033 - UMUCH Medical Center @ Aberdeen,missing_siteline,,202000,,,0
+35996,21034,21034 - FCC Linganore Hall Renovations (Bldg L.) (Warner)(DCB-PW)(DR/AS),missing_siteline,,272920,,,0
+37025,21035,21035 - UMUCH MOD IT @ Aberdeen,missing_siteline,,39995,,,0
+33053,21036,21036 - Montebello Elementary/Middle School,missing_siteline,,252550,,,0
+81883,21038,21038 - PGCPS Fab HVAC Upgrade (D10740 - DEL15),missing_siteline,,170500,,,0
+44897,21040,21040 - Howard Hall 4th Floor - (Emjay) (DCB-PW)(HP/CC),missing_siteline,,1280,,,0
+33983,21041,21041 - JHU Wyman Park Building (Emjay)(DC-NS)(RD/JS),missing_siteline,,302225,,,0
+50124,21043,21043 - Towson University - Glen Tower Renovation (DCB-PW)(RD/JS),missing_siteline,,306138.81,,,0
+36744,21044,21044 - UMCP Chem Wing 1 Replacement (P&K)(DCB-NS(DR/AS),missing_siteline,,540200,,,0
+43335,21045,21045 - UMCP - Chemistry Wing 1 Replacement - (W.G. Tomko) (DCB-PW)(DR/AS),missing_siteline,,130000,,,0
+43037,21048,21048 - Bladenburg Bus Garage(S&D)(DCB-PW),missing_siteline,,589172.7,,,0
+35710,21050,21050 - Towson University - CHP(WG Tomko)(DCB-PW)(RD/JS),missing_siteline,,2233265.45,,,0
+49632,21052,21052 - Sibley Hospital Endoscopy,missing_siteline,,2500,,,0
+48301,21053,21053 - Sibley Hospital (ICU),missing_siteline,,60000,,,0
+55919,21055,21055 - Morgan State University-HHS Blg. (DCB-PW)(RD/JS),missing_siteline,,1757911.47,,,0
+49807,21056,21056 - UMCP - Woods Halls HVAC Renovation - (Denver Elek) (DCB-NS)(HP/CC),missing_siteline,,63200,,,0
+49989,21057,21057 - McDonough High School Phase 1 Project (Ronco)(DCB-PW)(TB/RF),missing_siteline,,198915.37,,,0
+43647,21058,21058 - MICA Mosher (Ariosa & Company),missing_siteline,,190000,,,0
+48226,21059,21059 - Piscataway Effluent Filters - (PC Const) (DCB-PW)(HP/CC),missing_siteline,,113220,,,0
+53335,21060,21060 - UMSON - School of Nursing Expansion - (Temp Air) (DCB-PW)(RD/JS),missing_siteline,,85300,,,0
+42123,21061,21061 - Adelphi MS,missing_siteline,,615000,,,0
+50035,21062,21062 - Adelphi MS (Sheet Metal),missing_siteline,,1620300,,,0
+42125,21063,21063 - Drew Freeman Middle School - (S&D) (DCB-PW)(TB/RF),missing_siteline,,615000,,,0
+42150,21064,21064 - Drew Freeman MS Sheet Metal,missing_siteline,,1620300,,,0
+42126,21065,21065 - Kenmore Middle School - (S&D) (DCB-PW)(TB/RF),missing_siteline,,615000,,,0
+44224,21066,21066 - Kenmoor Middle School - Sheet Metal,missing_siteline,,1620300,,,0
+42148,21067,21067 - Walker Mill Middle School - S&D (DCB-PW)(TB/RF),missing_siteline,,615000,,,0
+44225,21068,21068 - Walker Mills Middle School - Sheet Metal,missing_siteline,,1620300,,,0
+41551,21069,21070 - Baltimore Arena -(JCM) (DCB-NS)(RD/JS),missing_siteline,,374340,,,0
+43155,21070,21070 - Baltimore Arena Renovations,missing_siteline,,1756100,,,0
+100014,21071,21071 - MDOT Glen Burnie Renovation (W.L Gary)(DCB-PW)(HP/CC),missing_siteline,,78022.26,,,0
+61108,21072,21072 - Mary E. Rodman Rec Center (Horton)(DCB-PW)(RD/JS),missing_siteline,,2275,,,0
+48681,21073,21073 - Bowie State Comm. Arts & Humanities Bldg. (Tomko) (DCB-PW)(RD/JS),missing_siteline,,1357629.65,,,0
+53544,21074,21074 - DLS MSA Razing & Replacement (Anchor)(DCB-PW)(RD/JS),missing_siteline,,1059912.31,,,0
+57495,21075,21075 - GMU Life Sciences & Engineering Building (Warner),missing_siteline,,950000,,,0
+54959,21076,21076 - Neelsville MS,missing_siteline,,505854.73,,,0
+92140,21078,21078 - PGCPS Northwestern Chiller (S$D) (DCB-NS)(HP/CC),missing_siteline,,5300,,,0
+72256,21079,21079 - Lansdowne High School (DCB-PW)(RD/JS),missing_siteline,,1415464.37,,,0
+70819,21080,21080 - Perry Hall HS (Towson)(DCB-PW)(HP/CC),missing_siteline,,223964.53,,,0
+87290,21081,21081 - Furley ES (Towson) (DCB-PW)(RD/JS),missing_siteline,,525571.96,,,0
+67866,21082,21082 - UMCP Montgomery Hall (S&D) (DCB-NS)(HP/CC),missing_siteline,,44500,,,0
+63262,21083,21083 - JHU Student Center (Southland) (DCB-PW)(HP/CC),missing_siteline,,831900,,,0
+67231,21084,21084 - UMD Easton Hall AC Phase 2 (Jeffrey Brown) (DCB-NS)(HP/CC),missing_siteline,,31800,,,0
+70708,21085,21085 - UMD Cumberland Hall (ACI)(DCB-NS)(HP/CC),missing_siteline,,24000,,,0
+68129,21086,21086 - UMCP CARF Chiller (W.L. Gary) (DCB-NS)(HP/CC),missing_siteline,,9400,,,0
+70713,21087,21087 - UMCP Jimenez Hall (Denver-Elek) (DCB-NS)(HP/CC),missing_siteline,,89900,,,0
+104266,21089,21089 - Chesapeake HS Mech Upgrades (Denver-Elek) (DCB-PW)(RD/JS),missing_siteline,,302955.79,,,0
+84691,21090,21090 - Monocacy ES Limited Renovation (DCB-PW)(DR/AS),missing_siteline,,87400,,,0
+70551,21091,21091 - Silver Springs International MS (DCB-NS)(HP/CC),missing_siteline,,98200,,,0
+149237,21096,21096 - UMCP -Scub 3 Hydronic Piping (S&D)(DCB-PW)(DRo/CC),missing_siteline,,37463,,,0
+78523,21097,21097 - James Madison ES (Pro Tech) (DCB-PW)(RD/JS),missing_siteline,,318000,,,0
+104550,21099,21099 - Gaithersburg MS HVAC Replacement (S&D) (DCB-NS)(HP/CC),missing_siteline,,207500,,,0
+85431,21103,21103 - UMD Basketball Performance Center (R&R Mech) (DCB-NS)(HP/CC),missing_siteline,,196806.44,,,0
+82678,21104,21104 - BCPD SW Police Station Roofing - (Spears Mech) (DCB-PW)(RD/JS),missing_siteline,,10500,,,0
+96116,21106,21106 - Dulles Discovery (WE Bowers - Clark) (DCB-PW)(TB/RF),missing_siteline,,269664,,,0
+122587,21108,21108 - ATRF Buildings B&D Reno 11029 (Denver-Elek)(DCB-PW)(RD/JS),missing_siteline,,27400,,,0
+78735,21111,21111 - M&T Bank Stadium (DCB-PW)(RD/JS),missing_siteline,,274811.57,,,0
+86531,21112,21112 - M&T Bank Stadium - Black Wing Club (Denver-Elek) (DCB-PW)(RD/JS),missing_siteline,,181194.43,,,0
+95043,211126,21126 - AMTRAK Terminal,missing_siteline,,191000,,,0
+83827,21113,21113 - M&T Bank Stadium - New Press Box (Denver-Elek)(DCB-PW)(RD/JS),missing_siteline,,95919.03,,,0
+92146,21114,21114 - M&T Bank Stadium - Miller Lite (Denver-Elek) (DCB-PW)(RD/JS),missing_siteline,,168996.79,,,0
+94727,21115,21115 - M&T Bank Stadium - AHU 1-4 (Denver-Elek) (DCB-PW)(RD/JS),missing_siteline,,51285.01,,,0
+88778,21118,21118 - UMCP Zupnik Hall (Bowers) (DCB-PW)(TB/RF),missing_siteline,,1806188.96,,,0
+96694,21120,21120 - St. Mary's College (Kent Island)(DCB-NS)(RD/JS),missing_siteline,,126629.54,,,0
+96458,21123,21123 - Sandalwood ES 11046 (Denver-Elek) ( DCB-NS)(HP/CC),missing_siteline,,17647,,,0
+90439,21124,21124 - UMCP Symons Hall (Kalmia Construction FM24-12336)(DCB-NS)(HP/CC),missing_siteline,,93600,,,0
+99173,21125,21125 - UMCP Montogomery Hall Insulation(DCB-NS)(HP/CC),missing_siteline,,55000,,,0
+95044,21126,21126 - AMTRAK Terminal,missing_siteline,,101250.34,,,0
+102584,21127,21127 - JHH Sibley Memorial Hospital (Denver-Elek) (DCB-NS)(TB/RF),missing_siteline,,132000,,,0
+99291,21128,21128 - UMD Denton Hall Dual Temp Pipe Insulation (FM24-131810) (Kalmia) (DCB-NS)(HP/CC),missing_siteline,,38750,,,0
+104560,21131,21131 - UMD Cecil Hall Convector Pipe (S&D) (DCB-NS)(HP/CC),missing_siteline,,55000,,,0
+131514,21132,21132 - Northeast MS-HS Project (Anchor Mech) (DCB-NS)(HP/CC),missing_siteline,,2305200,,,0
+166233,21133,21133 - 301 St & Saratoga Street,missing_siteline,,15000,,,0
+104565,21134,21134 - Elkton Denton (S&D D1241)(DCB-NS(HP/CC),missing_siteline,,12000,,,0
+97362,21135,21135 - Crown HS (ACME) (DCB-PW)(DR/AS),missing_siteline,,1557012.57,,,0
+122135,21136,21136 - Frederick Douglas HS (Worth) (DCB-PW)(RD/JS),missing_siteline,,1003469.45,,,0
+131323,21137,21137 – M&T Stadium GMP 11A,missing_siteline,,352428.41,,,0
+135126,21138,21138 - M&T Stadium Package 11B,missing_siteline,,233500,,,0
+158282,21140,21140 - WMATA Bethesda South Mezzanine (Paramount Mech) (DCB-PW)(TB/RF),missing_siteline,,164788.41,,,0
+140158,21141,21141 - Owings Mills ES (Phillips Way) (DCB-PW) (RD/JS),missing_siteline,,125977.22,,,0
+130767,21145,21145 - JoAnn Leleck ES (Ariosa) (DCB-PW)(DR/AS),missing_siteline,,719739.06,,,0
+138863,21148,21148 - Shock Trauma Blood Bank (Temp Air) (DCB-NS) (RD/JS),missing_siteline,,74300.53,,,0
+125032,21149,21149 - PG Stadium (DCB-PW)(DR/AS),missing_siteline,,209975.61,,,0
+125576,21150,21150 - JHHS Bayview Neuro IR (Denver-Elek) (DCB-NS)(HP/CC),missing_siteline,,42277.36,,,0
+125915,21151,21151 - JHH Meyer 264 Psych (Denver-Elek) (DCB-NS)(HP/CC),missing_siteline,,8600,,,0
+128790,21152,21152 - UBALT Learning Commons Insulation (DMC) (DCB-NS)(DR/AS),missing_siteline,,130000,,,0
+128796,21153,21153 - UBALT Learning Commons Sheet Metal (DMC) (DCB-NS) (DR/AS),missing_siteline,,101000,,,0
+153970,21154,21154 - UMB 737 W. Lombard Street School of Medicine (GE Tignall)(DCB-NS)(DRo/SU),missing_siteline,,171150,,,0
+162977,21159,21159 - Burtonsville Elementary School,missing_siteline,,690986,,,0
+129974,21161,21161 - Deale ES (Spears) (DCB-PW)(HP/CC),missing_siteline,,7050,,,0
+129993,21162,21162 - Horn Point Environmental Lab (Kelly) (DCB-NS)(HP/CC),missing_siteline,,32500,,,0
+137817,21164,21164 - GWCC Replace Chillers (Superior Structures) (DCB-PW) (HP/CC),missing_siteline,,75800,,,0
+135140,21165,DC Demo,missing_siteline,,1,,,0
+166415,21169,21169 - UMUCH 3rd Floor,missing_siteline,,9200,,,0
+173834,21170,21170 - BCC Capital Improvements (WG Tomko Clark)(DCB-PW)(RD/JS),missing_siteline,,106799.49,,,0
+160584,21172,21172 - Fallon Building Parking Garage,missing_siteline,,60600,,,0
+165550,21173,21173 - 100 N Green,missing_siteline,,6200,,,0
+165633,21174,21174 - 108 N Greene St,missing_siteline,,12000,,,0
+164894,21175,21175 - Symons Hall Phase 2,missing_siteline,,75420.18,,,0
+185525,21176,21176 - JHCH Holabird Warehouse (DCB-NS) (DR/AS),missing_siteline,,7100,,,0
+185533,21177,21177 - JHH CT Scanner (DCB-NS) (DR/AS),missing_siteline,,3300,,,0
+166362,21178,21178 - Patapsco WWTP,missing_siteline,,22500,,,0
+178078,21179,21179 - Ravens Stadium Insulation Repairs	(DRo/SU),missing_siteline,,1900,,,0
+191457,21180,21180 - UMD Health & Science Bldg (R&R Clark)(DCB-PW)(TB/RF),missing_siteline,,2255000,,,0
+207915,21183,21183 - UMCP LaPlata Hall Chiller (DRo / SU),missing_siteline,,10700,,,0
+210381,21184,21184 - UMCP Edward St Johns Ph 1 (DRo / SU),missing_siteline,,136000,,,0
+185040,21186,21186 - Scotts Branch ES (DR/AS),missing_siteline,,667700,,,0
+184492,21189,21189 - Hagerstown Courthouse Plumbing (DCB-PW)(DR/AS),missing_siteline,,17100,,,0
+164716,21190,21190 - UMES Medical Center HVAC (Poole & Kent)(DCB-PW)(RD/JS),missing_siteline,,2333000,,,0
+194865,21194,21194 - Steam Service Line ( DRo / SU),missing_siteline,,14400,,,0
+197571,21194,21194 - Steam Service Line ( DRo / SU),missing_siteline,,14400,,,0
+209539,21197,21197 - Owings Mills ES Ph 2 (Philips Way 1110007-026),missing_siteline,,25448,,,0
+200206,21198,21198 - Stamp Union Leak Remediation (DRo/SU)(Kalmia),missing_siteline,,48300,,,0
+101553,21200,"21200 - GOEL SERVICES, INC.",missing_siteline,,1,,,0
+29962,21202,21202 - Project Monarch,missing_siteline,,1212445,,,0
+27572,21205,21205 - WWTP Solids Rehabilitation - (Clark) (Goel-NS)(HP/CC),missing_siteline,,958107.99,,,0
+28064,21207,21207 - FEMA Building 716,missing_siteline,,529000,,,0
+27022,21208,21208 - Leidos 539 - Phase 2  (Warner) (Goel-PW)(RD/JS),missing_siteline,,1500000,,,0
+74383,21208 - 2,21208R - Backcharges to ThermaDuct for Warranty and fabrication by DCB,missing_siteline,,-475000,,,0
+28082,21214,21214 - KIPP Terrell Campus Renovation,missing_siteline,,61459,,,0
+27023,21218,21218 - NIH Data Center MEP Survey Bldg 38A (Grimberg) (Goel-PW)(DR/AS),missing_siteline,,207650,,,0
+28024,21220,21220 - ICC-B Maury & Erskine Halls,missing_siteline,,3500,,,0
+28083,21224,21224 - 100 Light Street,missing_siteline,,23300,,,0
+28058,21225,21225 - USDA GWCC Modernization,missing_siteline,,1130000,,,0
+28310,21227,21227 - Rosemont (MCPS),missing_siteline,,51134.39,,,0
+37336,21230,21230 - Norwood School,missing_siteline,,87000,,,0
+34430,21231,21231 - GSA Chilled & Hot Water Riser Replacement & Piping,missing_siteline,,75500,,,0
+29893,21232,"21232 - Baltimore County - #CWA-121-20: Insulation Installation, Removal, Replacement and Related Services",missing_siteline,,650,,,0
+36597,21233,21233 - Government Office Renovation (GOR),missing_siteline,,20000,,,0
+35416,21234,21234 - Leidos - Steam Station,missing_siteline,,54744.86,,,0
+33463,21235,"21235 - GSA-SSA Perimeter East ""B"" & Cafeteria",missing_siteline,,1222970.48,,,0
+32470,21237,21237 - Ellume Frederick Building 202,missing_siteline,,821614.53,,,0
+49998,21238,21238 - Mount Weather Bldg 470 (Warner Mechanical - 21-01-0154),missing_siteline,,58850,,,0
+33864,21241,21241 - Shady Grove Medical Center (S&D) () (),missing_siteline,,64920.63,,,0
+45334,21242,21242 - Calvert School Field House,missing_siteline,,56259.76,,,0
+40365,21243,21243 - Douglas MacArthur ES (Mallick) (Goel-PW)(HP/CC),missing_siteline,,536345.22,,,0
+35394,21244,21244 - Reston Row - Garage (Mallick) (Goel-NS)(DRo/SU),missing_siteline,,812053.14,,,0
+35929,21250,"21250 - 2100 M Street, NW",missing_siteline,,425000,,,0
+35989,21253,21253 - Bethesda Place,missing_siteline,,3050,,,0
+34908,21254,21254 - Northrup Grumman Troy Hill - (GE Tignal) (Goel-NS)(RD/JS),missing_siteline,,485483.48,,,0
+41424,21255,21255 - AOC Boiler Feed,missing_siteline,,164220,,,0
+37667,21270,21270 - LBJ Consolidation Constructive & Switchgear (Grimberg) (Goel-PW)(RD/JS),missing_siteline,,694542,,,0
+47667,21271,21271 - Rehabilitation of Carter G. Woodson (Grimberg) (Goel-PW)(TB/RF),missing_siteline,,31000,,,0
+99496,21272,21272 - P-3003 Consolidated Communication Ctr JAB Andrews (Ronco)(Goel-PW)(JO/JS),missing_siteline,,1252484.1,,,0
+197635,21272,21272A - P-3003 Consolidated Communication Ctr JAB Andrews WATER DAMAGE REPAIR (Ronco)(Goel-PW)(JO/JS),missing_siteline,,54946.36,,,0
+38550,21273,21273 - Ellume Building B,missing_siteline,,913805.42,,,0
+42668,21274,21274 - NIH Building 40A (Welch and Rushe),missing_siteline,,3525000,,,0
+53023,21274,21274 - NIH 40A (Hensel Pheips)(Goel-PW)(DR/AS),missing_siteline,,5392712.48,,,0
+37486,21276,21276 - Citizen M Noma- T&M Repairs,missing_siteline,,57257.39,,,0
+42880,21279,21279 - FEMA Mount Weather Bldg B-602 (Warner) (Goel-NS)(DR/AS),missing_siteline,,535500,,,0
+39457,21280,21280 - TransAmerica 8th Floor Renovation (Willis Wharf Fitout),missing_siteline,,25950,,,0
+39885,21281,21281 - INOVA Loudoun-Phase 2B Patient (S&D) (Goel-NS)(TB/RF),missing_siteline,,2493.12,,,0
+50004,21282,21282 - Pentagon Perimeter Fence,missing_siteline,,11000,,,0
+42118,21285,21285 - 800 F Street (Heritage) (Goel-NS)(TB/RF),missing_siteline,,92252,,,0
+44226,21286,21286 - Reston Row IFC (Heritage) (Goel-NS)(HP/CC),missing_siteline,,72711,,,0
+57703,21289,"21289 - FAA-Chiller & Control System, Warrenton (Peachtree)(Goel-NS)(HP/CC)",missing_siteline,,178200,,,0
+42421,21292,21292 - Rooftop Unit Repair,missing_siteline,,1000,,,0
+53377,21294,21294 - Indian Hollow Elementary School,missing_siteline,,79300,,,0
+73242,21297,21297 - P303 Marine Corp Reserve (Denver-Elek) (Goel-PW)(RD/JS),missing_siteline,,179817.98,,,0
+47732,21298,21298  - 4915 Auburn Avenue Apartment(Woodlawn Mech) (Goel-NS)(HP/CC),missing_siteline,,120217.46,,,0
+47737,21299,21299 - Hilton CC- Heat Exchangers (S&D),missing_siteline,,20600,,,0
+51205,21300,21300 - Regenex Vivarium Renovation (Warner),missing_siteline,,32352.18,,,0
+47642,21301,21301 - Washington Waldorf School (Welch),missing_siteline,,12100,,,0
+49349,21303,21303 - Landon School,missing_siteline,,416129.6,,,0
+53748,21304,21304 - Kennedy High School (MCPS),missing_siteline,,234102.05,,,0
+49087,21307,21307 - INOVA Oakville (OLD),missing_siteline,,791500,,,0
+57144,21307,21307 - Inova Oakville (S&D) (Goel-NS)(TB/RF),missing_siteline,,1061087.36,,,0
+75887,21308,21308 - World Bank Main Complex Phase 2 - AHU Replacement,missing_siteline,,194126,,,0
+53383,21308,21308 - World Bank Main Complex Phase 2 (S&D) (Goel-NS)(RD/JS),missing_siteline,,130000,,,0
+50477,21309,21309 - NBP Mechanical Final (Time Only Project),missing_siteline,,48039.69,,,0
+68011,21310,21310 - Corcoran Gallery (S&D) (Goel-NS)(RD/JS),missing_siteline,,283272.1,,,0
+54702,21311,21311 - DOE Headquarters Restroom (WL Gary) (Goel-PW)(RD/JS),missing_siteline,,69563.91,,,0
+50633,21312,21312 - Hughes Pickney Innovation Center (Mallick) (Goel - NS)(TB/RF),missing_siteline,,44500,,,0
+55857,21314,21314 - WSSC Lab Expancion Project,missing_siteline,,177000,,,0
+53389,21317,21317- Traville Building B Core and Shell (Bowers) (Goel-NS)(HP/CC),missing_siteline,,89842,,,0
+56563,21318,21318 - Howard County Courthouse,missing_siteline,,4012.58,,,0
+59009,21319,21319 - Reston Row (OB4) (Mallick) (Goel-NS)(HP/CC),missing_siteline,,534456.41,,,0
+63922,21322,21322 - NIH SRLM 59/59A Building Replacement & Enabling Project (Hensel Phelps) (Goel-PW)(DR/AS),missing_siteline,,6349796,,,0
+59380,21326,21326 - INOVA Fair Oaks Hospital AHU#2 (S&D)(Goel-NS)(TB/RF),missing_siteline,,11500,,,0
+78324,21329,21329 - GMU Life Sciences & Engineering Building (Warner) (Goel-NS) (TB/RF),missing_siteline,,1125307.48,,,0
+73026,21330,21330 - HVAC for Vet Resources UMMS (Goel - NS) (HP/CC),missing_siteline,,109793.48,,,0
+121231,21332,21332 - Ferguson Front Royal Warehouse (S&D) (HP/CC)21332 - Ferguson Front Royal Warehouse (S&D)(Goel-NS)(HP/CC),missing_siteline,,33371,,,0
+63757,21334,21334 - UMGC Chiller Replacement,missing_siteline,,8717.01,,,0
+62084,21335,21335 - Lincoln Memorial Rehabilitation (Doyle) (Goel-PW)(TB/RF),missing_siteline,,127730.69,,,0
+70663,21337,21337 - Medstar Union Hand Center Restoration,missing_siteline,,10633.25,,,0
+70865,21338,21338 - Hilton CC Public Space (S&D) (Goel-NS)(HP/CC),missing_siteline,,90473.3,,,0
+70346,21340,21340 - Bancroft Elementary School Renovation (S&D) (Goel-NS)(TB/RF),missing_siteline,,111172.02,,,0
+72451,21341,21341 - IMF Generator Replacement - (S&D) (Goel-NS)(TB/RF),missing_siteline,,59781,,,0
+126735,21342,21342 - Warrenton FAA (Ronco) (Goel-NS)(TB/RF),missing_siteline,,194656,,,0
+91513,21345,21345 - Baltimore County Detention Center Chiller Replacement,missing_siteline,,98000,,,0
+69550,21346,21346 - GWU Campus Bookstore (W.E. Bowers),missing_siteline,,14800,,,0
+70409,21348,21348 - UMD SCUB IV Steam Bypass,missing_siteline,,20000,,,0
+68855,21349,21349 - St. Patrick's Episcopal Day School (Mallick),missing_siteline,,3500,,,0
+74793,21352,21352 - Ford's Theatre,missing_siteline,,136660.41,,,0
+101730,21355,21355 - 1850 Reston Row Plaza - Jewel Box (HP/CC),missing_siteline,,21673.31,,,0
+73803,21360,21360 - 1951 Constitution Avenue (Goel-PW)(RD/JS),missing_siteline,,5839073.68,,,0
+89958,21361,21361 - Dominion Square (JCM) (Goel-PW)(TB/RF),missing_siteline,,1231222.22,,,0
+102084,21365,21365 - Fairfax Water VFD - Griffith Plant (Norair) (Goel-NS) (HP/CC),missing_siteline,,31000,,,0
+72744,21366,21366 - Paint Branch School (Shapiro & Duncan),missing_siteline,,3786.18,,,0
+100528,21369,21369 - Woodbridge HS (S&D 2229-00) (Goel-NS) (HP/CC),missing_siteline,,37600,,,0
+83788,21370,21370 - OPM Phase 3 (Goel-PW)(TB/RF),missing_siteline,,64500,,,0
+119995,21371,21371-Quantico Bldg. 3259 Pharmacy (Ronco) (Goel-PW)(RD/JS),missing_siteline,,113497,,,0
+81455,21372,21372 - NARA A1 Museum & Learning Center (R&R)(Goel-PW)(TB/RF),missing_siteline,,63779.84,,,0
+93009,21381,21381 - Pax River Bldg. B2896 Test Facility (Ronco) (Goel-PW)(RD/JS),missing_siteline,,105600,,,0
+99293,21388,21388 - Trinity Church (GW Mech) (Goel-NS)(HP/CC),missing_siteline,,29434,,,0
+104569,21388,21388 - Trinity Church (GW Mech) (HP/CC),missing_siteline,,29434,,,0
+117536,21389,21389 - DOC Temp Boiler,missing_siteline,,1183117,,,0
+121028,21389,21389 - DOC Temp boiler (R&R)(Goel-NS)(RD/JS),missing_siteline,,14801.63,,,0
+93720,21393,21393 - Hirshhorn Museum Sculpture Garden (R&R)(Goel-PW)(DR/AS),missing_siteline,,176500,,,0
+93010,21400,21400 - GSA HQ Presidential Transition (S&D) (Goel-PW)(DR/AS),missing_siteline,,20600,,,0
+90663,21401,21401 - Atlantic Council (R&R) (Goel-NS)(TB/RF) - T&M Job,missing_siteline,,14245.99,,,0
+91134,21402,21402 - Williamsport ES Boiler Replacement (Denver-Elek) (Goel-PW)(HP/CC),missing_siteline,,23357.98,,,0
+103740,21403,21403 - Kuiper SCIF (R&R) (Goel-PW)(RD/JS),missing_siteline,,67973,,,0
+165494,21404,21404-UMGC Chiller 1 and 3,missing_siteline,,14700,,,0
+94183,21406,21406 - CSM BI HVAC Upgrades (WL Gary) (Goel-NS)(HP/CC),missing_siteline,,136600,,,0
+93509,21407,21407 - Wexford MLK 4 level 3 (TempAir) (Goel-NS)(HP/CC),missing_siteline,,322800,,,0
+93704,21408,21408 - Millers Grant Ph 1 & 2 (Worth & Co C23078-801 Harkins) (Goel-NS) (HP/CC),missing_siteline,,653535.67,,,0
+94180,21408,21408 - CSM LAPLATA - BI BUILDING ( W.L. GARY 2479),missing_siteline,,136600,,,0
+94796,21409,21409 - OPM Data Center (S&D) (Goel-PW)(TB/RF),missing_siteline,,42000,,,0
+98460,21413,21413 – Wexford MLK 4 2nd Floor (TempAir) (Goel-NS) (HP/CC),missing_siteline,,55700,,,0
+101810,21414,21414 - USAID Ronald Reagan Phase 7&8 (Goel-PW)(TB/RF),missing_siteline,,148500,,,0
+100942,21417,21417 - Wexford  MLK4 - 4th floor (Temp Air) (Goel-NS)(HP/CC),missing_siteline,,378000,,,0
+161362,21419,21419 - ECBP4 Ft. Meade Garage,missing_siteline,,108600,,,0
+107187,21420,21420 - Mt. Vernon High School,missing_siteline,,657265.39,,,0
+107186,21421,21421 - Northwood High School,missing_siteline,,1905792.48,,,0
+144414,21422,21422 -PAX B2369 Pharmacy Renovation 23-1936 (JPG Services) (Goel-PW) (RD/JS),missing_siteline,,11500,,,0
+116188,21423,21423 - Woodner Dual Temp Risers (WL Gary)(Goel-NS) (HP/CC),missing_siteline,,532811.52,,,0
+118942,21424,21424 - Reston Row Completion (Tomko),missing_siteline,,10100,,,0
+148805,21429,21429 - Patapsco Pump Station,missing_siteline,,23799.58,,,0
+121907,21430,21430 - DHS CISA Headquarters,missing_siteline,,4297234,,,0
+113181,21431,21431 - Inova Landmark Cancer Center,missing_siteline,,632559.81,,,0
+113752,21433,21433 – JHU APL Bldg. 28,missing_siteline,,2933358.94,,,0
+119316,21436,21436 - USAID Ronald Reagan Bldg. Ph 6 (S&D) (Goel-PW)(TB/RF),missing_siteline,,75000,,,0
+173077,21437,21437 - HQA DIA,missing_siteline,,2520880.7,,,0
+124892,21439,21439 - IAD21 Suite A (H&D Mechanical) (Goel-PW)(DR/AS),missing_siteline,,3000,,,0
+118175,21440,21440 - IAD21 Amazon Suite B (H&D Mechnical)(Goel-PW)(DR/AS),missing_siteline,,19500,,,0
+108664,21443,21443 - Reston Row District (East Garage) (Goel-NS) (HP/CC),missing_siteline,,258615,,,0
+122266,21444,21444 - ATCC - High Containment Facility (S&D) (Goel-NS)(HP/CC),missing_siteline,,361986,,,0
+127764,21445,21445 - Stafford ES #18 (Capitol Contractors) (Goel-NS)(HP/CC),missing_siteline,,329000,,,0
+133545,21447,21447 – ECB5 (WE BOWERS) (PW) (DRo/SU),missing_siteline,,4928292.13,,,0
+185545,21448,21448 - FRB Baltimore Chiller Plant (Goel-NS) (DR/AS),missing_siteline,,37600,,,0
+138199,21451,21451 - JHHS Pediatric Cath (Innovation Mech),missing_siteline,,42800,,,0
+128826,21451,21451 - JHHSPC (Innovation Mech) (Goel-NS)(HP/CC),missing_siteline,,44571.78,,,0
+140881,21452,21452 - Trinseo Fitout (Goel-NS)(DR/AS),missing_siteline,,42700,,,0
+135461,21453,21453 - NFS Bethesda USU Building 71 Lab (Goel-PW) (DR/AS),missing_siteline,,16200,,,0
+140879,21455,21455 - NIH Bldg 28 CHW mains replacement (Goel-PW) (DR/AS),missing_siteline,,124829,,,0
+171851,21457,21457 - Folger Shakespeare AHU Replacement (Goel-NS) (DR/AS),missing_siteline,,19000,,,0
+171852,21458,21458 - VHC Health (Goel-NS) (DR/AS),missing_siteline,,247865.89,,,0
+185542,21459,21459 - Columbia Square Cooling Tower (Goel-NS) (DR/AS),missing_siteline,,34000,,,0
+171853,21460,21460 - Walter Reed CNIC 16 (CBG)(Goel-NS)(DR/AS),missing_siteline,,98365,,,0
+189288,21463,21463 - Longworth House Office Bldg Sub Basement (Grimberg)(Goel-PW)(TB/RF),missing_siteline,,166000,,,0
+171854,21464,21464 - Medstar SMAO (Goel-NS)(DR/AS),missing_siteline,,5000,,,0
+146319,21465,21465 - Withum Tysons (Goel-NS)(DR/AS),missing_siteline,,21200,,,0
+157574,21466,21466 - Georgetown Univ Bookstore (WE Bowers)(Goel-PW)(TB/RF),missing_siteline,,31691.9,,,0
+171855,21467,21467 - Walter Reed Util Plant (Goel-PW) (DR/AS),missing_siteline,,401500,,,0
+157531,21468,21468 - 810 7th St,missing_siteline,,165774.23,,,0
+161838,21470,21470 - Heidrick Struggles (ADJ M-25-45-5),missing_siteline,,17000,,,0
+178961,21473,21473 - DC Water Pads (DCW2638675) (DRo/SU),missing_siteline,,153000,,,0
+178966,21474,21474 - DC Water Insulation Pads (DC Water DCW2638407) (DRo/SU),missing_siteline,,8500,,,0
+193780,21475,21475 - DC Water Insulation Pads (DC Water DCW2640365) (DRo/SU),missing_siteline,,120000,,,0
+169928,21476,21476 - Leidos 4th Floor,missing_siteline,,36713.52,,,0
+174951,21477,21477 - NHB Perimeter Heating HQ (DRo / SU),missing_siteline,,207100,,,0
+170246,21478,21478 - P-158 – DBB Bachelor Enlisted Quarters and Support Facility (DRo / SU),missing_siteline,,1075000,,,0
+178102,21479,21479 - BAE Systems 3rd Floor (DRo/SU),missing_siteline,,12733.5,,,0
+168302,21481,21481- Beacon Hotel (WG Welch) (TB/RF),missing_siteline,,65966.66,,,0
+176319,21483,21483 - NSF Access Lane Upgrade,missing_siteline,,13700,,,0
+176492,21484,21484- Medstar Washington Pharmacy (ACI tbd),missing_siteline,,2000,,,0
+180123,21485,21485 - Manatt Phillips & Phillips (Vertical Mechanical) (DR/AS),missing_siteline,,79400,,,0
+180845,21489,21489 - HITT Concourse (DRo/SU),missing_siteline,,10580,,,0
+186140,21490,21490 - Rawlings Conservatory Palm House Restoration,missing_siteline,,19000,,,0
+207784,21490,21490 - Rawlings Conservatory Palm House Restoration,missing_siteline,,19000,,,0
+195152,21491,21491 - NRL Bldg 72 HVAC (CRW Mechanical)(Goel-NS)(JO/JS),missing_siteline,,8600,,,0
+205531,21492,21492 - Bender JCC Minor Int Reno (Goel-NS) (DR/AS),missing_siteline,,13141.02,,,0
+207618,21494,21494 - One Loudoun Uptown Bldg 2 (AL Merton),missing_siteline,,78000,,,0
+195575,21495,21495 - Atwell Annapolis (Walton 126401-SC26017),missing_siteline,,1800,,,0
+192017,21495,21495 - Atwell Annapolis	(DRo / SU),missing_siteline,,1800,,,0
+195381,21498,21498 - MSOM Virtual Academy Lab (DRo / SU),missing_siteline,,6800,,,0
+66047,21700-XXX,21700 - Baltimore County Public Schools - Insulation Term Contract (CWA-121-20),missing_siteline,,0,,,0
+29552,22300,22300 - University of MD Insulation Term (DCB-NS)(HP/CC),missing_siteline,,262046.7,,,0
+86901,22374,22374 - UMCP Van Munching Suite 1318 (321098),missing_siteline,,2300,,,0
+165667,22406,22406-UMCP Animal Care Facility,missing_siteline,,736.55,,,0
+165703,22417,22417 - UMCP Cecil Hall and House 173 (UMCP),missing_siteline,,7338.44,,,0
+149017,22417,22417 - UMCP Cecil & House 173 (UMCP) (DCB-NS) (DRo/CC),missing_siteline,,7338.44,,,0
+172639,22425,22425 - UMCP Chestertown Laundry Rm 0115 PUR-00024756 (UMCP),missing_siteline,,1901.26,,,0
+27020,24001,24001 - West Elementary School Modernization,missing_siteline,,379368,,,0
+28312,24003,24003 - American University - Centennial Hall,missing_siteline,,193000,,,0
+32628,24005,24005 - Smothers ES Insulation,missing_siteline,,397000,,,0
+32630,24006,"24006 - JHU - 555 Pennsylvania, NW",inactive_siteline,,850000,,,0
+34133,24007,24007 - Trammel Crow DGS HQ Core and Shell,mismatch,false,419725,436048,-16323,1
+42717,24009,24009 - Seaton ES (T&M),inactive_siteline,,0,,,0
+42999,24014,24014 - Reunion Square Garage (0202-12A),inactive_siteline,,40602.5,,,0
+49871,24015,24015 - Reunion Square OB4 (0202-12B),inactive_siteline,,301397.5,,,0
+51996,24016,24016 - Stead Park Recreation Center,mismatch,false,56000,62600,-6600,1
+56919,24017,24017 - Douglass Bridge District(S&D) (2209-00),mismatch,false,694291.92,596074.71,98217.21,1
+61398,24019,"24019 - 1133 North Capitol, NE",inactive_siteline,,48600,,,0
+62087,24020,24020 - Dorothy Height Elementary School,inactive_siteline,,240000,,,0
+59055,24021,24021 - DGS Garfield Elementary School,inactive_siteline,,110000,,,0
+69966,24022,24022 - DC Health at Reunion Square (Heritage Mechanical - 0205-12),inactive_siteline,,331000,,,0
+70606,24023,24023 - Bates White 6th FL Interior Alterations,inactive_siteline,,32500,,,0
+71322,24024,24024 - DC Stabilization & Sobering Center Renovation,mismatch,false,25500,46500,-21000,1
+86904,24025,24025 - The Langston (*233002-001),inactive_siteline,,57800,,,0
+80788,24026,24026 - Deal Middle School Addition,mismatch,false,51000,70231.56,-19231.56,1
+95912,24028,24028 - Carl F West Insulation,match,true,421213.1,421213.1,0,1
+85649,24030,24030 - Truesdell Elementary School,match,true,548848.18,548848.18,0,1
+94112,24031,24031 - Adams EDU Campus Modernization,mismatch,false,350400,433189.45,-82789.45,1
+120590,24032,24032 - Capital One Arena Transformation (COAT) Sales Center,match,true,61527.31,61527.31,0,1
+142901,24033,24033 - Stoddert ES,match,true,90422.08,90422.08,0,1
+130651,24034,24034 - Capital One Arena Transformation (COAT) Gallery Place,mismatch,false,920065.39,839022.24,81043.15,1
+134652,24036,24036 - Capital One Arena Transformation (COAT) MSE Loft,mismatch,false,424645.1,421983.56,2661.54,1
+133983,24037,24037 - Capital One Arena Transformation (COAT) Package 2,mismatch,false,2677563.49,2676999.69,563.8,1
+134050,24038,24038 - Capital One Arena Transformation (COAT) Enablement,mismatch,false,254161.71,244972.22,9189.49,1
+142764,24040,24040 - Kenilworth Elementary School HVAC Upgrade,match,true,156240.99,156240.99,0,1
+168426,24041,24041 - Barnard ES,mismatch,false,97059.3,82700,14359.3,1
+162674,24044,24044 - Stoddert ES West,match,true,57300,57300,0,1
+183443,24045,24045 - Capital One Arena Transformation (COAT) GPL 3&4 / Hub Theater,match,true,335000,335000,0,1
+185663,24050,24050 - Brent Elementary School,missing_siteline,,690000,,,0
+181390,24070,24070 - Capital One Arena Transformation (COAT) Suites and Restrooms,match,true,272500,272500,0,1
+189336,24080,24080 - Capital One Arena Transformation (COAT) Facade DP6,missing_siteline,,118000,,,0
+189294,24090,24090 - Congress Heights Recreation Center,missing_siteline,,177808.41,,,0
+148860,24MD236,21429 - Patapsco Pump Station,missing_siteline,,0,,,0
+159079,30001,30001 - NRL Code 6800 SPSF Lab (Paramount Mech) (Goel-PW) (TS-LL),missing_siteline,,3250,,,0
+192253,30002,30002 - CWA Bldg (Buch),missing_siteline,,826262,,,0
+181382,30003,30003 - Operators Union HQ (Buch),missing_siteline,,10000,,,0
+204676,30005,30005 - US Tax Court (S&D),missing_siteline,,60000,,,0
+175768,31001,31001 - Walmart Arbutus (Whiting Turner),missing_siteline,,23392.19,,,0
+172050,31002,31002 - Walmart Baltimore (Whiting Turner),missing_siteline,,20498.2,,,0
+175882,31005,31005 - Walmart Aberdeen (Whiting Turner),missing_siteline,,62900,,,0
+160089,31006,31006 - Bryant AHS - Mold Remediation,missing_siteline,,16977.66,,,0
+159896,31007,31007 - Hayfield Secondary School,missing_siteline,,0,,,0
+161149,31008,31008 - NIH - Mold Remediation,missing_siteline,,37038.53,,,0
+163242,31009,31009 - Hayfield SS - Phase 2,missing_siteline,,454520.52,,,0
+182648,31013,31013 -14509 Faraday Drive,missing_siteline,,1000,,,0
+181371,31017,31017 - UA Misc Work @ Park Place (Buch tbd),missing_siteline,,5000,,,0
+194025,31020,31020 - Longfellow MS- 2-27,missing_siteline,,1000,,,0
+204387,31022,31022 - PG County Trap & Skeet (Buch),missing_siteline,,1000,,,0
+206262,31024,31024 - Walmart Columbia (Whiting Turner) (Goel-NS) (TS-JS),missing_siteline,,783870,,,0
+206043,68100,68100 - UMCP Term Contract (2026),missing_siteline,,4772.87,,,0
+210446,68101,68101 - UMCP Martin Hall & Toll Physics (DRo / SU),missing_siteline,,4772.87,,,0
+84320,8788,08788 - WMATA Silverline Train Maintenance Garage,missing_siteline,,687514,,,0
+28524,8851,08851 - National Air & Space - T&M Contract,missing_siteline,,16834.92,,,0
+28339,8859,08859 - George Mason University - Robinson Hall and Harris Theater,missing_siteline,,973000,,,0
+27853,8862,08862 - National Air & Space Museum - NASM - KDB (Goel-PW)(RD-JS),missing_siteline,,4106204,,,0
+27132,8865,08865 - Andrews Hanger Building H-21,missing_siteline,,3066540.47,,,0
+27573,8875,08875 - Reston Gateway,missing_siteline,,1500000,,,0
+28065,8881,08881 - Patterson High School,missing_siteline,,743115,,,0
+28090,8887,08887 - Avocet Tower,missing_siteline,,567000,,,0
+28060,8894,08894 - University of Maryland Medical Center Midtown Campus Outpatient Care Tower,missing_siteline,,390950,,,0
+74964,9869,09869 - JBA Bldg. 1915,missing_siteline,,99190,,,0
