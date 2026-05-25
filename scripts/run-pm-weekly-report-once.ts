@@ -2,6 +2,7 @@
  * One-off: send PM weekly report emails (AR aging + Clearstory vs Siteline).
  *
  *   PM_WEEKLY_REPORT_ENABLED=true npm run run-pm-weekly-report
+ * Cron default: Monday 6:00 AM America/New_York (see PM_WEEKLY_REPORT_CRON).
  *   npm run run-pm-weekly-report -- --force
  *
  * --force  clears this week's Siteline_WeeklyPmReportLog so emails can send again.

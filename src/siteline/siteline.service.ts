@@ -5,6 +5,7 @@ import {
   normalizeSitelineApiToken,
   readLastSitelineSecretFromDotEnv,
 } from './siteline-env.util';
+import { isSitelineRateLimitError, sleep } from './siteline-http.util';
 
 const GRAPHQL_PATH = '/graphql';
 const FIREBASE_SIGN_IN_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword';
@@ -107,6 +108,14 @@ export class SitelineService implements OnModuleInit {
         'Loaded SITELINE_API_URL differs from .env — process.env overrides .env. Confirm Postman uses the same host (e.g. api-external.siteline.com vs api.siteline.com).',
       );
     }
+    if (
+      this.config.get<string>('SITELINE_AGING_SNAPSHOT_ENABLED', 'true') !== 'false' &&
+      !this.isAgingDashboardConfigured()
+    ) {
+      this.logger.warn(
+        'Siteline aging sync will fail until SITELINE_API_URL_SECONDARY and Firebase auth are set (agingDashboard is not on api-external).',
+      );
+    }
   }
 
   /** Safe fields for GET /siteline/status (no secrets). */
@@ -174,6 +183,33 @@ export class SitelineService implements OnModuleInit {
     return Boolean(this.apiUrl && this.apiToken);
   }
 
+  getBaseGraphqlUrl(): string {
+    return this.apiUrl;
+  }
+
+  isConfiguredWithToken(apiToken: string): boolean {
+    return Boolean(this.apiUrl && normalizeSitelineApiToken(apiToken));
+  }
+
+  /**
+   * `agingDashboard` exists only on the Siteline web app API (`api.siteline.com`), not on
+   * `api-external`. Requires secondary URL plus Firebase login or a static id token.
+   */
+  isAgingDashboardConfigured(): boolean {
+    if (!this.agingApiUrlSecondary) return false;
+    return Boolean(
+      this.agingApiTokenSecondary ||
+        (this.agingIdentityApiKeySecondary &&
+          (this.agingRefreshTokenSecondary ||
+            (this.agingAuthEmailSecondary && this.agingAuthPasswordSecondary))),
+    );
+  }
+
+  private apiTarget(apiToken?: string): { url: string; token: string; authHeader: string } {
+    const token = apiToken ? normalizeSitelineApiToken(apiToken) : this.apiToken;
+    return { url: this.apiUrl, token, authHeader: this.authHeader };
+  }
+
   /** Siteline-style auth: Bearer by default; raw token only on non-Authorization custom headers. */
   private attachAuthHeaders(headers: Record<string, string>): void {
     this.attachAuthHeadersFor(headers, this.apiToken, this.authHeader);
@@ -198,26 +234,53 @@ export class SitelineService implements OnModuleInit {
     query: string,
     variables?: Record<string, unknown>,
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    this.attachAuthHeadersFor(headers, target.token, target.authHeader ?? '');
-    const res = await fetch(target.url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ query, variables: variables ?? {} }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Siteline API HTTP ${res.status}: ${text}`);
+    const maxRetries = Math.min(
+      8,
+      Math.max(0, Number(this.config.get<string>('SITELINE_API_MAX_RETRIES', '5')) || 5),
+    );
+    const baseBackoffMs = Math.max(
+      500,
+      Number(this.config.get<string>('SITELINE_API_RETRY_BACKOFF_MS', '1500')) || 1500,
+    );
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        this.attachAuthHeadersFor(headers, target.token, target.authHeader ?? '');
+        const res = await fetch(target.url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query, variables: variables ?? {} }),
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`Siteline API HTTP ${res.status}: ${text}`);
+        }
+        const json = JSON.parse(text) as GraphQLResponse<T>;
+        if (json.errors?.length) {
+          const msg = json.errors.map((e) => e.message).join('; ');
+          throw new Error(`Siteline GraphQL errors: ${msg}`);
+        }
+        if (json.data === undefined) throw new Error('Siteline API returned no data');
+        return json.data as T;
+      } catch (e: unknown) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        lastError = err;
+        const retryable =
+          isSitelineRateLimitError(err.message) ||
+          /\bHTTP 502\b/.test(err.message) ||
+          /\bHTTP 503\b/.test(err.message);
+        if (!retryable || attempt >= maxRetries) {
+          throw err;
+        }
+        const waitMs = baseBackoffMs * 2 ** attempt;
+        await sleep(waitMs);
+      }
     }
-    const json = (await res.json()) as GraphQLResponse<T>;
-    if (json.errors?.length) {
-      const msg = json.errors.map((e) => e.message).join('; ');
-      throw new Error(`Siteline GraphQL errors: ${msg}`);
-    }
-    if (json.data === undefined) throw new Error('Siteline API returned no data');
-    return json.data as T;
+    throw lastError ?? new Error('Siteline API request failed');
   }
 
   private async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
@@ -431,43 +494,23 @@ export class SitelineService implements OnModuleInit {
     return json.id_token;
   }
 
-  async getCurrentCompany(): Promise<unknown> {
-    if (!this.isConfigured()) {
+  async getCurrentCompany(apiToken?: string): Promise<unknown> {
+    const token = apiToken ? normalizeSitelineApiToken(apiToken) : this.apiToken;
+    if (!this.apiUrl || !token) {
       return { configured: false, message: 'Siteline API not configured' };
     }
     try {
-      const data = await this.graphql<{ currentCompany: unknown }>(`
-        query {
+      const data = await this.graphqlWithTarget<{ currentCompany: unknown }>(
+        this.apiTarget(token),
+        `
+        query CurrentCompanyMinimal {
           currentCompany {
             id
-            createdAt
-            updatedAt
             name
-            phoneNumber
-            users {
-              id
-              firstName
-              lastName
-              email
-              jobTitle
-              phoneNumber
-              status
-            }
-            locations {
-              id
-              nickname
-              street1
-              street2
-              city
-              county
-              state
-              country
-              postalCode
-              timeZone
-            }
           }
         }
-      `);
+      `,
+      );
       return data.currentCompany;
     } catch (e: any) {
       return { error: e?.message ?? String(e) };
@@ -554,12 +597,14 @@ export class SitelineService implements OnModuleInit {
   /**
    * **Full** `contract(id)` for cron sync: `payApps`, `sov`, `project`, `leadPMs`, billing fields, etc.
    */
-  async getContractFull(id: string): Promise<unknown> {
-    if (!this.isConfigured()) {
+  async getContractFull(id: string, apiToken?: string): Promise<unknown> {
+    const token = apiToken ? normalizeSitelineApiToken(apiToken) : this.apiToken;
+    if (!this.apiUrl || !token) {
       return { configured: false, message: 'Siteline API not configured' };
     }
     try {
-      const data = await this.graphql<{ contract: unknown }>(
+      const data = await this.graphqlWithTarget<{ contract: unknown }>(
+        this.apiTarget(token),
         `
         query ContractFull($id: ID!) {
           contract(id: $id) {
@@ -567,6 +612,9 @@ export class SitelineService implements OnModuleInit {
             latestTotalValue
             contractNumber
             projectNumber
+            company {
+              id
+            }
             createdAt
             updatedAt
             internalProjectNumber
@@ -653,8 +701,12 @@ export class SitelineService implements OnModuleInit {
    * Lightweight `paginatedPayApps` page for cron sync (small payload).
    * Returns same envelope shape: `totalCount`, `cursor`, `hasNext`, `payApps`.
    */
-  async getPaginatedPayAppsDiscovery(input: { limit?: number; cursor?: string }): Promise<unknown> {
-    if (!this.isConfigured()) {
+  async getPaginatedPayAppsDiscovery(
+    input: { limit?: number; cursor?: string },
+    apiToken?: string,
+  ): Promise<unknown> {
+    const token = apiToken ? normalizeSitelineApiToken(apiToken) : this.apiToken;
+    if (!this.apiUrl || !token) {
       return { configured: false, message: 'Siteline API not configured' };
     }
 
@@ -663,7 +715,8 @@ export class SitelineService implements OnModuleInit {
     if (input.cursor) gqlInput.cursor = input.cursor;
 
     try {
-      const data = await this.graphql<{ paginatedPayApps: unknown }>(
+      const data = await this.graphqlWithTarget<{ paginatedPayApps: unknown }>(
+        this.apiTarget(token),
         `
         query paginatedPayAppsDiscovery($input: GetPaginatedPayAppsInput!) {
           paginatedPayApps(input: $input) {
@@ -879,13 +932,17 @@ export class SitelineService implements OnModuleInit {
    * Returns only `contracts { id }` and pagination fields to keep payloads small.
    * Hydration still uses `getContractFull` per unique id.
    */
-  async getPaginatedContractsActiveDiscovery(input: {
-    limit?: number;
-    cursor?: string;
-    contractStatus?: string;
-    payAppStatus?: string;
-  }): Promise<unknown> {
-    if (!this.isConfigured()) {
+  async getPaginatedContractsActiveDiscovery(
+    input: {
+      limit?: number;
+      cursor?: string;
+      contractStatus?: string;
+      payAppStatus?: string;
+    },
+    apiToken?: string,
+  ): Promise<unknown> {
+    const token = apiToken ? normalizeSitelineApiToken(apiToken) : this.apiToken;
+    if (!this.apiUrl || !token) {
       return { configured: false, message: 'Siteline API not configured' };
     }
 
@@ -899,7 +956,8 @@ export class SitelineService implements OnModuleInit {
     }
 
     try {
-      const data = await this.graphql<{ paginatedContracts: unknown }>(
+      const data = await this.graphqlWithTarget<{ paginatedContracts: unknown }>(
+        this.apiTarget(token),
         `
         query paginatedContractsActiveDiscovery($input: GetPaginatedContractsInput!) {
           paginatedContracts(input: $input) {
@@ -1036,15 +1094,22 @@ export class SitelineService implements OnModuleInit {
    * Wraps Siteline's agingDashboard(input: DashboardInput!) query.
    * Can use a dedicated secondary URL/token flow for aging only.
    */
-  async getAgingDashboard(input: {
-    companyId?: string | null;
-    startDate: string; // YYYY-MM-DD
-    endDate: string;   // YYYY-MM-DD
-    search?: string;
-    overdueOnly?: boolean;
-  }): Promise<unknown> {
-    if (!this.isConfigured()) {
-      return { configured: false, message: 'Siteline API not configured' };
+  async getAgingDashboard(
+    input: {
+      companyId?: string | null;
+      startDate: string; // YYYY-MM-DD
+      endDate: string; // YYYY-MM-DD
+      search?: string;
+      overdueOnly?: boolean;
+    },
+    _apiToken?: string,
+  ): Promise<unknown> {
+    if (!this.isAgingDashboardConfigured()) {
+      return {
+        configured: false,
+        message:
+          'Siteline agingDashboard requires SITELINE_API_URL_SECONDARY (https://api.siteline.com) and Firebase auth (SITELINE_IDENTITY_API_KEY_SECONDARY + SITELINE_AUTH_EMAIL_SECONDARY / SITELINE_AUTH_PASSWORD_SECONDARY, or refresh token). Entity siteline_* tokens only work on api-external (contracts), not aging.',
+      };
     }
 
     const gqlInput: Record<string, unknown> = {

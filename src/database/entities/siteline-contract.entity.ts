@@ -5,6 +5,12 @@ export class SitelineContract {
   @PrimaryColumn({ type: 'nvarchar', length: 50 })
   id!: string;
 
+  @Column({ name: 'EntityId', type: 'int', nullable: true })
+  entityId!: number | null;
+
+  @Column({ name: 'SitelineCompanyId', type: 'nvarchar', length: 50, nullable: true })
+  sitelineCompanyId!: string | null;
+
   @Column({ type: 'nvarchar', length: 100, nullable: true })
   projectNumber!: string | null;
 

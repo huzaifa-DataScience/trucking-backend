@@ -19,6 +19,36 @@ export type PortfolioReportRow = {
   corTmIssueCount: number;
 };
 
+/** True when Clearstory bill and Siteline contract total do not agree (beyond $0.01). */
+export function hasClearstorySitelineAmountDifference(
+  difference: number | null,
+  comparisonStatus: string,
+  tolerance = 0.01,
+): boolean {
+  if (comparisonStatus === 'mismatch') return true;
+  if (difference != null && Math.abs(difference) > tolerance) return true;
+  return false;
+}
+
+/** PM weekly AR table: only rows that need attention (not a clean match). */
+export function isPmWeeklyReportIssueRow(row: {
+  comparisonStatus: string;
+  difference: number | null;
+  corTmIssueCount: number;
+}): boolean {
+  if (row.corTmIssueCount > 0) return true;
+  if (
+    row.comparisonStatus === 'inactive_clearstory' ||
+    row.comparisonStatus === 'inactive_siteline'
+  ) {
+    return false;
+  }
+  if (row.comparisonStatus === 'match') {
+    return hasClearstorySitelineAmountDifference(row.difference, row.comparisonStatus);
+  }
+  return true;
+}
+
 export function escapeHtmlForReport(s: string): string {
   return String(s)
     .replace(/&/g, '&amp;')

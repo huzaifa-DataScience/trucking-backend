@@ -4,10 +4,16 @@ dist
 .DS_Store
 config.bat
 
-# Local secrets — never commit
+# Secrets — never commit real env files (only *example templates are allowed below)
 .env
 .env.*
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
 !.env.example
+!.env.production.example
 
 # TypeScript incremental build cache
 tsconfig.build.tsbuildinfo

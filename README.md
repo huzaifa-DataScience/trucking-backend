@@ -19,6 +19,8 @@ npm run build && npm run start:prod   # Production
 
 API: **http://localhost:3000** (override with `PORT`).
 
+**Documentation:** all `.md` guides are in **[docs/](./docs/)** (see [docs/README.md](./docs/README.md) for the index).
+
 ---
 
 ## Global behavior

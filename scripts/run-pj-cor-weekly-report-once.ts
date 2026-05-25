@@ -1,13 +1,15 @@
 /**
- * One-off: PJ weekly COR report (COR tables + T&M alerts; same job scope as PM weekly).
+ * One-off: PJ weekly PM report pack — one PDF per PM attached (same report as Monday PM email).
  *
- *   npm run run-pj-cor-weekly-report
+ *   PJ_COR_WEEKLY_REPORT_ENABLED=true npm run run-pj-cor-weekly-report
  *   npm run run-pj-cor-weekly-report -- --force
+ *
+ * Cron default: Tuesday 6:00 AM America/New_York (see PJ_COR_WEEKLY_REPORT_CRON).
  */
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { ClearstoryPjCorWeeklyReportService } from '../src/clearstory/clearstory-pj-cor-weekly-report.service';
+import { SitelinePjWeeklyReportService } from '../src/siteline/siteline-pj-weekly-report.service';
 import { DataSource } from 'typeorm';
 
 function weekStartIsoDate(): string {
@@ -34,11 +36,11 @@ async function run() {
         `,
         [weekStart],
       );
-      console.log(`Cleared PJ COR weekly log for week ${weekStart} (force).`);
+      console.log(`Cleared PJ weekly report log for week ${weekStart} (force).`);
     }
     const testTo = process.env.PJ_COR_WEEKLY_REPORT_TEST_TO?.trim();
-    console.log(`Running PJ weekly report… TEST_TO=${testTo || '(PJ_COR_WEEKLY_REPORT_TO)'}`);
-    const result = await app.get(ClearstoryPjCorWeeklyReportService).runWeeklyCorReports();
+    console.log(`Running PJ weekly report pack… TEST_TO=${testTo || '(PJ_COR_WEEKLY_REPORT_TO)'}`);
+    const result = await app.get(SitelinePjWeeklyReportService).runPjWeeklyReportPack();
     console.log('Done.', result);
   } finally {
     await app.close();

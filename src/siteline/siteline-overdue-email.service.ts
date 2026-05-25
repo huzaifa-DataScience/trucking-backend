@@ -1,10 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as nodemailer from 'nodemailer';
 import { AppSettingsService } from '../app-settings/app-settings.service';
+import { OutboundEmailService } from '../email/outbound-email.service';
 import { SitelineAgingContract, SitelineAgingSummary } from '../database/entities';
 import { EmailTemplateService } from '../email/email-template.service';
 import {
@@ -12,6 +11,7 @@ import {
   overdueCentsFromAgingContract,
   totalAgedCentsFromAgingContract,
 } from './siteline-aging-overdue.util';
+import { loadAgingContractsFromLatestPerEntitySnapshots } from './siteline-aging-snapshot.util';
 import { resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 
 type OverdueRow = {
@@ -35,13 +35,17 @@ export class SitelineOverdueEmailService {
     private readonly config: ConfigService,
     private readonly appSettings: AppSettingsService,
     private readonly emailTemplates: EmailTemplateService,
+    private readonly outbound: OutboundEmailService,
     @InjectRepository(SitelineAgingSummary)
     private readonly agingSummaryRepo: Repository<SitelineAgingSummary>,
     @InjectRepository(SitelineAgingContract)
     private readonly agingContractRepo: Repository<SitelineAgingContract>,
   ) {}
 
-  @Cron('0 */5 * * * *')
+  /**
+   * Legacy overdue-only digest. No cron — use Monday PM weekly report instead.
+   * Manual: `npm run run-overdue-email` (requires OVERDUE_EMAIL_ENABLED=true).
+   */
   async sendOverdueEmails(): Promise<void> {
     if (this.config.get<string>('OVERDUE_EMAIL_ENABLED', 'false') !== 'true') {
       return;
@@ -50,20 +54,15 @@ export class SitelineOverdueEmailService {
       return;
     }
 
-    const smtpHost = this.config.get<string>('SMTP_HOST', '').trim();
-    const smtpPort = parseInt(this.config.get<string>('SMTP_PORT', '587'), 10);
-    const smtpUser = this.config.get<string>('SMTP_USER', '').trim();
-    const smtpPass = this.config.get<string>('SMTP_PASS', '').trim();
-    const fromEmail = this.config.get<string>('OVERDUE_EMAIL_FROM', smtpUser || '').trim();
-    const daysThreshold = parseInt(this.config.get<string>('OVERDUE_EMAIL_DAYS', '50'), 10);
-    const testRecipient = this.config.get<string>('OVERDUE_EMAIL_TEST_TO', '').trim().toLowerCase();
-
-    if (!smtpHost || !smtpUser || !smtpPass || !fromEmail) {
+    if (!this.outbound.isConfigured()) {
       this.logger.warn(
-        'Overdue email job skipped: set SMTP_HOST, SMTP_USER, SMTP_PASS, OVERDUE_EMAIL_FROM, and OVERDUE_EMAIL_ENABLED=true',
+        'Overdue email job skipped: configure Resend (RESEND_API_KEY) or SMTP (SMTP_HOST, SMTP_USER, SMTP_PASS, OVERDUE_EMAIL_FROM)',
       );
       return;
     }
+
+    const daysThreshold = parseInt(this.config.get<string>('OVERDUE_EMAIL_DAYS', '50'), 10);
+    const testRecipient = this.config.get<string>('OVERDUE_EMAIL_TEST_TO', '').trim().toLowerCase();
 
     await this.ensureNotificationLogTable();
 
@@ -96,13 +95,6 @@ export class SitelineOverdueEmailService {
       grouped.set(row.leadPmEmail, list);
     }
 
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: { user: smtpUser, pass: smtpPass },
-    });
-
     let sent = 0;
     let failed = 0;
     for (const [pmEmail, items] of grouped.entries()) {
@@ -117,8 +109,7 @@ export class SitelineOverdueEmailService {
       const recipientEmail = testRecipient || pmEmail;
 
       try {
-        await transporter.sendMail({
-          from: fromEmail,
+        await this.outbound.send({
           to: recipientEmail,
           subject,
           html,
@@ -126,9 +117,10 @@ export class SitelineOverdueEmailService {
 
         await this.logSentNotifications(items, recipientEmail);
         sent += 1;
-      } catch (err: any) {
+      } catch (err: unknown) {
         failed += 1;
-        this.logger.error(`Overdue email send failed for ${recipientEmail}: ${err?.message ?? err}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Overdue email send failed for ${recipientEmail}: ${msg}`);
       }
     }
 
@@ -172,23 +164,20 @@ export class SitelineOverdueEmailService {
         </table>`;
   }
 
-  /** Latest `Siteline_AgingContracts` snapshot; same basis as `GET /siteline/aging-report`. */
+  /** Latest per-entity snapshots (GOEL + GOEL DC + DCB); same basis as `GET /siteline/aging-overdue`. */
   private async getOverdueRowsFromAgingContracts(
     daysThreshold: number,
   ): Promise<OverdueRow[]> {
-    const latestRows = await this.agingSummaryRepo.find({
-      order: { id: 'DESC' },
-      take: 1,
-    });
-    const latest = latestRows[0];
-    if (!latest) {
-      this.logger.warn('Overdue email job: no Siteline_AgingSummary snapshot — run aging sync first.');
+    const contracts = await loadAgingContractsFromLatestPerEntitySnapshots(
+      this.agingSummaryRepo,
+      this.agingContractRepo,
+    );
+    if (!contracts.length) {
+      this.logger.warn(
+        'Overdue email job: no Siteline_AgingContracts rows for entities 1–3 — run aging sync first.',
+      );
       return [];
     }
-
-    const contracts = await this.agingContractRepo.find({
-      where: { snapshotId: latest.id },
-    });
 
     const rows: OverdueRow[] = [];
     for (const row of contracts) {

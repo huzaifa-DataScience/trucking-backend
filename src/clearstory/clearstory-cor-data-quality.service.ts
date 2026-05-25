@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ClearstoryCor, SitelineContract } from '../database/entities';
+import {
+  ClearstoryCor,
+  SitelineAgingContract,
+  SitelineAgingSummary,
+  SitelineContract,
+} from '../database/entities';
 import { resolveLeadPmEmailFromFullName } from '../siteline/siteline-pm-email.util';
 import { isInReviewWithTmTagViolation } from './clearstory-cor-data-quality.util';
 import { mapCorToLogRow, sortCorLogRows, type CorLogRow } from './clearstory-cor-log.util';
@@ -13,6 +18,10 @@ export class ClearstoryCorDataQualityService {
     private readonly cors: Repository<ClearstoryCor>,
     @InjectRepository(SitelineContract)
     private readonly sitelineContracts: Repository<SitelineContract>,
+    @InjectRepository(SitelineAgingSummary)
+    private readonly agingSummaryRepo: Repository<SitelineAgingSummary>,
+    @InjectRepository(SitelineAgingContract)
+    private readonly agingContractRepo: Repository<SitelineAgingContract>,
   ) {}
 
   async listInReviewWithTmTagViolations(): Promise<ClearstoryCor[]> {
@@ -20,15 +29,33 @@ export class ClearstoryCorDataQualityService {
     return all.filter(isInReviewWithTmTagViolation);
   }
 
+  /** Same job → PM mapping as the weekly report (latest aging snapshot, then Siteline contracts). */
   async jobNumberToPmEmailMap(): Promise<Map<string, string>> {
-    const contracts = await this.sitelineContracts.find();
     const map = new Map<string, string>();
+
+    const latest = await this.agingSummaryRepo.find({ order: { id: 'DESC' }, take: 1 });
+    const snapshot = latest[0];
+    if (snapshot) {
+      const agingRows = await this.agingContractRepo.find({
+        where: { snapshotId: snapshot.id },
+      });
+      for (const row of agingRows) {
+        const email = resolveLeadPmEmailFromFullName(row.leadPmEmail, row.leadPmName);
+        const job = row.internalProjectNumber?.trim() || row.projectNumber?.trim();
+        if (!job || !email) continue;
+        map.set(job.toLowerCase(), email.toLowerCase());
+      }
+    }
+
+    const contracts = await this.sitelineContracts.find();
     for (const c of contracts) {
-      const job = c.internalProjectNumber?.trim();
+      const job = c.internalProjectNumber?.trim() || c.projectNumber?.trim();
       const email = resolveLeadPmEmailFromFullName(c.leadPmEmail, c.leadPmName);
       if (!job || !email) continue;
-      map.set(job.toLowerCase(), email.toLowerCase());
+      const key = job.toLowerCase();
+      if (!map.has(key)) map.set(key, email.toLowerCase());
     }
+
     return map;
   }
 

@@ -1,5 +1,5 @@
 /**
- * One-off: run Siteline overdue PM email job (uses Siteline_AgingContracts + OVERDUE_EMAIL_TEST_TO).
+ * One-off: run Siteline overdue PM email job (all entities 1–3; ignores cron schedule).
  *
  *   npx ts-node scripts/run-overdue-email-once.ts
  *   npx ts-node scripts/run-overdue-email-once.ts --force

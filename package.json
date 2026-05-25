@@ -12,11 +12,15 @@
     "seed": "ts-node src/database/seed/seed.ts",
     "add-status-columns": "ts-node scripts/add-status-columns.ts",
     "backfill-siteline-pm-emails": "ts-node scripts/backfill-siteline-pm-emails.ts",
+    "refresh-siteline-entity-config": "ts-node scripts/refresh-siteline-entity-config.ts",
+    "sync-siteline-aging-once": "ts-node scripts/sync-siteline-aging-once.ts",
     "run-overdue-email": "ts-node scripts/run-overdue-email-once.ts",
     "contract-comparison-report": "ts-node scripts/run-contract-comparison-report.ts",
     "run-pm-weekly-report": "ts-node scripts/run-pm-weekly-report-once.ts",
     "run-pj-cor-weekly-report": "ts-node scripts/run-pj-cor-weekly-report-once.ts",
-    "backfill-clearstory-cor-tm-tags": "ts-node scripts/backfill-clearstory-cor-tm-tags.ts"
+    "backfill-clearstory-cor-tm-tags": "ts-node scripts/backfill-clearstory-cor-tm-tags.ts",
+    "playwright:install": "playwright install chromium",
+    "postinstall": "playwright install chromium"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
@@ -40,6 +44,7 @@
     "passport-local": "^1.0.0",
     "playwright": "^1.59.1",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.12.3",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.20"
