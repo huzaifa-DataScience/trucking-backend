@@ -29,9 +29,7 @@ import { ClearstoryTablesController } from './clearstory-tables.controller';
 import { ClearstoryService } from './clearstory.service';
 import { ClearstorySyncService } from './clearstory-sync.service';
 import { ClearstoryTableService } from './clearstory-table.service';
-import { ClearstoryPjCorWeeklyReportService } from './clearstory-pj-cor-weekly-report.service';
 import { ClearstoryCorDataQualityService } from './clearstory-cor-data-quality.service';
-import { PmWeeklyPortfolioScopeService } from './pm-weekly-portfolio-scope.service';
 import { ClearstoryOfficeScopeService } from './clearstory-office-scope.service';
 import { EmailTemplateModule } from '../email/email-template.module';
 @Module({
@@ -67,9 +65,7 @@ import { EmailTemplateModule } from '../email/email-template.module';
     ClearstorySyncService,
     ClearstoryTableService,
     ClearstoryContractComparisonService,
-    ClearstoryPjCorWeeklyReportService,
     ClearstoryCorDataQualityService,
-    PmWeeklyPortfolioScopeService,
     ClearstoryOfficeScopeService,
   ],
   exports: [ClearstoryContractComparisonService, ClearstoryCorDataQualityService],

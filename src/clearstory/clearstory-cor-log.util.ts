@@ -146,7 +146,8 @@ export function buildCorDataQualityAlertSectionHtml(
       These CORs have <strong>Status = In Review</strong> and a value in <strong>TmTagNumbers</strong>.
       That combination is invalid — please update the COR in Clearstory.
     </p>
-    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12px;width:100%;">
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;margin:0 0 16px;">
+    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12px;min-width:900px;width:900px;">
       <thead>
         <tr style="background:#f3f4f6;">
           <th>COR Number</th>
@@ -158,5 +159,6 @@ export function buildCorDataQualityAlertSectionHtml(
         </tr>
       </thead>
       <tbody>${body}</tbody>
-    </table>`;
+    </table>
+    </div>`;
 }

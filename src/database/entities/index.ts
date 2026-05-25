@@ -14,6 +14,7 @@ export { SitelineContract } from './siteline-contract.entity';
 export { SitelinePayApp } from './siteline-payapp.entity';
 export { SitelineAgingSummary } from './siteline-aging-summary.entity';
 export { SitelineAgingContract } from './siteline-aging-contract.entity';
+export { SitelineEntityConfig } from './siteline-entity-config.entity';
 export { AppEmailTemplate } from './app-email-template.entity';
 export { AppSetting } from './app-setting.entity';
 export { ClearstoryApiPayload } from './clearstory-api-payload.entity';

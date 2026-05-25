@@ -9,6 +9,10 @@ export class SitelineAgingSummary {
   @PrimaryGeneratedColumn({ name: 'Id' })
   id!: number;
 
+  /** Ref_OurEntities.EntityID (1=GOEL, 2=GOEL DC, 3=DCB). */
+  @Column({ name: 'EntityId', type: 'int', nullable: true })
+  entityId!: number | null;
+
   @Column({ name: 'CompanyId', type: 'nvarchar', length: 50, nullable: true })
   companyId!: string | null;
 

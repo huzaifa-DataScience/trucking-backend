@@ -2,8 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { SitelineService } from './siteline.service';
+import {
+  SitelineEntityConfigService,
+  SITELINE_ENTITY_IDS,
+} from './siteline-entity-config.service';
+import { isRetryableDbError, isSitelineRateLimitError, sleep } from './siteline-http.util';
 import { resolveLeadPmEmail, resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 import {
   SitelineContract,
@@ -28,11 +33,31 @@ export class SitelineSyncService {
   constructor(
     private readonly config: ConfigService,
     private readonly siteline: SitelineService,
+    private readonly entityConfig: SitelineEntityConfigService,
     @InjectRepository(SitelineContract)
     private readonly contractRepo: Repository<SitelineContract>,
     @InjectRepository(SitelinePayApp)
     private readonly payAppRepo: Repository<SitelinePayApp>,
   ) {}
+
+  private sitelineApiReady(): boolean {
+    return this.entityConfig.anyEntityConfigured() || this.siteline.isConfigured();
+  }
+
+  private async sitelineApiPauseBetweenEntities(): Promise<void> {
+    const ms = Math.max(
+      0,
+      Number(this.config.get<string>('SITELINE_ENTITY_API_DELAY_MS', '2000')) || 2000,
+    );
+    if (ms > 0) await sleep(ms);
+  }
+
+  private discoveryPageDelayMs(): number {
+    return Math.max(
+      0,
+      Number(this.config.get<string>('SITELINE_DISCOVERY_PAGE_DELAY_MS', '300')) || 300,
+    );
+  }
 
   /**
    * Cron job: **only** Siteline `agingDashboard` → `Siteline_AgingSummary` / `Siteline_AgingContracts`.
@@ -43,13 +68,20 @@ export class SitelineSyncService {
    *
    * Runs every 10 minutes at second 0.
    */
-  @Cron('0 */10 * * * *')
+  /** Offset 5 min from contract sync cron to avoid API/DB contention. */
+  @Cron('0 5,15,25,35,45,55 * * * *')
   async syncAgingSnapshot(): Promise<void> {
     if (this.config.get<string>('SITELINE_AGING_SNAPSHOT_ENABLED', 'true') !== 'true') {
       return;
     }
-    if (!this.siteline.isConfigured()) {
+    if (!this.sitelineApiReady()) {
       this.logger.warn('Siteline sync skipped: API not configured');
+      return;
+    }
+    if (!this.siteline.isAgingDashboardConfigured()) {
+      this.logger.warn(
+        'Siteline aging sync skipped: configure SITELINE_API_URL_SECONDARY and Firebase auth (agingDashboard is not on api-external).',
+      );
       return;
     }
     if (this.agingSyncInFlight) {
@@ -66,153 +98,259 @@ export class SitelineSyncService {
       const agingSource = (this.config.get<string>('SITELINE_AGING_SOURCE', 'auto') || 'auto')
         .trim()
         .toLowerCase();
+      const agingMode = this.entityConfig.useMergedAgingNullCompanyId() ? 'merged_null' : 'per_entity';
       this.logger.log(
-        `Starting Siteline aging sync (source=${agingSource}, ${startDate}..${endDate}).`,
+        `Starting Siteline aging sync (source=${agingSource}, mode=${agingMode}, ${startDate}..${endDate}).`,
       );
 
-      let agingCompanyId: string | null = null;
-      const curCo = (await this.siteline.getCurrentCompany()) as Record<string, unknown> | null;
-      if (curCo && typeof curCo === 'object' && 'error' in curCo) {
-        const errMsg = String(curCo.error);
-        sitelineAuthFailureHint(this.logger, errMsg);
-      } else if (curCo && typeof curCo === 'object' && curCo.id != null) {
-        agingCompanyId = String(curCo.id);
-      }
-      if (!agingCompanyId && !(curCo && typeof curCo === 'object' && 'error' in curCo)) {
-        this.logger.warn(
-          'Siteline aging sync: could not resolve currentCompany.id — agingDashboard may return empty.',
-        );
-      }
-
+      await this.entityConfig.refreshAllCompanies();
+      const companyMap = await this.entityConfig.companyIdToEntityIdMap();
 
       if (agingSource === 'local') {
-        await this.rebuildAgingFromLocalPayApps(startDate, endDate, agingCompanyId);
-        return;
-      }
-
-      const aging: any = await this.siteline.getAgingDashboard({
-        companyId: agingCompanyId,
-        startDate,
-        endDate,
-      });
-
-      if (aging && typeof aging === 'object' && 'error' in aging) {
-        const errMsg = String(aging.error);
-        this.logger.warn(`Siteline agingDashboard returned error: ${errMsg}`);
-        sitelineAuthFailureHint(this.logger, errMsg);
-      }
-      if (aging && typeof aging === 'object' && aging.configured === false) {
-        this.logger.warn('Siteline agingDashboard skipped: API not configured (SITELINE_API_TOKEN / URL).');
-      }
-
-      const agingRefreshFailed =
-        !aging ||
-        (typeof aging === 'object' && ('error' in aging || aging.configured === false));
-
-      if (agingRefreshFailed) {
-        if (agingSource === 'auto') {
-          this.logger.warn(
-            'Siteline agingDashboard failed. Falling back to local pay-app aging snapshot for this run.',
-          );
-          await this.rebuildAgingFromLocalPayApps(startDate, endDate, agingCompanyId);
-          return;
-        }
-        this.logger.warn(
-          'Siteline aging sync: did not update Siteline_AgingSummary / Siteline_AgingContracts (agingDashboard failed). Existing rows were left unchanged.',
+        const primaryId = this.entityConfig.primaryEntityIdForMergedAging();
+        const cfg = await this.entityConfig.getConfig(primaryId);
+        await this.rebuildAgingFromLocalPayApps(
+          startDate,
+          endDate,
+          cfg?.sitelineCompanyId ?? null,
+          primaryId,
         );
         return;
       }
 
-      const contractsFromAging: any[] = aging?.contracts ?? [];
-      if (!contractsFromAging.length) {
-        this.logger.warn(
-          'Siteline agingDashboard returned zero contracts[] — writing summary row only if present.',
-        );
+      let totalRows = 0;
+      if (this.entityConfig.useMergedAgingNullCompanyId()) {
+        totalRows = await this.syncAgingMergedDashboard(startDate, endDate, agingSource, companyMap);
+      } else {
+        totalRows = await this.syncAgingPerEntityDashboards(startDate, endDate, agingSource, companyMap);
       }
 
-      await this.contractRepo.manager.transaction(async (em) => {
-          await em.createQueryBuilder().delete().from(SitelineAgingContract).execute();
-          await em.createQueryBuilder().delete().from(SitelineAgingSummary).execute();
-
-          const pay = aging?.payAppAgingSummary ?? {};
-          const bd = pay.payAppAgingBreakdown ?? {};
-          const companyIdFromAging =
-            contractsFromAging.find((e: any) => e?.contract?.company?.id)?.contract?.company?.id ??
-            null;
-
-          const summary = em.create(SitelineAgingSummary, {
-            companyId: companyIdFromAging != null ? String(companyIdFromAging) : null,
-            startDate,
-            endDate,
-            amountOutstandingThisMonth: pickBigint(pay.amountOutstandingThisMonth),
-            amountAged30Days: pickBigint(pay.amountAged30Days),
-            amountAged60Days: pickBigint(pay.amountAged60Days),
-            amountAged90Days: pickBigint(pay.amountAged90Days),
-            amountAged120Days: pickBigint(pay.amountAged120Days),
-            averageDaysToPaid: pickDecimal(pay.averageDaysToPaid ?? bd.averageDaysToPaid),
-            numCurrent: pickInt(bd.numCurrent),
-            numAged30Days: pickInt(bd.numAged30Days),
-            numAged60Days: pickInt(bd.numAged60Days),
-            numAged90Days: pickInt(bd.numAged90Days),
-            numAged120Days: pickInt(bd.numAged120Days),
-            amountAgedTotal: pickBigint(bd.amountAgedTotal),
-            amountAgedCurrent: pickBigint(bd.amountAgedCurrent),
-            amountAgedBreakdown30Days: pickBigint(bd.amountAged30Days),
-            amountAgedBreakdown60Days: pickBigint(bd.amountAged60Days),
-            amountAgedBreakdown90Days: pickBigint(bd.amountAged90Days),
-            amountAgedBreakdown120Days: pickBigint(bd.amountAged120Days),
-            amountAgedTotalOverdueOnly: pickBigint(bd.amountAgedTotalOverdueOnly),
-            createdAt: new Date(),
-          });
-          await em.save(SitelineAgingSummary, summary);
-
-          for (const entry of contractsFromAging) {
-            const contract = entry?.contract;
-            const ab = entry?.agingBreakdown;
-            if (!contract?.id) continue;
-
-            const primaryPm = contract.leadPMs?.[0];
-            const first = primaryPm?.firstName ?? '';
-            const last = primaryPm?.lastName ?? '';
-            const fullName = `${first} ${last}`.trim() || null;
-            const email = resolveLeadPmEmail(primaryPm?.email, first, last);
-
-            const proj = contract.project ?? {};
-            const row = em.create(SitelineAgingContract, {
-              snapshotId: summary.id,
-              contractId: contract.id,
-              internalProjectNumber: contract.internalProjectNumber ?? null,
-              projectName: typeof proj.name === 'string' ? proj.name : null,
-              projectNumber: proj.projectNumber ?? null,
-              companyId: contract.company?.id != null ? String(contract.company.id) : null,
-              leadPmName: fullName,
-              leadPmEmail: email,
-              numCurrent: pickInt(ab?.numCurrent),
-              numAged30Days: pickInt(ab?.numAged30Days),
-              numAged60Days: pickInt(ab?.numAged60Days),
-              numAged90Days: pickInt(ab?.numAged90Days),
-              numAged120Days: pickInt(ab?.numAged120Days),
-              amountAgedTotal: pickBigint(ab?.amountAgedTotal),
-              amountAgedCurrent: pickBigint(ab?.amountAgedCurrent),
-              amountAged30Days: pickBigint(ab?.amountAged30Days),
-              amountAged60Days: pickBigint(ab?.amountAged60Days),
-              amountAged90Days: pickBigint(ab?.amountAged90Days),
-              amountAged120Days: pickBigint(ab?.amountAged120Days),
-              amountAgedTotalOverdueOnly: pickBigint(ab?.amountAgedTotalOverdueOnly),
-              averageDaysToPaid: pickDecimal(ab?.averageDaysToPaid),
-            });
-            await em.save(SitelineAgingContract, row);
-          }
-        });
-
-      this.logger.log(
-        `Siteline aging sync finished. Aging contract rows written: ${contractsFromAging.length}.`,
-      );
+      this.logger.log(`Siteline aging sync finished. Aging contract rows written: ${totalRows}.`);
     } catch (err: any) {
       this.logger.error(`Siteline aging sync failed (will retry next run): ${err?.message ?? err}`);
     } finally {
       this.agingSyncInFlight = false;
     }
+  }
+
+  private async syncAgingPerEntityDashboards(
+    startDate: string,
+    endDate: string,
+    agingSource: string,
+    companyMap: Map<string, number>,
+  ): Promise<number> {
+    let totalRows = 0;
+    for (const entityId of SITELINE_ENTITY_IDS) {
+      if (!this.entityConfig.isEntityConfigured(entityId)) {
+        this.logger.warn(`Siteline aging sync: entity ${entityId} skipped (no token).`);
+        continue;
+      }
+      const token = this.entityConfig.getTokenForEntity(entityId);
+      const cfg = await this.entityConfig.getConfig(entityId);
+      const agingCompanyId = cfg?.sitelineCompanyId?.trim() || null;
+      await this.sitelineApiPauseBetweenEntities();
+      const aging: any = await this.siteline.getAgingDashboard(
+        { companyId: agingCompanyId, startDate, endDate },
+        token,
+      );
+      if (this.agingDashboardCallFailed(aging)) {
+        this.logger.warn(
+          `Siteline agingDashboard failed for entity ${entityId} (${cfg?.entityName ?? '?'}).`,
+        );
+        if (aging && typeof aging === 'object' && 'error' in aging) {
+          sitelineAuthFailureHint(this.logger, String(aging.error));
+        }
+        if (agingSource === 'auto' && entityId === this.entityConfig.primaryEntityIdForMergedAging()) {
+          this.logger.warn(
+            'Siteline agingDashboard failed for primary entity. Falling back to local pay-app snapshot.',
+          );
+          await this.rebuildAgingFromLocalPayApps(startDate, endDate, agingCompanyId, entityId);
+        }
+        continue;
+      }
+      const n = await this.persistAgingDashboardSnapshot(
+        aging,
+        startDate,
+        endDate,
+        entityId,
+        companyMap,
+        entityId,
+        false,
+      );
+      totalRows += n;
+      this.logger.log(`Siteline aging sync entity ${entityId}: ${n} contract rows.`);
+    }
+    return totalRows;
+  }
+
+  private async syncAgingMergedDashboard(
+    startDate: string,
+    endDate: string,
+    agingSource: string,
+    companyMap: Map<string, number>,
+  ): Promise<number> {
+    const primaryId = this.entityConfig.primaryEntityIdForMergedAging();
+    const token = this.entityConfig.getTokenForEntity(primaryId);
+    const aging: any = await this.siteline.getAgingDashboard(
+      { companyId: null, startDate, endDate },
+      token,
+    );
+    if (this.agingDashboardCallFailed(aging)) {
+      if (aging && typeof aging === 'object' && 'error' in aging) {
+        sitelineAuthFailureHint(this.logger, String(aging.error));
+      }
+      if (agingSource === 'auto') {
+        this.logger.warn(
+          'Siteline merged agingDashboard failed. Falling back to local pay-app snapshot.',
+        );
+        const cfg = await this.entityConfig.getConfig(primaryId);
+        await this.rebuildAgingFromLocalPayApps(
+          startDate,
+          endDate,
+          cfg?.sitelineCompanyId ?? null,
+          primaryId,
+        );
+        return 0;
+      }
+      this.logger.warn(
+        'Siteline merged aging sync: did not update aging tables (agingDashboard failed).',
+      );
+      return 0;
+    }
+    return this.persistAgingDashboardSnapshot(
+      aging,
+      startDate,
+      endDate,
+      null,
+      companyMap,
+      null,
+      true,
+    );
+  }
+
+  private agingDashboardCallFailed(aging: unknown): boolean {
+    return (
+      !aging ||
+      (typeof aging === 'object' &&
+        aging !== null &&
+        ('error' in aging || (aging as { configured?: boolean }).configured === false))
+    );
+  }
+
+  /** Replace aging snapshot for one entity, or all rows when `replaceAll` (merged mode). */
+  private async persistAgingDashboardSnapshot(
+    aging: any,
+    startDate: string,
+    endDate: string,
+    snapshotEntityId: number | null,
+    companyMap: Map<string, number>,
+    defaultEntityId: number | null,
+    replaceAll: boolean,
+  ): Promise<number> {
+    const contractsFromAging: any[] = aging?.contracts ?? [];
+    if (!contractsFromAging.length) {
+      this.logger.warn(
+        `Siteline agingDashboard returned zero contracts[] (entityId=${snapshotEntityId ?? 'merged'}).`,
+      );
+    }
+
+    await this.contractRepo.manager.transaction(async (em) => {
+      if (replaceAll) {
+        await em.createQueryBuilder().delete().from(SitelineAgingContract).execute();
+        await em.createQueryBuilder().delete().from(SitelineAgingSummary).execute();
+      } else if (snapshotEntityId != null) {
+        await this.clearAgingSnapshotsForEntity(em, snapshotEntityId);
+      }
+
+      const pay = aging?.payAppAgingSummary ?? {};
+      const bd = pay.payAppAgingBreakdown ?? {};
+      const companyIdFromAging =
+        contractsFromAging.find((e: any) => e?.contract?.company?.id)?.contract?.company?.id ??
+        null;
+
+      const summary = em.create(SitelineAgingSummary, {
+        entityId: snapshotEntityId,
+        companyId: companyIdFromAging != null ? String(companyIdFromAging) : null,
+        startDate,
+        endDate,
+        amountOutstandingThisMonth: pickBigint(pay.amountOutstandingThisMonth),
+        amountAged30Days: pickBigint(pay.amountAged30Days),
+        amountAged60Days: pickBigint(pay.amountAged60Days),
+        amountAged90Days: pickBigint(pay.amountAged90Days),
+        amountAged120Days: pickBigint(pay.amountAged120Days),
+        averageDaysToPaid: pickDecimal(pay.averageDaysToPaid ?? bd.averageDaysToPaid),
+        numCurrent: pickInt(bd.numCurrent),
+        numAged30Days: pickInt(bd.numAged30Days),
+        numAged60Days: pickInt(bd.numAged60Days),
+        numAged90Days: pickInt(bd.numAged90Days),
+        numAged120Days: pickInt(bd.numAged120Days),
+        amountAgedTotal: pickBigint(bd.amountAgedTotal),
+        amountAgedCurrent: pickBigint(bd.amountAgedCurrent),
+        amountAgedBreakdown30Days: pickBigint(bd.amountAged30Days),
+        amountAgedBreakdown60Days: pickBigint(bd.amountAged60Days),
+        amountAgedBreakdown90Days: pickBigint(bd.amountAged90Days),
+        amountAgedBreakdown120Days: pickBigint(bd.amountAged120Days),
+        amountAgedTotalOverdueOnly: pickBigint(bd.amountAgedTotalOverdueOnly),
+        createdAt: new Date(),
+      });
+      await em.save(SitelineAgingSummary, summary);
+
+      for (const entry of contractsFromAging) {
+        const contract = entry?.contract;
+        const ab = entry?.agingBreakdown;
+        if (!contract?.id) continue;
+
+        const primaryPm = contract.leadPMs?.[0];
+        const first = primaryPm?.firstName ?? '';
+        const last = primaryPm?.lastName ?? '';
+        const fullName = `${first} ${last}`.trim() || null;
+        const email = resolveLeadPmEmail(primaryPm?.email, first, last);
+
+        const proj = contract.project ?? {};
+        const sitelineCoId =
+          contract.company?.id != null ? String(contract.company.id) : null;
+        const rowEntityId =
+          this.entityConfig.resolveEntityIdForSitelineCompanyId(sitelineCoId, companyMap) ??
+          defaultEntityId ??
+          snapshotEntityId;
+
+        const row = em.create(SitelineAgingContract, {
+          snapshotId: summary.id,
+          entityId: rowEntityId,
+          contractId: contract.id,
+          internalProjectNumber: contract.internalProjectNumber ?? null,
+          projectName: typeof proj.name === 'string' ? proj.name : null,
+          projectNumber: proj.projectNumber ?? null,
+          companyId: sitelineCoId,
+          leadPmName: fullName,
+          leadPmEmail: email,
+          numCurrent: pickInt(ab?.numCurrent),
+          numAged30Days: pickInt(ab?.numAged30Days),
+          numAged60Days: pickInt(ab?.numAged60Days),
+          numAged90Days: pickInt(ab?.numAged90Days),
+          numAged120Days: pickInt(ab?.numAged120Days),
+          amountAgedTotal: pickBigint(ab?.amountAgedTotal),
+          amountAgedCurrent: pickBigint(ab?.amountAgedCurrent),
+          amountAged30Days: pickBigint(ab?.amountAged30Days),
+          amountAged60Days: pickBigint(ab?.amountAged60Days),
+          amountAged90Days: pickBigint(ab?.amountAged90Days),
+          amountAged120Days: pickBigint(ab?.amountAged120Days),
+          amountAgedTotalOverdueOnly: pickBigint(ab?.amountAgedTotalOverdueOnly),
+          averageDaysToPaid: pickDecimal(ab?.averageDaysToPaid),
+        });
+        await em.save(SitelineAgingContract, row);
+      }
+    });
+
+    return contractsFromAging.length;
+  }
+
+  private async clearAgingSnapshotsForEntity(em: EntityManager, entityId: number): Promise<void> {
+    const summaries = await em.find(SitelineAgingSummary, { where: { entityId } });
+    for (const s of summaries) {
+      await em.delete(SitelineAgingContract, { snapshotId: s.id });
+    }
+    await em.delete(SitelineAgingSummary, { entityId });
   }
 
   /**
@@ -223,7 +361,7 @@ export class SitelineSyncService {
    */
   @Cron('0 */10 * * * *')
   async syncContractsAndPayApps(): Promise<void> {
-    if (!this.siteline.isConfigured()) {
+    if (!this.sitelineApiReady()) {
       this.logger.warn('Siteline contract sync skipped: API not configured');
       return;
     }
@@ -244,27 +382,47 @@ export class SitelineSyncService {
       Math.floor(Number(this.config.get<string>('SITELINE_GET_CONTRACT_DELAY_MS', '0')) || 0),
     );
 
-    const contractIdsToHydrate = new Set<string>();
-    let cursor: string | undefined;
-    let payAppsListed = 0;
-    let contractsActiveListed = 0;
-    let apiTotalCount: number | null = null;
-    let hydrated = 0;
-    let hydrateErrors = 0;
+    let totalHydrated = 0;
+    let totalHydrateErrors = 0;
 
     try {
       this.logger.log(
-        `Starting Siteline contract sync (paginatedPayApps + optional paginatedContracts ACTIVE → getContract hydrate, pageSize=${pageSize}, delayMs=${delayMs}).`,
+        `Starting Siteline contract sync (per entity: paginatedPayApps + optional paginatedContracts ACTIVE → getContract hydrate, pageSize=${pageSize}, delayMs=${delayMs}).`,
       );
+
+      for (const entityId of SITELINE_ENTITY_IDS) {
+        if (!this.entityConfig.isEntityConfigured(entityId)) {
+          this.logger.warn(`Siteline contract sync: entity ${entityId} skipped (no token).`);
+          continue;
+        }
+        await this.sitelineApiPauseBetweenEntities();
+        const token = this.entityConfig.getTokenForEntity(entityId);
+        const cfg = await this.entityConfig.getConfig(entityId);
+        const contractIdsToHydrate = new Set<string>();
+        let cursor: string | undefined;
+        let payAppsListed = 0;
+        let contractsActiveListed = 0;
+        let apiTotalCount: number | null = null;
+        let hydrated = 0;
+        let hydrateErrors = 0;
+
+        this.logger.log(
+          `Siteline contract sync entity ${entityId} (${cfg?.entityName ?? '?'}).`,
+        );
 
       do {
         const result = (await this.siteline.getPaginatedPayAppsDiscovery({
           limit: pageSize,
           cursor,
-        })) as any;
+        }, token)) as any;
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errMsg = String(result.error);
+          if (isSitelineRateLimitError(errMsg)) {
+            this.logger.warn(`Siteline paginatedPayApps rate limited; retrying page in 8s.`);
+            await sleep(8000);
+            continue;
+          }
           this.logger.warn(`Siteline paginatedPayApps (discovery) failed: ${errMsg}`);
           sitelineAuthFailureHint(this.logger, errMsg);
           break;
@@ -287,38 +445,13 @@ export class SitelineSyncService {
           if (!pa?.id || !cid) continue;
           payAppsListed += 1;
           contractIdsToHydrate.add(String(cid));
-          try {
-            await this.payAppRepo.save(
-              this.payAppRepo.create({
-                id: String(pa.id),
-                contractId: String(cid),
-                number:
-                  typeof pa.payAppNumber === 'number'
-                    ? pa.payAppNumber
-                    : pa.payAppNumber != null
-                      ? parseInt(String(pa.payAppNumber), 10)
-                      : null,
-                billingType: pa.billingType != null ? String(pa.billingType) : null,
-                status: null,
-                billed: null,
-                retention: null,
-                totalValue: null,
-                startDate: null,
-                endDate: null,
-                dueDate: null,
-                updatedAt: null,
-                createdAt: null,
-                lastSyncedAt: new Date(),
-              }),
-            );
-          } catch (stubErr: any) {
-            this.logger.warn(
-              `Siteline sync: stub save pay app ${pa.id}: ${stubErr?.message ?? stubErr}. Skipping stub.`,
-            );
-          }
+          // Pay apps are persisted in persistContractDetail after the contract row exists
+          // (FK_Siteline_PayApps_Contracts). Do not insert discovery stubs here.
         }
 
         cursor = nextCursor;
+        const pageDelay = this.discoveryPageDelayMs();
+        if (cursor && pageDelay > 0) await sleep(pageDelay);
       } while (cursor);
 
       const contractsPagedEnabled =
@@ -343,12 +476,15 @@ export class SitelineSyncService {
         let pcPage = 0;
         do {
           pcPage += 1;
-          const pcRes = (await this.siteline.getPaginatedContractsActiveDiscovery({
-            limit: contractsPageLimit,
-            cursor: contractsCursor,
-            contractStatus: 'ACTIVE',
-            payAppStatus: optionalPayAppStatus || undefined,
-          })) as any;
+          const pcRes = (await this.siteline.getPaginatedContractsActiveDiscovery(
+            {
+              limit: contractsPageLimit,
+              cursor: contractsCursor,
+              contractStatus: 'ACTIVE',
+              payAppStatus: optionalPayAppStatus || undefined,
+            },
+            token,
+          )) as any;
           if (pcRes && typeof pcRes === 'object' && 'error' in pcRes) {
             this.logger.warn(
               `Siteline paginatedContracts ACTIVE discovery failed: ${String(pcRes.error)}`,
@@ -384,7 +520,7 @@ export class SitelineSyncService {
         if (delayMs > 0) {
           await new Promise((r) => setTimeout(r, delayMs));
         }
-        const detail = (await this.siteline.getContractFull(cid)) as any;
+        const detail = (await this.siteline.getContractFull(cid, token)) as any;
         if (detail && typeof detail === 'object' && 'error' in detail) {
           this.logger.warn(`Siteline getContract(${cid}): ${String(detail.error)}`);
           hydrateErrors += 1;
@@ -396,7 +532,7 @@ export class SitelineSyncService {
           continue;
         }
         try {
-          await this.persistContractDetail(cid, detail);
+          await this.persistContractDetailWithRetry(cid, detail, entityId);
           hydrated += 1;
         } catch (persistErr: any) {
           this.logger.error(
@@ -413,7 +549,14 @@ export class SitelineSyncService {
       }
 
       this.logger.log(
-        `Siteline contract sync finished. Hydrated=${hydrated}/${contractIdsToHydrate.size}, hydrateErrors=${hydrateErrors}.`,
+        `Siteline contract sync entity ${entityId} finished. Hydrated=${hydrated}/${contractIdsToHydrate.size}, hydrateErrors=${hydrateErrors}.`,
+      );
+        totalHydrated += hydrated;
+        totalHydrateErrors += hydrateErrors;
+      }
+
+      this.logger.log(
+        `Siteline contract sync finished (all entities). Hydrated=${totalHydrated}, hydrateErrors=${totalHydrateErrors}.`,
       );
     } catch (err: any) {
       this.logger.error(`Siteline contract sync failed (will retry next run): ${err?.message ?? err}`);
@@ -422,8 +565,35 @@ export class SitelineSyncService {
     }
   }
 
+  private async persistContractDetailWithRetry(
+    contractId: string,
+    detail: any,
+    entityId: number,
+  ): Promise<void> {
+    const maxTries = Math.max(
+      1,
+      Number(this.config.get<string>('SITELINE_DB_PERSIST_RETRIES', '3')) || 3,
+    );
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxTries; attempt++) {
+      try {
+        await this.persistContractDetail(contractId, detail, entityId);
+        return;
+      } catch (e: unknown) {
+        lastErr = e;
+        if (!isRetryableDbError(e) || attempt >= maxTries) throw e;
+        await sleep(2000 * attempt);
+      }
+    }
+    throw lastErr;
+  }
+
   /** Upsert one contract + nested pay apps from `contract(id)` response. */
-  private async persistContractDetail(contractId: string, detail: any): Promise<void> {
+  private async persistContractDetail(
+    contractId: string,
+    detail: any,
+    entityId: number,
+  ): Promise<void> {
     const existing = await this.contractRepo.findOne({ where: { id: contractId } });
     const proj = detail.project ?? {};
     const primaryPm = detail?.leadPMs?.[0];
@@ -448,8 +618,13 @@ export class SitelineSyncService {
       (proj.projectNumber != null ? String(proj.projectNumber) : null) ??
       null;
 
+    const sitelineCompanyId =
+      detail?.company?.id != null ? String(detail.company.id) : null;
+
     const patch = {
       id: contractId,
+      entityId,
+      sitelineCompanyId,
       projectNumber,
       projectName: typeof proj.name === 'string' ? proj.name : null,
       internalProjectNumber: detail.internalProjectNumber ?? null,
@@ -506,6 +681,7 @@ export class SitelineSyncService {
     startDate: string,
     endDate: string,
     companyId: string | null,
+    entityId: number | null,
   ): Promise<void> {
     const payApps = await this.payAppRepo.find({ relations: ['contract'] });
         const today = new Date();
@@ -624,13 +800,18 @@ export class SitelineSyncService {
     }
 
     await this.contractRepo.manager.transaction(async (em) => {
-      await em.createQueryBuilder().delete().from(SitelineAgingContract).execute();
-      await em.createQueryBuilder().delete().from(SitelineAgingSummary).execute();
+      if (entityId != null) {
+        await this.clearAgingSnapshotsForEntity(em, entityId);
+      } else {
+        await em.createQueryBuilder().delete().from(SitelineAgingContract).execute();
+        await em.createQueryBuilder().delete().from(SitelineAgingSummary).execute();
+      }
 
       const summaryRow = em.create(SitelineAgingSummary, {
+        entityId,
         companyId,
-          startDate,
-          endDate,
+        startDate,
+        endDate,
         amountOutstandingThisMonth: String(summary.amountAgedTotal),
         amountAged30Days: String(summary.amountAged30Days),
         amountAged60Days: String(summary.amountAged60Days),
@@ -661,6 +842,7 @@ export class SitelineSyncService {
       for (const row of byContract.values()) {
         const contractRow = em.create(SitelineAgingContract, {
           snapshotId: summaryRow.id,
+          entityId,
           contractId: row.contractId,
           internalProjectNumber: row.internalProjectNumber,
           projectName: row.projectName,

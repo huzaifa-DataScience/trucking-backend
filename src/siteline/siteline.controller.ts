@@ -1,6 +1,8 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { SitelineService } from './siteline.service';
 import { SitelineReportService } from './siteline-report.service';
+import { SitelineEntityConfigService } from './siteline-entity-config.service';
+import { SitelineReconciliationGapsService } from './siteline-reconciliation-gaps.service';
 import { Public } from '../auth/decorators';
 import { JwtAuthGuard } from '../auth/guards';
 
@@ -40,6 +42,8 @@ export class SitelineController {
   constructor(
     private readonly siteline: SitelineService,
     private readonly report: SitelineReportService,
+    private readonly entityConfig: SitelineEntityConfigService,
+    private readonly reconciliationGaps: SitelineReconciliationGapsService,
   ) {}
 
   /** Check if Siteline is configured (for debugging). */
@@ -69,10 +73,31 @@ export class SitelineController {
     };
   }
 
-  /** Get current company from Siteline (real data). */
+  /**
+   * Lookup: Ref_OurEntities.EntityID → Siteline company UUID/name (tokens stay in .env).
+   * Refreshed from `currentCompany` on sync boot and aging/contract cron.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('entity-config')
+  async getEntityConfig() {
+    return this.entityConfig.listConfigs();
+  }
+
+  /** Re-fetch Siteline `currentCompany` for all entities and update `Siteline_EntityConfig`. */
+  @UseGuards(JwtAuthGuard)
+  @Post('entity-config/refresh')
+  async refreshEntityConfig() {
+    return this.entityConfig.refreshAllCompanies();
+  }
+
+  /** Get current company from Siteline (real data). Optional `entityId` uses that entity's token. */
   @UseGuards(JwtAuthGuard)
   @Get('company')
-  async getCompany() {
+  async getCompany(@Query('entityId') entityId?: string) {
+    const id = parseNum(entityId);
+    if (id != null && this.entityConfig.isEntityConfigured(id)) {
+      return this.siteline.getCurrentCompany(this.entityConfig.getTokenForEntity(id));
+    }
     return this.siteline.getCurrentCompany();
   }
 
@@ -117,6 +142,7 @@ export class SitelineController {
   @UseGuards(JwtAuthGuard)
   @Get('aging-report')
   async getAgingReport(
+    @Query('entityId') entityId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
@@ -130,6 +156,7 @@ export class SitelineController {
     @Query('useSitelineDashboard') useSitelineDashboard?: string,
   ) {
     return this.report.getAgingReport({
+      entityId: parseNum(entityId),
       startDate,
       endDate,
       search,
@@ -150,6 +177,7 @@ export class SitelineController {
   @UseGuards(JwtAuthGuard)
   @Get('aging-overdue')
   async getAgingOverdue(
+    @Query('entityId') entityId?: string,
     @Query('search') search?: string,
     @Query('overdueOnly') overdueOnly?: string,
     @Query('minDaysPastDue') minDaysPastDue?: string,
@@ -160,6 +188,7 @@ export class SitelineController {
     @Query('excludeStatuses') excludeStatuses?: string,
   ) {
     return this.report.getOverdueOver50({
+      entityId: parseNum(entityId),
       search,
       overdueOnly: parseBool(overdueOnly),
       minDaysPastDue: parseNum(minDaysPastDue),
@@ -192,5 +221,20 @@ export class SitelineController {
   @Get('debug/aging')
   async debugAging(@Query('internalProjectNumber') internalProjectNumber: string) {
     return this.report.debugAgingByInternalProjectNumber(String(internalProjectNumber ?? '').trim());
+  }
+
+  /**
+   * Siteline billing rows with no usable Clearstory comparison (for Billings UI + ops).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('reconciliation/gaps')
+  async getReconciliationGaps(@Query('entityId') entityId?: string) {
+    const result = await this.reconciliationGaps.findGaps(parseNum(entityId));
+    return {
+      items: result.items,
+      evaluatedAt: result.evaluatedAt,
+      entityId: result.entityId,
+      entityName: result.entityName,
+    };
   }
 }

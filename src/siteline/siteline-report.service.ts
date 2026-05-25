@@ -9,6 +9,10 @@ import {
 } from '../database/entities';
 import { SitelineService } from './siteline.service';
 import {
+  SitelineEntityConfigService,
+  SITELINE_ENTITY_IDS,
+} from './siteline-entity-config.service';
+import {
   agingCentsToDollars,
   overdueCentsFromAgingContract,
 } from './siteline-aging-overdue.util';
@@ -26,6 +30,8 @@ const AGING_BUCKETS = [
 ] as const;
 
 export interface SitelineAgingFilters {
+  /** Ref_OurEntities.EntityID (1=GOEL, 2=GOEL DC, 3=DCB). Defaults to SITELINE_AGING_PRIMARY_ENTITY_ID. */
+  entityId?: number;
   /**
    * Optional report window (YYYY-MM-DD). Compared to `sitelineDashboardRange` on the response;
    * data is still read from DB (last sync). Sync uses the same default window as when these are omitted.
@@ -106,7 +112,13 @@ export interface AgingReportResponse {
   totals: Record<(typeof AGING_BUCKETS)[number], number> & { projectTotal: number };
   /** Bucket amounts match Siteline: from `Siteline_AgingContracts`, or local pay-app math when `local_pay_apps`. */
   source?: 'siteline' | 'local_pay_apps';
-  /** Date range from the latest `Siteline_AgingSummary` row. */
+  /** Ref_OurEntities.EntityID used for this response (from query or default). */
+  entityId?: number;
+  /** True when a per-company `Siteline_AgingSummary` exists for `entityId`. */
+  snapshotReady?: boolean;
+  /** Set when `snapshotReady` is false or rows are empty after sync lag. */
+  message?: string | null;
+  /** Date range from the latest `Siteline_AgingSummary` row (YYYY-MM-DD). */
   sitelineDashboardRange?: { startDate: string; endDate: string };
   /** ISO time from latest `Siteline_AgingSummary.CreatedAt`. */
   lastAgingBreakdownSync?: string | null;
@@ -134,6 +146,9 @@ export interface AgingOverdueRow {
 
 export interface AgingOverdueResponse {
   items: AgingOverdueRow[];
+  entityId?: number;
+  snapshotReady?: boolean;
+  message?: string | null;
 }
 
 export type SitelineAgingDebugRow = {
@@ -214,7 +229,30 @@ export class SitelineReportService {
     @InjectRepository(SitelineAgingContract)
     private readonly agingContractRepo: Repository<SitelineAgingContract>,
     private readonly siteline: SitelineService,
+    private readonly entityConfig: SitelineEntityConfigService,
   ) {}
+
+  private resolveReportEntityId(filters: SitelineAgingFilters): number {
+    const raw = filters.entityId;
+    if (raw != null && SITELINE_ENTITY_IDS.includes(raw as (typeof SITELINE_ENTITY_IDS)[number])) {
+      return Math.trunc(raw);
+    }
+    return this.entityConfig.primaryEntityIdForMergedAging();
+  }
+
+  /** Latest per-company aging snapshot only (no legacy merged `EntityId IS NULL` row). */
+  private async findLatestAgingSummary(entityId: number): Promise<SitelineAgingSummary | null> {
+    const rows = await this.agingSummaryRepo.find({
+      where: { entityId },
+      order: { id: 'DESC' },
+      take: 1,
+    });
+    return rows[0] ?? null;
+  }
+
+  private agingSnapshotNotReadyMessage(entityId: number): string {
+    return `No Siteline aging snapshot for company entityId=${entityId} yet. Sync runs about every 10 minutes per company (aging cron at :05, :15, …).`;
+  }
 
   /**
    * Debug endpoint helper: for a given internalProjectNumber (e.g. "24037"),
@@ -298,11 +336,8 @@ export class SitelineReportService {
     const requestedStart = (filters.startDate ?? '').trim() || defaultRange.startDate;
     const requestedEnd = (filters.endDate ?? '').trim() || defaultRange.endDate;
 
-    const latestRows = await this.agingSummaryRepo.find({
-      order: { id: 'DESC' },
-      take: 1,
-    });
-    const latest = latestRows[0] ?? null;
+    const reportEntityId = this.resolveReportEntityId(filters);
+    const latest = await this.findLatestAgingSummary(reportEntityId);
 
     const emptyTotals = (): Record<BucketKey, number> & { projectTotal: number } => ({
       Current: 0,
@@ -320,14 +355,17 @@ export class SitelineReportService {
         rows: [],
         totals: emptyTotals(),
         source: 'siteline',
+        entityId: reportEntityId,
+        snapshotReady: false,
+        message: this.agingSnapshotNotReadyMessage(reportEntityId),
         sitelineDashboardRange: undefined,
         lastAgingBreakdownSync: null,
         requestedRangeMatchesCache: true,
       };
     }
 
-    const cachedStart = latest.startDate ?? null;
-    const cachedEnd = latest.endDate ?? null;
+    const cachedStart = normalizeAgingDateOnly(latest.startDate);
+    const cachedEnd = normalizeAgingDateOnly(latest.endDate);
     const sitelineDashboardRange =
       cachedStart && cachedEnd ? { startDate: cachedStart, endDate: cachedEnd } : undefined;
     const requestedRangeMatchesCache =
@@ -336,7 +374,7 @@ export class SitelineReportService {
         requestedEnd === sitelineDashboardRange.endDate);
 
     const snapRows = await this.agingContractRepo.find({
-      where: { snapshotId: latest.id },
+      where: { snapshotId: latest.id, entityId: reportEntityId },
     });
 
     const search = (filters.search ?? '').trim().toLowerCase();
@@ -406,6 +444,12 @@ export class SitelineReportService {
       rows: draftRows,
       totals,
       source: 'siteline',
+      entityId: reportEntityId,
+      snapshotReady: true,
+      message:
+        draftRows.length === 0
+          ? `Snapshot exists for entityId=${reportEntityId} but has no billable rows (sync may still be running).`
+          : null,
       sitelineDashboardRange,
       lastAgingBreakdownSync: latest.createdAt ? latest.createdAt.toISOString() : null,
       requestedRangeMatchesCache,
@@ -601,17 +645,19 @@ export class SitelineReportService {
         ? Math.max(0, Math.floor(filters.minDaysPastDue) - 1)
         : 50;
 
-    const latestRows = await this.agingSummaryRepo.find({
-      order: { id: 'DESC' },
-      take: 1,
-    });
-    const latest = latestRows[0];
+    const reportEntityId = this.resolveReportEntityId(filters);
+    const latest = await this.findLatestAgingSummary(reportEntityId);
     if (!latest) {
-      return { items: [] };
+      return {
+        items: [],
+        entityId: reportEntityId,
+        snapshotReady: false,
+        message: this.agingSnapshotNotReadyMessage(reportEntityId),
+      };
     }
 
     const snapRows = await this.agingContractRepo.find({
-      where: { snapshotId: latest.id },
+      where: { snapshotId: latest.id, entityId: reportEntityId },
     });
 
     const search = (filters.search ?? '').trim().toLowerCase();
@@ -660,7 +706,7 @@ export class SitelineReportService {
         leadPmName,
         leadPmEmail,
         invoiceNumber: null,
-        invoiceDate: latest.endDate ?? null,
+        invoiceDate: normalizeAgingDateOnly(latest.endDate),
         dueDate: null,
         daysPastDue,
         netDollars,
@@ -669,6 +715,26 @@ export class SitelineReportService {
     }
 
     items.sort((a, b) => b.netDollars - a.netDollars);
-    return { items };
+    return {
+      items,
+      entityId: reportEntityId,
+      snapshotReady: true,
+      message: items.length === 0 ? `No overdue rows for entityId=${reportEntityId}.` : null,
+    };
   }
+}
+
+/** SQL `nvarchar` or `datetime2` → stable `YYYY-MM-DD` for API (avoids UTC ISO shifting 1970-01-01). */
+function normalizeAgingDateOnly(v: string | Date | null | undefined): string | null {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return v.toISOString().slice(0, 10);
+  }
+  return null;
 }

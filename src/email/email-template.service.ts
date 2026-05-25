@@ -33,6 +33,9 @@ export class EmailTemplateService implements OnModuleInit {
   /** Weekly PM COR logs: approved table + open CORs (Clearstory). */
   static readonly PJ_COR_WEEKLY_PURPOSE = 'clearstory.pj_cor_weekly_report';
 
+  /** Ops alert: Siteline AR/billing with no Clearstory project to compare. */
+  static readonly SITELINE_CLEARSTORY_DATA_GAP_PURPOSE = 'siteline.clearstory_data_gap';
+
   // Runtime selector key for OTP emails (when/if wired by backend auth flows).
   static readonly AUTH_OTP_PURPOSE = 'auth.otp';
 
@@ -70,6 +73,13 @@ export class EmailTemplateService implements OnModuleInit {
       '{{otpCode}}',
       '{{expiresMinutes}}',
     ],
+    [EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE]: [
+      '{{gapCount}}',
+      '{{runAt}}',
+      '{{entityName}}',
+      '{{gapsTableHtml}}',
+      '{{dashboardUrl}}',
+    ],
   };
 
   private static readonly DEFAULTS_BY_PURPOSE: Record<
@@ -78,25 +88,23 @@ export class EmailTemplateService implements OnModuleInit {
   > = {
     [EmailTemplateService.SITELINE_OVERDUE_PURPOSE]: {
       name: 'Siteline overdue lead PM (default)',
-      subject: 'Action needed: {{itemCount}} overdue pay app(s) (> {{daysThreshold}} days)',
+      subject: 'Action needed — {{leadPmName}}: {{itemCount}} overdue pay app(s) (> {{daysThreshold}} days)',
       html: `<!-- Best-practice HTML email: table layout + inline styles -->\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#f3f4f6; margin:0; padding:0; width:100%;\">\n  <tr>\n    <td align=\"center\" style=\"padding:24px 12px;\">\n      <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:600px; max-width:600px; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.06);\">\n        <tr>\n          <td style=\"padding:22px 24px; background:#0f172a; color:#ffffff; font-family:Arial,Helvetica,sans-serif;\">\n            <div style=\"font-size:16px; line-height:22px; font-weight:700;\">Trucking Dashboard</div>\n            <div style=\"font-size:12px; line-height:18px; opacity:0.85;\">Automated AR alert</div>\n          </td>\n        </tr>\n        <tr>\n          <td style=\"padding:24px; font-family:Arial,Helvetica,sans-serif; color:#111827;\">\n            <div style=\"font-size:16px; line-height:24px; margin:0 0 12px 0;\">Hi <strong>{{leadPmName}}</strong>,</div>\n            <div style=\"font-size:14px; line-height:22px; margin:0 0 14px 0; color:#374151;\">\n              The following pay app item(s) are now <strong>over {{daysThreshold}} days past due</strong>.\n            </div>\n            <div style=\"margin:16px 0; padding:14px 16px; border:1px solid #e5e7eb; border-radius:10px; background:#f9fafb;\">\n              <div style=\"font-size:13px; line-height:20px; color:#111827;\">\n                <strong>Summary</strong>\n              </div>\n              <div style=\"font-size:13px; line-height:20px; color:#374151; margin-top:6px;\">\n                Items: <strong>{{itemCount}}</strong>\n              </div>\n            </div>\n\n            <div style=\"font-size:13px; line-height:20px; color:#111827; margin:0 0 8px 0;\"><strong>Details</strong></div>\n            <div style=\"font-size:13px; line-height:20px; color:#374151; margin:0 0 12px 0;\">\n              (Table may render best on desktop email clients.)\n            </div>\n            {{itemsTableHtml}}\n\n            <div style=\"margin-top:18px; font-size:12px; line-height:18px; color:#6b7280;\">\n              If this email reached you in error, please ignore it.\n            </div>\n          </td>\n        </tr>\n        <tr>\n          <td style=\"padding:16px 24px; background:#f3f4f6; font-family:Arial,Helvetica,sans-serif; color:#6b7280; font-size:12px; line-height:18px;\">\n            Sent automatically by Trucking Dashboard.\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n</table>`,
     },
     [EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE]: {
       name: 'Siteline PM weekly report (default)',
-      subject: 'Weekly project report — {{contractCount}} contract(s) (week of {{weekEnding}})',
+      subject: 'Weekly project report — {{leadPmName}} — {{contractCount}} contract(s) (week of {{weekEnding}})',
       html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;">
   <tr><td align="center" style="padding:24px 12px;">
     <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#fff;border-radius:12px;">
       <tr><td style="padding:22px 24px;background:#0f172a;color:#fff;font-family:Arial,sans-serif;">
         <div style="font-size:16px;font-weight:700;">Weekly PM report</div>
-        <div style="font-size:12px;opacity:0.85;">AR aging + Clearstory vs Siteline</div>
+        <div style="font-size:12px;opacity:0.85;">Clearstory vs Siteline issues + T&amp;M alerts</div>
       </td></tr>
       <tr><td style="padding:24px;font-family:Arial,sans-serif;color:#111827;">
         <div style="font-size:16px;margin:0 0 12px;">Hi <strong>{{leadPmName}}</strong>,</div>
         <div style="font-size:14px;color:#374151;margin:0 0 14px;">
-          Your portfolio snapshot for the week ending <strong>{{weekEnding}}</strong>.
-          Overdue AR uses the &gt;{{daysThreshold}} day bucket from Siteline aging.
-          Clearstory bill is approved-to-proceed + CO issued; Siteline is latest contract total.
+          Week ending <strong>{{weekEnding}}</strong>: projects below need attention (Clearstory vs Siteline mismatch or missing data). Matched projects are omitted. COR / T&amp;M alerts follow.
         </div>
         <div style="font-size:13px;margin:0 0 10px;"><strong>{{contractCount}}</strong> contract(s)</div>
         {{reportTableHtml}}
@@ -107,16 +115,46 @@ export class EmailTemplateService implements OnModuleInit {
 </table>`,
     },
     [EmailTemplateService.PJ_COR_WEEKLY_PURPOSE]: {
-      name: 'PJ weekly COR report (default)',
-      subject: 'Weekly PJ COR report — {{approvedCount}} CO issued, {{openCount}} ATP ({{weekEnding}})',
+      name: 'PJ weekly PM report pack (default)',
+      subject: 'PJ weekly PM reports — {{portfolioCount}} PM(s) — week of {{weekEnding}}',
       html: `<table role="presentation" width="100%" style="background:#f3f4f6;font-family:Arial,sans-serif;">
-  <tr><td style="padding:20px;">
-    <p>Hi <strong>{{leadPmName}}</strong>,</p>
-    <p>Week ending <strong>{{weekEnding}}</strong>. Clearstory COR log for PM weekly portfolio jobs (<strong>{{portfolioCount}}</strong> job numbers in scope).</p>
-    <p style="margin:20px 0 8px;font-size:14px;"><strong>Clearstory CORs</strong> — split by Status.</p>
-    {{approvedTableHtml}}
-    {{openTableHtml}}
-    {{dataQualityTableHtml}}
+  <tr><td style="padding:24px 12px;">
+    <table role="presentation" width="640" style="max-width:640px;background:#fff;border-radius:12px;">
+      <tr><td style="padding:20px 24px;background:#0f172a;color:#fff;">
+        <div style="font-size:16px;font-weight:700;">PJ weekly PM report pack</div>
+        <div style="font-size:12px;opacity:0.85;">Updated Tuesday snapshot — one PDF per PM (same report PMs receive Monday)</div>
+      </td></tr>
+      <tr><td style="padding:24px;color:#111827;">
+        <p>Hi <strong>{{leadPmName}}</strong>,</p>
+        <p>Week ending <strong>{{weekEnding}}</strong>. Attached are <strong>{{portfolioCount}}</strong> PDF report(s) — the same weekly PM report (AR aging, Clearstory comparison, T&amp;M alerts).</p>
+        <p style="font-size:13px;color:#374151;margin:0 0 12px;">PMs had until this send to update Clearstory/Siteline; these PDFs reflect the latest synced data.</p>
+        <ul style="font-size:13px;line-height:1.6;padding-left:20px;">{{approvedTableHtml}}</ul>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`,
+    },
+    [EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE]: {
+      name: 'Siteline / Clearstory data gap (default)',
+      subject:
+        'Siteline billing without Clearstory match — {{gapCount}} project(s) — {{entityName}}',
+      html: `<table role="presentation" width="100%" style="background:#f3f4f6;font-family:Arial,sans-serif;">
+  <tr><td style="padding:24px 12px;">
+    <table role="presentation" width="640" style="max-width:640px;background:#fff;border-radius:12px;">
+      <tr><td style="padding:20px 24px;background:#7c2d12;color:#fff;">
+        <div style="font-size:16px;font-weight:700;">Siteline / Clearstory data gap</div>
+        <div style="font-size:12px;opacity:0.9;">Reconciliation alert</div>
+      </td></tr>
+      <tr><td style="padding:24px;color:#111827;">
+        <p>Hi,</p>
+        <p>The following Siteline project(s) have billing or overdue AR in our snapshot but <strong>no usable Clearstory data</strong> to compare (missing project or empty COR/contract data).</p>
+        <p><strong>Entity:</strong> {{entityName}}</p>
+        <p><strong>Run time:</strong> {{runAt}}</p>
+        <p><strong>Count:</strong> {{gapCount}}</p>
+        {{gapsTableHtml}}
+        <p style="font-size:12px;color:#6b7280;margin-top:16px;">Review Clearstory sync and align job numbers with Siteline internal project numbers.</p>
+      </td></tr>
+    </table>
   </td></tr>
 </table>`,
     },
@@ -130,6 +168,7 @@ export class EmailTemplateService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.ensureTable();
     await this.ensureDefaultTemplates();
+    await this.refreshPmWeeklyTemplateIntro();
   }
 
   /**
@@ -362,6 +401,22 @@ export class EmailTemplateService implements OnModuleInit {
     });
   }
 
+  async renderSitelineClearstoryDataGapEmail(params: {
+    gapCount: number;
+    runAt: string;
+    entityName: string;
+    gapsTableHtml: string;
+    dashboardUrl?: string;
+  }): Promise<{ subject: string; html: string }> {
+    return this.renderTemplate(EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE, {
+      gapCount: params.gapCount,
+      runAt: params.runAt,
+      entityName: params.entityName,
+      gapsTableHtml: params.gapsTableHtml,
+      dashboardUrl: params.dashboardUrl ?? '',
+    });
+  }
+
   // ---- Internal helpers ----
 
   private applyPlaceholders(
@@ -391,7 +446,16 @@ export class EmailTemplateService implements OnModuleInit {
     let changed = false;
 
     if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
-      if (!body.includes('{{reportTableHtml}}')) {
+      if (!row.subjectTemplate?.includes('{{leadPmName}}')) {
+        row.subjectTemplate = d.subject;
+        changed = true;
+      }
+      const stalePmWeeklyBody =
+        body.includes('Avg days to paid') ||
+        body.includes('Internal Project #') ||
+        body.includes('{{itemsTableHtml}}') ||
+        body.includes('Your portfolio snapshot');
+      if (!body.includes('{{reportTableHtml}}') || stalePmWeeklyBody) {
         body = d.html;
         changed = true;
       } else if (!body.includes('{{corDataQualityTableHtml}}')) {
@@ -399,6 +463,13 @@ export class EmailTemplateService implements OnModuleInit {
           '{{reportTableHtml}}',
           '{{reportTableHtml}}\n        {{corDataQualityTableHtml}}',
         );
+        changed = true;
+      }
+    }
+
+    if (purpose === EmailTemplateService.SITELINE_OVERDUE_PURPOSE) {
+      if (!row.subjectTemplate?.includes('{{leadPmName}}')) {
+        row.subjectTemplate = d.subject;
         changed = true;
       }
     }
@@ -421,7 +492,9 @@ export class EmailTemplateService implements OnModuleInit {
     }
 
     if (changed) {
-      row.bodyHtmlTemplate = body;
+      if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
+        row.bodyHtmlTemplate = body;
+      }
       row.updatedAt = new Date();
       await this.repo.save(row);
     }
@@ -437,18 +510,23 @@ export class EmailTemplateService implements OnModuleInit {
 
     if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
       const reportTable = String(context.reportTableHtml ?? '').trim();
-      if (reportTable && !out.includes('Clearstory bill')) {
+      const hasComparisonTable = out.includes('<th>Clearstory bill</th>');
+      if (reportTable && !hasComparisonTable) {
+        out = out.replace(/\{\{reportTableHtml\}\}/g, '').trimEnd();
         out += `\n${reportTable}`;
       }
       const corDq = String(context.corDataQualityTableHtml ?? '').trim();
-      if (corDq && !out.includes('In Review with T&amp;M tags')) {
+      const hasTmAlertTable = out.includes('<th>TM Tag Number</th>');
+      if (corDq && !hasTmAlertTable) {
+        out = out.replace(/\{\{corDataQualityTableHtml\}\}/g, '').trimEnd();
         out += `\n${corDq}`;
       }
     }
 
     if (purpose === EmailTemplateService.PJ_COR_WEEKLY_PURPOSE) {
       const dq = String(context.dataQualityTableHtml ?? '').trim();
-      if (dq && !out.includes('In Review with T&amp;M tags')) {
+      if (dq && !out.includes('<th>TM Tag Number</th>')) {
+        out = out.replace(/\{\{dataQualityTableHtml\}\}/g, '').trimEnd();
         out += `\n${dq}`;
       }
     }
@@ -498,6 +576,7 @@ export class EmailTemplateService implements OnModuleInit {
         EmailTemplateService.AUTH_OTP_PURPOSE,
         EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
         EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+        EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE,
       ]);
       return;
     }
@@ -522,6 +601,7 @@ export class EmailTemplateService implements OnModuleInit {
         EmailTemplateService.AUTH_OTP_PURPOSE,
         EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
         EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+        EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE,
       ]);
       return;
     }
@@ -540,6 +620,7 @@ export class EmailTemplateService implements OnModuleInit {
         EmailTemplateService.AUTH_OTP_PURPOSE,
         EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
         EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+        EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE,
       ]);
   }
 
@@ -563,6 +644,27 @@ export class EmailTemplateService implements OnModuleInit {
       });
       // Ensure single-active enforcement (createTemplate will already do it when isActive=true)
       await this.repo.update({ templateKey: `${purpose}.v1` }, { updatedAt: now });
+    }
+  }
+
+  /** Replace legacy PM weekly intro copy still stored in SQL (admin templates). */
+  private async refreshPmWeeklyTemplateIntro(): Promise<void> {
+    const purpose = EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE;
+    const d = EmailTemplateService.DEFAULTS_BY_PURPOSE[purpose];
+    if (!d) return;
+
+    const rows = await this.repo.find({ where: { purpose } });
+    for (const row of rows) {
+      const body = row.bodyHtmlTemplate ?? '';
+      const legacy =
+        /approved[- ]to[- ]proceed/i.test(body) ||
+        /Overdue AR (uses|column uses)/i.test(body) ||
+        /open AR across GOEL/i.test(body) ||
+        /Clearstory comparison, and COR/i.test(body);
+      if (!legacy) continue;
+      row.bodyHtmlTemplate = d.html;
+      row.updatedAt = new Date();
+      await this.repo.save(row);
     }
   }
 

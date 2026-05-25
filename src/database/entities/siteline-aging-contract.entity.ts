@@ -9,6 +9,9 @@ export class SitelineAgingContract {
   @Column({ name: 'SnapshotId', type: 'int' })
   snapshotId!: number;
 
+  @Column({ name: 'EntityId', type: 'int', nullable: true })
+  entityId!: number | null;
+
   @Column({ name: 'ContractId', type: 'nvarchar', length: 50 })
   contractId!: string;
 

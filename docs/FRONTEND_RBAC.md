@@ -70,7 +70,7 @@ When reading from `localStorage` or your store, make sure `permissions` is prese
 
 ### 3. Meaning of permissions
 
-Current permission names (seeded in the DB; see `scripts/README-RBAC.md`):
+Current permission names (seeded in the DB; see [scripts/README-RBAC.md](./scripts/README-RBAC.md)):
 
 | Permission             | Intended UI capability                           |
 |------------------------|--------------------------------------------------|
