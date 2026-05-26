@@ -164,6 +164,16 @@ export class PmWeeklyReportBuilderService {
         } else {
           comparisonStatus = 'missing_clearstory';
         }
+        if (sitelineDollars == null) {
+          sitelineDollars = await this.contractComparison.resolveSitelineBillDollars({
+            contractId: ac.contractId,
+            jobNumber,
+          });
+        }
+      } else if (ac.contractId) {
+        sitelineDollars = await this.contractComparison.resolveSitelineBillDollars({
+          contractId: ac.contractId,
+        });
       }
 
       const projectName = ac.projectName?.trim() || jobNumber || ac.contractId;
