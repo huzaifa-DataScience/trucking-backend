@@ -6,6 +6,10 @@ import {
   isClearstoryProjectActive,
   isSitelineContractActive,
 } from '../siteline/siteline-active-contract.util';
+import {
+  resolveSitelineBillDollars as resolveSitelineBillDollarsFromDb,
+  sitelineLatestTotalValueToDollars,
+} from '../siteline/siteline-contract-bill.util';
 
 type Bucket = 'APPROVED' | 'ATP' | 'IN_REVIEW' | 'PLACEHOLDER' | 'VOID';
 
@@ -82,13 +86,6 @@ function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function sitelineLatestTotalValueToDollars(v: string | null | undefined): number | null {
-  if (v == null || String(v).trim() === '') return null;
-  const n = Number(v);
-  if (!Number.isFinite(n)) return null;
-  return roundMoney(n / 100);
-}
-
 @Injectable()
 export class ClearstoryContractComparisonService {
   private static readonly TOLERANCE_DOLLARS = 0.01;
@@ -114,6 +111,14 @@ export class ClearstoryContractComparisonService {
     const project = await this.projects.findOne({ where: { jobNumber: job } });
     if (!project) return null;
     return this.getByProject(project);
+  }
+
+  /** Siteline bill for PM reports when Clearstory row is missing or comparison has no Siteline match. */
+  resolveSitelineBillDollars(opts: {
+    contractId?: string | null;
+    jobNumber?: string;
+  }): Promise<number | null> {
+    return resolveSitelineBillDollarsFromDb(this.sitelineContracts, opts);
   }
 
   async getByProject(project: ClearstoryProject): Promise<ClearstoryContractComparisonResult> {

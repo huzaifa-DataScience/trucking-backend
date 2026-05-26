@@ -86,6 +86,16 @@ export async function buildPortfolioReportRows(
       } else {
         comparisonStatus = 'missing_clearstory';
       }
+      if (sitelineDollars == null) {
+        sitelineDollars = await contractComparison.resolveSitelineBillDollars({
+          contractId: ac.contractId,
+          jobNumber,
+        });
+      }
+    } else if (ac.contractId) {
+      sitelineDollars = await contractComparison.resolveSitelineBillDollars({
+        contractId: ac.contractId,
+      });
     }
 
     const projectName = ac.projectName?.trim() || jobNumber || ac.contractId;

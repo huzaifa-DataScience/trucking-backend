@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppEmailTemplate } from '../database/entities';
 
+const REPORT_ISSUE_FOOTER_HTML = `<p style="font-size:12px;color:#6b7280;margin-top:20px;border-top:1px solid #e5e7eb;padding-top:14px;">If you find any issue with this report, please contact the technical team.</p>`;
+
 /**
  * Admin-editable, DB-backed email templates.
  *
@@ -75,7 +77,6 @@ export class EmailTemplateService implements OnModuleInit {
     ],
     [EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE]: [
       '{{gapCount}}',
-      '{{runAt}}',
       '{{entityName}}',
       '{{gapsTableHtml}}',
       '{{dashboardUrl}}',
@@ -109,6 +110,7 @@ export class EmailTemplateService implements OnModuleInit {
         <div style="font-size:13px;margin:0 0 10px;"><strong>{{contractCount}}</strong> contract(s)</div>
         {{reportTableHtml}}
         {{corDataQualityTableHtml}}
+        ${REPORT_ISSUE_FOOTER_HTML}
       </td></tr>
     </table>
   </td></tr>
@@ -129,6 +131,7 @@ export class EmailTemplateService implements OnModuleInit {
         <p>Week ending <strong>{{weekEnding}}</strong>. Attached are <strong>{{portfolioCount}}</strong> PDF report(s) — the same weekly PM report (AR aging, Clearstory comparison, T&amp;M alerts).</p>
         <p style="font-size:13px;color:#374151;margin:0 0 12px;">PMs had until this send to update Clearstory/Siteline; these PDFs reflect the latest synced data.</p>
         <ul style="font-size:13px;line-height:1.6;padding-left:20px;">{{approvedTableHtml}}</ul>
+        ${REPORT_ISSUE_FOOTER_HTML}
       </td></tr>
     </table>
   </td></tr>
@@ -136,23 +139,20 @@ export class EmailTemplateService implements OnModuleInit {
     },
     [EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE]: {
       name: 'Siteline / Clearstory data gap (default)',
-      subject:
-        'Siteline billing without Clearstory match — {{gapCount}} project(s) — {{entityName}}',
+      subject: '{{gapCount}} project(s) need Clearstory — all companies',
       html: `<table role="presentation" width="100%" style="background:#f3f4f6;font-family:Arial,sans-serif;">
   <tr><td style="padding:24px 12px;">
     <table role="presentation" width="640" style="max-width:640px;background:#fff;border-radius:12px;">
       <tr><td style="padding:20px 24px;background:#7c2d12;color:#fff;">
-        <div style="font-size:16px;font-weight:700;">Siteline / Clearstory data gap</div>
-        <div style="font-size:12px;opacity:0.9;">Reconciliation alert</div>
+        <div style="font-size:16px;font-weight:700;">Projects missing in Clearstory</div>
+        <div style="font-size:12px;opacity:0.9;">Siteline billing alert — {{entityName}}</div>
       </td></tr>
-      <tr><td style="padding:24px;color:#111827;">
+      <tr><td style="padding:24px;color:#111827;font-size:14px;line-height:1.5;">
         <p>Hi,</p>
-        <p>The following Siteline project(s) have billing or overdue AR in our snapshot but <strong>no usable Clearstory data</strong> to compare (missing project or empty COR/contract data).</p>
-        <p><strong>Entity:</strong> {{entityName}}</p>
-        <p><strong>Run time:</strong> {{runAt}}</p>
-        <p><strong>Count:</strong> {{gapCount}}</p>
+        <p>These projects have <strong>open billing in Siteline</strong>, but we could not find a matching project in Clearstory (or Clearstory has no COR data yet).</p>
+        <p style="margin:12px 0;"><strong>Total projects:</strong> {{gapCount}}</p>
         {{gapsTableHtml}}
-        <p style="font-size:12px;color:#6b7280;margin-top:16px;">Review Clearstory sync and align job numbers with Siteline internal project numbers.</p>
+        <p style="font-size:12px;color:#6b7280;margin-top:16px;">Please add or fix the project in Clearstory, or confirm the job number matches Siteline.</p>
       </td></tr>
     </table>
   </td></tr>
@@ -169,6 +169,8 @@ export class EmailTemplateService implements OnModuleInit {
     await this.ensureTable();
     await this.ensureDefaultTemplates();
     await this.refreshPmWeeklyTemplateIntro();
+    await this.refreshClearstoryGapTemplate();
+    await this.refreshReportIssueFooters();
   }
 
   /**
@@ -338,7 +340,10 @@ export class EmailTemplateService implements OnModuleInit {
       if (d) {
         return {
           subject: this.applyPlaceholders(d.subject, context),
-          html: this.applyPlaceholders(d.html, context),
+          html: this.appendReportIssueFooter(
+            purpose,
+            this.applyPlaceholders(d.html, context),
+          ),
         };
       }
       throw new Error(`No active email template for purpose: ${purpose}`);
@@ -346,11 +351,27 @@ export class EmailTemplateService implements OnModuleInit {
 
     let html = this.applyPlaceholders(row.bodyHtmlTemplate, context);
     html = this.ensureInjectedTableBlocks(purpose, html, context);
+    html = this.appendReportIssueFooter(purpose, html);
 
     return {
       subject: this.applyPlaceholders(row.subjectTemplate, context),
       html,
     };
+  }
+
+  /** PM / PJ weekly reports: standard footer for data issues. */
+  private appendReportIssueFooter(purpose: string, html: string): string {
+    const reportPurposes = [
+      EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
+      EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+    ];
+    if (!reportPurposes.includes(purpose)) return html;
+    if (/contact the technical team/i.test(html)) return html;
+    const close = /(\s*<\/td><\/tr>\s*<\/table>\s*<\/td><\/tr>\s*<\/table>\s*)$/i;
+    if (close.test(html)) {
+      return html.replace(close, `${REPORT_ISSUE_FOOTER_HTML}$1`);
+    }
+    return `${html}${REPORT_ISSUE_FOOTER_HTML}`;
   }
 
   // ---- Backward-compatible helpers used by the Siteline overdue job ----
@@ -403,14 +424,12 @@ export class EmailTemplateService implements OnModuleInit {
 
   async renderSitelineClearstoryDataGapEmail(params: {
     gapCount: number;
-    runAt: string;
     entityName: string;
     gapsTableHtml: string;
     dashboardUrl?: string;
   }): Promise<{ subject: string; html: string }> {
     return this.renderTemplate(EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE, {
       gapCount: params.gapCount,
-      runAt: params.runAt,
       entityName: params.entityName,
       gapsTableHtml: params.gapsTableHtml,
       dashboardUrl: params.dashboardUrl ?? '',
@@ -644,6 +663,54 @@ export class EmailTemplateService implements OnModuleInit {
       });
       // Ensure single-active enforcement (createTemplate will already do it when isActive=true)
       await this.repo.update({ templateKey: `${purpose}.v1` }, { updatedAt: now });
+    }
+  }
+
+  /** Push simplified gap-alert copy into SQL templates that still use the old wording. */
+  private async refreshClearstoryGapTemplate(): Promise<void> {
+    const purpose = EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE;
+    const d = EmailTemplateService.DEFAULTS_BY_PURPOSE[purpose];
+    if (!d) return;
+
+    const rows = await this.repo.find({ where: { purpose } });
+    for (const row of rows) {
+      const body = row.bodyHtmlTemplate ?? '';
+      const subject = row.subjectTemplate ?? '';
+      const legacy =
+        /Run time:/i.test(body) ||
+        /no usable Clearstory data/i.test(body) ||
+        /Siteline billing without Clearstory match/i.test(subject) ||
+        /Reconciliation alert/i.test(body) ||
+        /<strong>Company:<\/strong> \{\{entityName\}\}/i.test(body) ||
+        (/need Clearstory — GOEL$/i.test(subject) && !/all companies/i.test(subject));
+      if (!legacy) continue;
+      row.subjectTemplate = d.subject;
+      row.bodyHtmlTemplate = d.html;
+      row.updatedAt = new Date();
+      await this.repo.save(row);
+    }
+  }
+
+  /** Ensure PM / PJ SQL templates include the technical-team footer. */
+  private async refreshReportIssueFooters(): Promise<void> {
+    const purposes = [
+      EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE,
+      EmailTemplateService.PJ_COR_WEEKLY_PURPOSE,
+    ];
+    for (const purpose of purposes) {
+      const d = EmailTemplateService.DEFAULTS_BY_PURPOSE[purpose];
+      if (!d) continue;
+      const rows = await this.repo.find({ where: { purpose } });
+      for (const row of rows) {
+        const body = row.bodyHtmlTemplate ?? '';
+        if (/contact the technical team/i.test(body)) continue;
+        row.bodyHtmlTemplate = this.appendReportIssueFooter(
+          purpose,
+          body || d.html,
+        );
+        row.updatedAt = new Date();
+        await this.repo.save(row);
+      }
     }
   }
 
