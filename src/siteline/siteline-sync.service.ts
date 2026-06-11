@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,13 +17,20 @@ import {
   SitelineAgingContract,
 } from '../database/entities';
 
+/** Evaluated at module load — override via .env (same pattern as Clearstory / Trimble). */
+const SITELINE_CONTRACT_SYNC_CRON =
+  (process.env.SITELINE_CONTRACT_SYNC_CRON ?? '0 0 */6 * * *').trim() || '0 0 */6 * * *';
+/** 15 min after contract sync tick to reduce API/DB contention. */
+const SITELINE_AGING_SNAPSHOT_CRON =
+  (process.env.SITELINE_AGING_SNAPSHOT_CRON ?? '0 15 */6 * * *').trim() || '0 15 */6 * * *';
+
 /**
  * Periodically pulls billing data from Siteline into SQL (`Siteline_Contracts`, `Siteline_PayApps`,
  * aging tables). Contract sync uses **`paginatedPayApps`** + optional **`paginatedContracts`**
  * (`ACTIVE`) for discovery, then **`contract(id)`** hydrate.
  */
 @Injectable()
-export class SitelineSyncService {
+export class SitelineSyncService implements OnModuleInit {
   private readonly logger = new Logger(SitelineSyncService.name);
 
   /** Prevents stacking another sync while the previous run is still awaiting Siteline/DB. */
@@ -39,6 +46,12 @@ export class SitelineSyncService {
     @InjectRepository(SitelinePayApp)
     private readonly payAppRepo: Repository<SitelinePayApp>,
   ) {}
+
+  onModuleInit(): void {
+    this.logger.log(
+      `Siteline contract sync cron "${SITELINE_CONTRACT_SYNC_CRON}"; aging snapshot cron "${SITELINE_AGING_SNAPSHOT_CRON}"`,
+    );
+  }
 
   private sitelineApiReady(): boolean {
     return this.entityConfig.anyEntityConfigured() || this.siteline.isConfigured();
@@ -66,10 +79,9 @@ export class SitelineSyncService {
    *
    * GET /siteline/aging-report reads these tables (unless `useSitelineDashboard=false`, which uses pay apps in-process only).
    *
-   * Runs every 10 minutes at second 0.
+   * Default: every 6 hours at :15 past the hour (see SITELINE_AGING_SNAPSHOT_CRON).
    */
-  /** Offset 5 min from contract sync cron to avoid API/DB contention. */
-  @Cron('0 5,15,25,35,45,55 * * * *')
+  @Cron(SITELINE_AGING_SNAPSHOT_CRON, { name: 'sitelineAgingSnapshot' })
   async syncAgingSnapshot(): Promise<void> {
     if (this.config.get<string>('SITELINE_AGING_SNAPSHOT_ENABLED', 'true') !== 'true') {
       return;
@@ -86,7 +98,7 @@ export class SitelineSyncService {
     }
     if (this.agingSyncInFlight) {
       this.logger.warn(
-        'Siteline aging sync skipped: previous run still in progress (next tick in <= 10 min).',
+        'Siteline aging sync skipped: previous run still in progress (next tick on cron schedule).',
       );
       return;
     }
@@ -357,9 +369,9 @@ export class SitelineSyncService {
    * Contract + pay-app sync: discovery from **`paginatedPayApps`** plus optional **`paginatedContracts`**
    * with `contractStatus: ACTIVE`; union **contract ids**; then **`contract(id)`** hydrates each unique
    * contract into `Siteline_Contracts` / `Siteline_PayApps`.
-   * Runs every 10 minutes at second 0.
+   * Default: every 6 hours (see SITELINE_CONTRACT_SYNC_CRON).
    */
-  @Cron('0 */10 * * * *')
+  @Cron(SITELINE_CONTRACT_SYNC_CRON, { name: 'sitelineContracts' })
   async syncContractsAndPayApps(): Promise<void> {
     if (!this.sitelineApiReady()) {
       this.logger.warn('Siteline contract sync skipped: API not configured');

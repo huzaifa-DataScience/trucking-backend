@@ -1,0 +1,57 @@
+---
+description: Reuse existing DB tables, modules, and services—no duplicate backend or schema
+alwaysApply: true
+---
+
+# Backend & database — reuse, no duplication
+
+Before adding tables, modules, controllers, services, or lookup endpoints, **search and reuse** what exists.
+
+## Database
+
+1. **Check `src/database/entities/` and `scripts/sql/`** for an existing table (`Ref_*`, `App_*`, integration mirrors).
+2. **Prefer FKs** over copying labels (e.g. `OurEntityId` → `Ref_OurEntities`, optional `JobId` → `Ref_Jobs`).
+3. **Do not duplicate:**
+   - Our companies → use `Ref_OurEntities` (not `Bid_BiddingCompanies` or similar)
+   - Haulers → `Ref_ExternalCompanies` only for trucking
+   - Clearstory / Siteline / Trimble tables → integration only, not bidding CRM
+4. **New tables** only for domain-specific data with no `Ref_*` home; prefix transactional bidding data `Bid_*`.
+5. **Do not persist** Excel/API `computed` on main rows—snapshots or response DTOs only.
+
+Bidding schema: follow [docs/BIDDING_DATABASE_DESIGN.md](docs/BIDDING_DATABASE_DESIGN.md).
+
+```typescript
+// ❌ BAD — duplicate company master
+@Entity('Bid_BiddingCompanies')
+export class BidBiddingCompany { ... }
+
+// ✅ GOOD — FK to existing ref
+@Column({ name: 'OurEntityId' })
+ourEntityId: number;
+@ManyToOne(() => OurEntity)
+@JoinColumn({ name: 'OurEntityId' })
+ourEntity: OurEntity;
+```
+
+## Modules & API
+
+1. **Mirror existing modules** (`lookups`, `job-dashboard`, `siteline`)—register in `app.module.ts`, `@UseGuards(JwtAuthGuard)`, flat array responses.
+2. **Extend `LookupsService`** or call it from new controllers instead of a second “get companies” implementation.
+3. **Reuse endpoints:** `GET /lookups/our-entities`, `GET /lookups/jobs`—wrap or delegate, don’t clone logic.
+4. **One service per concern**—extract shared helpers to `src/common/` or an existing util only when used in 2+ modules.
+
+```typescript
+// ❌ BAD — parallel lookup implementation
+async getBiddingCompanies() {
+  return this.repo.find({ where: { type: 'goel' } });
+}
+
+// ✅ GOOD — delegate to existing lookup
+return this.lookups.getOurEntities();
+```
+
+## Before you ship
+
+- [ ] Grep for similar table names, entity classes, and route paths
+- [ ] New SQL migration does not recreate an existing `Ref_*` concept
+- [ ] No duplicate DTO fields that JOINs already provide for list views

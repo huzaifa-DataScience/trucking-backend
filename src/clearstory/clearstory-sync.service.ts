@@ -133,7 +133,7 @@ function mergeClearstoryApiObjects(listItem: unknown, detail: unknown | null | u
 }
 
 /** Evaluated when this module loads — `dotenv/config` must run before `AppModule` in main.ts */
-const CLEARSTORY_CRON_EXPR = (process.env.CLEARSTORY_SYNC_CRON ?? '0 */10 * * * *').trim() || '0 */10 * * * *';
+const CLEARSTORY_CRON_EXPR = (process.env.CLEARSTORY_SYNC_CRON ?? '0 0 */6 * * *').trim() || '0 0 */6 * * *';
 
 @Injectable()
 export class ClearstorySyncService implements OnModuleInit {

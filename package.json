@@ -20,6 +20,8 @@
     "run-pm-weekly-report": "ts-node scripts/run-pm-weekly-report-once.ts",
     "run-pj-cor-weekly-report": "ts-node scripts/run-pj-cor-weekly-report-once.ts",
     "backfill-clearstory-cor-tm-tags": "ts-node scripts/backfill-clearstory-cor-tm-tags.ts",
+    "bidding-migrate": "ts-node scripts/run-bidding-migration.ts",
+    "test-bidding-calc": "ts-node scripts/test-bidding-calc.ts",
     "playwright:install": "playwright install chromium",
     "postinstall": "playwright install chromium"
   },

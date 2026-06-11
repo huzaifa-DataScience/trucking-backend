@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { existsSync, readFileSync } from 'fs';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import * as swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
@@ -20,6 +21,10 @@ process.on('uncaughtException', (err) => {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  // Default Express JSON limit is 100kb; bidding bids carry a client `computed`
+  // snapshot (capped at 256kb in the service), so raise the parser limit.
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

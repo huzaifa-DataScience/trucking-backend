@@ -251,7 +251,7 @@ export class SitelineReportService {
   }
 
   private agingSnapshotNotReadyMessage(entityId: number): string {
-    return `No Siteline aging snapshot for company entityId=${entityId} yet. Sync runs about every 10 minutes per company (aging cron at :05, :15, …).`;
+    return `No Siteline aging snapshot for company entityId=${entityId} yet. Sync runs about every 6 hours per company.`;
   }
 
   /**

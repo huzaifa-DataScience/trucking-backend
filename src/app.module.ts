@@ -17,6 +17,7 @@ import { TicketsModule } from './tickets/tickets.module';
 import { ClearstoryMockModule } from './clearstory-mock/clearstory-mock.module';
 import { ClearstoryModule } from './clearstory/clearstory.module';
 import { TrimbleModule } from './trimble/trimble.module';
+import { BiddingModule } from './bidding/bidding.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TrimbleModule } from './trimble/trimble.module';
     ClearstoryMockModule,
     ClearstoryModule,
     TrimbleModule,
+    BiddingModule,
   ],
   controllers: [AppController],
 })
