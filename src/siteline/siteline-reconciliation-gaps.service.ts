@@ -142,23 +142,13 @@ export class SitelineReconciliationGapsService {
       };
     }
 
+    let lastTriedKey: string | null = null;
+
     for (const key of keys) {
+      lastTriedKey = key;
       const cmp = await this.contractComparison.getByJobNumber(key);
       if (!cmp) {
-        return {
-          contractId: row.contractId,
-          projectName: row.projectName ?? null,
-          projectNumber: row.projectNumber ?? null,
-          internalProjectNumber: row.internalProjectNumber ?? null,
-          leadPmName: row.leadPmName ?? null,
-          leadPmEmail: resolveLeadPmEmailFromFullName(row.leadPmEmail, row.leadPmName),
-          netDollars,
-          daysPastDue: null,
-          clearstoryProjectId: null,
-          clearstoryJobNumber: null,
-          matchKeyTried: `jobNumber=${key}`,
-          gapReason: 'NO_CLEARSTORY_PROJECT',
-        };
+        continue;
       }
 
       const csValue = cmp.clearstory.approvedToProceedAndCoIssuedContractValue;
@@ -186,6 +176,23 @@ export class SitelineReconciliationGapsService {
       }
 
       return null;
+    }
+
+    if (lastTriedKey) {
+      return {
+        contractId: row.contractId,
+        projectName: row.projectName ?? null,
+        projectNumber: row.projectNumber ?? null,
+        internalProjectNumber: row.internalProjectNumber ?? null,
+        leadPmName: row.leadPmName ?? null,
+        leadPmEmail: resolveLeadPmEmailFromFullName(row.leadPmEmail, row.leadPmName),
+        netDollars,
+        daysPastDue: null,
+        clearstoryProjectId: null,
+        clearstoryJobNumber: null,
+        matchKeyTried: `jobNumber=${lastTriedKey}`,
+        gapReason: 'NO_CLEARSTORY_PROJECT',
+      };
     }
 
     return null;

@@ -7,6 +7,11 @@ import {
   isSitelineContractActive,
 } from '../siteline/siteline-active-contract.util';
 import {
+  jobNumberLookupVariants,
+  jobNumbersEquivalent,
+  normalizeJobNumberKey,
+} from '../common/job-number-match.util';
+import {
   resolveSitelineBillDollars as resolveSitelineBillDollarsFromDb,
   sitelineLatestTotalValueToDollars,
 } from '../siteline/siteline-contract-bill.util';
@@ -108,9 +113,34 @@ export class ClearstoryContractComparisonService {
   async getByJobNumber(jobNumber: string): Promise<ClearstoryContractComparisonResult | null> {
     const job = jobNumber.trim();
     if (!job) return null;
-    const project = await this.projects.findOne({ where: { jobNumber: job } });
+
+    const project = await this.findProjectByJobNumber(job);
     if (!project) return null;
     return this.getByProject(project);
+  }
+
+  /**
+   * Resolve a Clearstory project from a Siteline-style job number.
+   * Matches exact JobNumber, leading-zero variants (9920 ↔ 09920), and suffixed
+   * Clearstory values (12201 - 02 ↔ 12201).
+   */
+  private async findProjectByJobNumber(job: string): Promise<ClearstoryProject | null> {
+    for (const variant of jobNumberLookupVariants(job)) {
+      const exact = await this.projects.findOne({ where: { jobNumber: variant } });
+      if (exact) return exact;
+    }
+
+    const normalized = normalizeJobNumberKey(job);
+    if (!normalized) return null;
+
+    const prefixCandidates = await this.projects
+      .createQueryBuilder('p')
+      .where('p.jobNumber LIKE :s', { s: `${normalized}%` })
+      .orWhere('p.jobNumber LIKE :z', { z: `${job}%` })
+      .getMany();
+
+    const match = prefixCandidates.find((p) => jobNumbersEquivalent(job, p.jobNumber ?? ''));
+    return match ?? null;
   }
 
   /** Siteline bill for PM reports when Clearstory row is missing or comparison has no Siteline match. */

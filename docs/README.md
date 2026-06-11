@@ -67,3 +67,4 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | Doc | Description |
 |-----|-------------|
 | [BIDDING_NAMED_RANGES.md](./BIDDING_NAMED_RANGES.md) | Bidding named ranges |
+| [BIDDING_DATABASE_DESIGN.md](./BIDDING_DATABASE_DESIGN.md) | Bidding DB schema — reuse `Ref_*`, no duplicates |
