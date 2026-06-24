@@ -9,7 +9,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReadStream } from 'fs';
 import { Bid, BidAttachment, AppFile } from '../database/entities';
-import { UploadedMulterFile } from '../common/uploaded-multer-file.type';
 import { BiddingActivityService } from './bidding-activity.service';
 import {
   ALLOWED_UPLOAD_MIMES,
@@ -54,7 +53,7 @@ export class BiddingAttachmentsService {
 
   async upload(
     bidId: number,
-    file: UploadedMulterFile,
+    file: Express.Multer.File,
     opts: { label?: string; userId?: number },
   ): Promise<BidAttachmentDto> {
     const bid = await this.requireBid(bidId);
@@ -79,7 +78,7 @@ export class BiddingAttachmentsService {
       throw new BadRequestException(`Maximum ${MAX_BID_ATTACHMENTS_PER_BID} attachments per bid`);
     }
 
-    const originalName = this.sanitizeOriginalName(file.originalname ?? 'upload');
+    const originalName = this.sanitizeOriginalName(file.originalname);
     const { storagePath, sizeBytes } = await this.storage.writeBidFile(
       bidId,
       file.buffer,
