@@ -132,7 +132,6 @@ export function buildCorDataQualityAlertSectionHtml(
           <td>${escapeHtml(r.jobNumber)}</td>
           <td>${escapeHtml(r.tmTagNumber)}</td>
           <td>${escapeHtml(r.status)}</td>
-          <td>${escapeHtml(r.stage)}</td>
           <td>${escapeHtml(IN_REVIEW_TM_TAG_ERROR_MESSAGE)}</td>
         </tr>`,
     )
@@ -147,14 +146,13 @@ export function buildCorDataQualityAlertSectionHtml(
       That combination is invalid — please update the COR in Clearstory.
     </p>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;margin:0 0 16px;">
-    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12px;min-width:900px;width:900px;">
+    <table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse;font-size:12px;min-width:760px;width:760px;">
       <thead>
         <tr style="background:#f3f4f6;">
           <th>COR Number</th>
           <th>My Job Number</th>
           <th>TM Tag Number</th>
           <th>Status</th>
-          <th>Stage</th>
           <th>Issue</th>
         </tr>
       </thead>

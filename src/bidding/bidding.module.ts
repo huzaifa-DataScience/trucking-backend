@@ -11,9 +11,16 @@ import {
   BidBuildingType,
   BidPreference,
   BidPayrollBurden,
+  AppFile,
+  BidAttachment,
+  BidActivityLog,
+  Job,
 } from '../database/entities';
+import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
 import { BiddingService } from './bidding.service';
+import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingActivityService } from './bidding-activity.service';
 import { BiddingLookupsController } from './bidding-lookups.controller';
 import { BiddingLookupsService } from './bidding-lookups.service';
 
@@ -35,10 +42,20 @@ import { BiddingLookupsService } from './bidding-lookups.service';
       BidBuildingType,
       BidPreference,
       BidPayrollBurden,
+      AppFile,
+      BidAttachment,
+      BidActivityLog,
+      Job,
     ]),
   ],
   controllers: [BiddingController, BiddingLookupsController],
-  providers: [BiddingService, BiddingLookupsService],
+  providers: [
+    BiddingService,
+    BiddingLookupsService,
+    BiddingAttachmentsService,
+    BiddingActivityService,
+    FileStorageService,
+  ],
   exports: [BiddingService],
 })
 export class BiddingModule {}

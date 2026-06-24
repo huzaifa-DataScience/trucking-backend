@@ -125,22 +125,33 @@ export class ClearstoryContractComparisonService {
    * Clearstory values (12201 - 02 ↔ 12201).
    */
   private async findProjectByJobNumber(job: string): Promise<ClearstoryProject | null> {
+    const matches: ClearstoryProject[] = [];
+    const seen = new Set<number>();
+    const add = (project: ClearstoryProject | null | undefined): void => {
+      if (project && !seen.has(project.id)) {
+        seen.add(project.id);
+        matches.push(project);
+      }
+    };
+
     for (const variant of jobNumberLookupVariants(job)) {
-      const exact = await this.projects.findOne({ where: { jobNumber: variant } });
-      if (exact) return exact;
+      add(await this.projects.findOne({ where: { jobNumber: variant } }));
     }
 
     const normalized = normalizeJobNumberKey(job);
-    if (!normalized) return null;
+    if (normalized) {
+      const prefixCandidates = await this.projects
+        .createQueryBuilder('p')
+        .where('p.jobNumber LIKE :s', { s: `${normalized}%` })
+        .orWhere('p.jobNumber LIKE :z', { z: `${job}%` })
+        .getMany();
+      for (const p of prefixCandidates) {
+        if (jobNumbersEquivalent(job, p.jobNumber ?? '')) add(p);
+      }
+    }
 
-    const prefixCandidates = await this.projects
-      .createQueryBuilder('p')
-      .where('p.jobNumber LIKE :s', { s: `${normalized}%` })
-      .orWhere('p.jobNumber LIKE :z', { z: `${job}%` })
-      .getMany();
-
-    const match = prefixCandidates.find((p) => jobNumbersEquivalent(job, p.jobNumber ?? ''));
-    return match ?? null;
+    if (!matches.length) return null;
+    return matches.find((p) => isClearstoryProjectActive(p.archived)) ?? matches[0];
   }
 
   /** Siteline bill for PM reports when Clearstory row is missing or comparison has no Siteline match. */
@@ -245,7 +256,8 @@ export class ClearstoryContractComparisonService {
     const latestTotalValue =
       matchedContracts.length > 0 ? roundMoney(latestTotalValueRaw / 100) : null;
 
-    const clearstoryValue = clearstory.approvedToProceedAndCoIssuedContractValue;
+    // PM reporting / Siteline reconciliation: CO issued only (no approved-to-proceed).
+    const clearstoryValue = clearstory.approvedCoIssuedContractValue;
     const difference =
       latestTotalValue == null ? null : roundMoney(clearstoryValue - latestTotalValue);
     const matches =
@@ -311,7 +323,7 @@ export class ClearstoryContractComparisonService {
       approvedCoIssuedContractValue + totalApprovedToProceed,
     );
     const pendingContractValue = roundMoney(
-      approvedToProceedAndCoIssuedContractValue + totalInReview + totalPlaceholder,
+      approvedCoIssuedContractValue + totalInReview + totalPlaceholder,
     );
 
     return {

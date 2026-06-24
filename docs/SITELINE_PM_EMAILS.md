@@ -22,7 +22,7 @@ Service: `src/siteline/siteline-pm-weekly-report.service.ts`
 
 ## Ops email (not PMs)
 
-**Clearstory gap alert** — weekdays 08:15 UTC, **one email** to ops (`SITELINE_CLEARSTORY_GAP_ALERT_TO`) with all companies (GOEL, GOEL DC, DCB) in a single table. See `siteline-clearstory-gap-alert.service.ts`.
+**Clearstory gap alert** — weekdays 08:15 UTC, **one email** to ops (`SITELINE_CLEARSTORY_GAP_ALERT_TO`) with all companies (GOEL, GOEL DC, DCB). Sends **every weekday** — gap table when issues exist, or an **all-clear** message when everything matches. See `siteline-clearstory-gap-alert.service.ts`.
 
 **PJ weekly PM report pack** — **Tuesday 6:00 AM US Eastern** to PJ (`PJ_COR_WEEKLY_REPORT_TO`): one email with **a PDF per PM** (same report PMs receive Monday, refreshed after sync). See `siteline-pj-weekly-report.service.ts`.
 

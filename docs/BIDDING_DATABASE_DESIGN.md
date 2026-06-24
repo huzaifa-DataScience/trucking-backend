@@ -113,7 +113,10 @@ Bid_BaseBidSettings.WageRateId ──> Bid_WageRates (optional)
 | `BidName` | `nvarchar(500)` | |
 | `Status` | `nvarchar(20)` | draft / submitted / archived |
 | `BidDate` | `date` | |
-| `CreatedByUserId` | `int` FK → `App_Users` NULL | |
+| `SubmitDate` | `date` | Target / actual submit date (cover sheet) |
+| `TimeEstimate` | `decimal(12,2)` | Estimated hours |
+| `CreatedByUserId` | `int` FK → `App_Users` NULL | Set on create |
+| `UpdatedByUserId` | `int` FK → `App_Users` NULL | Set on each PATCH/delete |
 | `CreatedAt`, `UpdatedAt` | `datetime2` | |
 | `IsDeleted` | `bit` | |
 

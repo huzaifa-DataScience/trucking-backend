@@ -48,8 +48,19 @@ export class Bid {
   @Column({ name: 'BidDate', type: 'date', nullable: true })
   bidDate!: Date | null;
 
+  /** Target / actual date the bid package is submitted (cover sheet). */
+  @Column({ name: 'SubmitDate', type: 'date', nullable: true })
+  submitDate!: Date | null;
+
+  /** Estimated hours for the bid (cover sheet "Time Estimate"). */
+  @Column({ name: 'TimeEstimate', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  timeEstimate!: number | null;
+
   @Column({ name: 'CreatedByUserId', type: 'int', nullable: true })
   createdByUserId!: number | null;
+
+  @Column({ name: 'UpdatedByUserId', type: 'int', nullable: true })
+  updatedByUserId!: number | null;
 
   @Column({ name: 'CreatedAt', type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   createdAt!: Date;

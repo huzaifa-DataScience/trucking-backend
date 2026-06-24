@@ -16,9 +16,13 @@ async function main(): Promise<void> {
   try {
     const ds = app.get(DataSource);
     const sql = readFileSync(join(__dirname, 'sql', 'add-bidding-tables.sql'), 'utf8');
-    // Split on GO-less batches: SQL Server driver runs multi-statement batches fine,
-    // but CREATE TABLE guards use IF blocks, so run as a single batch.
-    await ds.query(sql);
+    const batches = sql
+      .split(/\r?\n\s*GO\s*\r?\n/i)
+      .map((b) => b.trim())
+      .filter((b) => b.replace(/--[^\n]*/g, '').trim().length > 0);
+    for (let i = 0; i < batches.length; i++) {
+      await ds.query(batches[i]);
+    }
     console.log('✓ Bidding tables created/seeded.');
   } finally {
     await app.close();

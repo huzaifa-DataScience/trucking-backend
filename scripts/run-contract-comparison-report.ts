@@ -27,7 +27,7 @@ function csvEscape(v: string | number | null | undefined): string {
 }
 
 function rowToCsv(r: ClearstoryContractComparisonResult): string {
-  const cs = r.clearstory.approvedToProceedAndCoIssuedContractValue;
+  const cs = r.clearstory.approvedCoIssuedContractValue;
   const sl = r.siteline.latestTotalValue;
   return [
     r.project.id,
@@ -95,7 +95,7 @@ async function run() {
     const jsonPath = join(reportsDir, `${base}.json`);
 
     const header =
-      'clearstoryProjectId,jobNumber,projectName,status,matches,clearstoryApprovedAtpAndCoIssuedUsd,sitelineLatestTotalUsd,differenceUsd,sitelineContractCount';
+      'clearstoryProjectId,jobNumber,projectName,status,matches,clearstoryApprovedCoIssuedUsd,sitelineLatestTotalUsd,differenceUsd,sitelineContractCount';
     const csv = [header, ...results.map(rowToCsv)].join('\n');
     writeFileSync(csvPath, csv, 'utf8');
     writeFileSync(
@@ -142,7 +142,7 @@ async function run() {
       .slice(0, 15)
       .map(
         (r) =>
-          `<tr><td>${csvEscape(r.project.jobNumber)}</td><td>${csvEscape(r.project.name)}</td><td>$${r.clearstory.approvedToProceedAndCoIssuedContractValue.toLocaleString()}</td><td>${r.siteline.latestTotalValue != null ? '$' + r.siteline.latestTotalValue.toLocaleString() : '—'}</td><td>${r.comparison.difference != null ? '$' + r.comparison.difference.toLocaleString() : '—'}</td></tr>`,
+          `<tr><td>${csvEscape(r.project.jobNumber)}</td><td>${csvEscape(r.project.name)}</td><td>$${r.clearstory.approvedCoIssuedContractValue.toLocaleString()}</td><td>${r.siteline.latestTotalValue != null ? '$' + r.siteline.latestTotalValue.toLocaleString() : '—'}</td><td>${r.comparison.difference != null ? '$' + r.comparison.difference.toLocaleString() : '—'}</td></tr>`,
       )
       .join('');
 
@@ -158,7 +158,7 @@ async function run() {
       to,
       subject: `Clearstory vs Siteline comparison (${results.length} jobs) — ${counts.match} match, ${counts.mismatch} mismatch`,
       html: `
-        <p>Siteline vs Clearstory <strong>approved to proceed + CO issued</strong> vs <strong>Siteline latest total value</strong>.</p>
+        <p>Siteline vs Clearstory <strong>approved CO issued</strong> vs <strong>Siteline latest total value</strong>.</p>
         <ul>
           <li>Projects compared: <strong>${results.length}</strong></li>
           <li>Match: <strong>${counts.match}</strong></li>

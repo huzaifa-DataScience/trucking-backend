@@ -39,6 +39,12 @@ export type BaseBidInput = Record<string, unknown>;
  */
 export type ComputedSnapshot = Record<string, unknown>;
 
+/**
+ * Who the bid is for (client / GC / mechanical contractor). Passthrough JSON —
+ * documented fields in `docs/BIDDING_FRONTEND_API.md` §3.5.
+ */
+export type CompanyInfoInput = Record<string, unknown>;
+
 export class BidSystemInputDto {
   @IsIn(SYSTEM_KEYS) key!: BidSystemKey;
   @IsOptional() @IsBoolean() used?: boolean;
@@ -55,8 +61,12 @@ export class CreateBidDto {
   @IsString() @MaxLength(64) estimateNumber!: string;
   @IsOptional() @IsString() @MaxLength(500) bidName?: string;
   @IsOptional() @IsString() bidDate?: string;
+  @IsOptional() @IsString() submitDate?: string;
+  @IsOptional() @IsNumber() timeEstimate?: number;
 
   @IsOptional() @IsObject() baseBid?: BaseBidInput;
+
+  @IsOptional() @IsObject() companyInfo?: CompanyInfoInput;
 
   @IsOptional()
   @IsArray()
@@ -73,9 +83,13 @@ export class PatchBidDto {
   @IsOptional() @IsString() @MaxLength(64) estimateNumber?: string;
   @IsOptional() @IsString() @MaxLength(500) bidName?: string;
   @IsOptional() @IsString() bidDate?: string;
+  @IsOptional() @IsString() submitDate?: string;
+  @IsOptional() @IsNumber() timeEstimate?: number;
   @IsOptional() @IsIn(['draft', 'submitted', 'archived']) status?: string;
 
   @IsOptional() @IsObject() baseBid?: BaseBidInput;
+
+  @IsOptional() @IsObject() companyInfo?: CompanyInfoInput;
 
   @IsOptional()
   @IsArray()

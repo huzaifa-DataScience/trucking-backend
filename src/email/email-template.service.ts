@@ -80,6 +80,10 @@ export class EmailTemplateService implements OnModuleInit {
       '{{entityName}}',
       '{{gapsTableHtml}}',
       '{{dashboardUrl}}',
+      '{{emailSubject}}',
+      '{{summaryHtml}}',
+      '{{headerTitle}}',
+      '{{footerHtml}}',
     ],
   };
 
@@ -139,20 +143,19 @@ export class EmailTemplateService implements OnModuleInit {
     },
     [EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE]: {
       name: 'Siteline / Clearstory data gap (default)',
-      subject: '{{gapCount}} project(s) need Clearstory — all companies',
+      subject: '{{emailSubject}}',
       html: `<table role="presentation" width="100%" style="background:#f3f4f6;font-family:Arial,sans-serif;">
   <tr><td style="padding:24px 12px;">
     <table role="presentation" width="640" style="max-width:640px;background:#fff;border-radius:12px;">
       <tr><td style="padding:20px 24px;background:#7c2d12;color:#fff;">
-        <div style="font-size:16px;font-weight:700;">Projects missing in Clearstory</div>
+        <div style="font-size:16px;font-weight:700;">{{headerTitle}}</div>
         <div style="font-size:12px;opacity:0.9;">Siteline billing alert — {{entityName}}</div>
       </td></tr>
       <tr><td style="padding:24px;color:#111827;font-size:14px;line-height:1.5;">
         <p>Hi,</p>
-        <p>These projects have <strong>open billing in Siteline</strong>, but we could not find a matching project in Clearstory (or Clearstory has no COR data yet).</p>
-        <p style="margin:12px 0;"><strong>Total projects:</strong> {{gapCount}}</p>
+        {{summaryHtml}}
         {{gapsTableHtml}}
-        <p style="font-size:12px;color:#6b7280;margin-top:16px;">Please add or fix the project in Clearstory, or confirm the job number matches Siteline.</p>
+        {{footerHtml}}
       </td></tr>
     </table>
   </td></tr>
@@ -428,11 +431,31 @@ export class EmailTemplateService implements OnModuleInit {
     gapsTableHtml: string;
     dashboardUrl?: string;
   }): Promise<{ subject: string; html: string }> {
+    const allClear = params.gapCount === 0;
+    const emailSubject = allClear
+      ? 'Siteline/Clearstory — all clear (no gaps)'
+      : `${params.gapCount} project(s) need Clearstory — all companies`;
+    const headerTitle = allClear
+      ? 'Siteline / Clearstory daily check'
+      : 'Projects missing in Clearstory';
+    const summaryHtml = allClear
+      ? `<p style="margin:0 0 12px;padding:14px 16px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;color:#065f46;"><strong>All clear.</strong> Every open Siteline billing project has a matching Clearstory project. Nothing needs attention today.</p>`
+      : `<p>These projects have <strong>open billing in Siteline</strong>, but we could not find a matching project in Clearstory (or Clearstory has no COR data yet).</p>
+        <p style="margin:12px 0;"><strong>Total projects:</strong> ${params.gapCount}</p>`;
+    const gapsTableHtml = allClear ? '' : params.gapsTableHtml;
+    const footerHtml = allClear
+      ? ''
+      : '<p style="font-size:12px;color:#6b7280;margin-top:16px;">Please add or fix the project in Clearstory, or confirm the job number matches Siteline.</p>';
+
     return this.renderTemplate(EmailTemplateService.SITELINE_CLEARSTORY_DATA_GAP_PURPOSE, {
       gapCount: params.gapCount,
       entityName: params.entityName,
-      gapsTableHtml: params.gapsTableHtml,
+      gapsTableHtml,
       dashboardUrl: params.dashboardUrl ?? '',
+      emailSubject,
+      summaryHtml,
+      headerTitle,
+      footerHtml,
     });
   }
 
@@ -529,7 +552,7 @@ export class EmailTemplateService implements OnModuleInit {
 
     if (purpose === EmailTemplateService.SITELINE_PM_WEEKLY_PURPOSE) {
       const reportTable = String(context.reportTableHtml ?? '').trim();
-      const hasComparisonTable = out.includes('<th>Clearstory bill</th>');
+      const hasComparisonTable = out.includes('<th>Clearstory Contract Value</th>');
       if (reportTable && !hasComparisonTable) {
         out = out.replace(/\{\{reportTableHtml\}\}/g, '').trimEnd();
         out += `\n${reportTable}`;
@@ -682,7 +705,8 @@ export class EmailTemplateService implements OnModuleInit {
         /Siteline billing without Clearstory match/i.test(subject) ||
         /Reconciliation alert/i.test(body) ||
         /<strong>Company:<\/strong> \{\{entityName\}\}/i.test(body) ||
-        (/need Clearstory — GOEL$/i.test(subject) && !/all companies/i.test(subject));
+        (/need Clearstory — GOEL$/i.test(subject) && !/all companies/i.test(subject)) ||
+        !/\{\{summaryHtml\}\}/i.test(body);
       if (!legacy) continue;
       row.subjectTemplate = d.subject;
       row.bodyHtmlTemplate = d.html;
