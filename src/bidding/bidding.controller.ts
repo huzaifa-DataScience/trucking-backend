@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../database/entities';
 import { MAX_BID_ATTACHMENT_BYTES } from '../files/file-storage.service';
+import { UploadedMulterFile } from '../common/uploaded-multer-file.type';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingService } from './bidding.service';
 import { CalculateBidDto, CreateBidDto, PatchBidDto } from './dto/bidding.dto';
@@ -97,7 +98,7 @@ export class BiddingController {
   )
   async uploadAttachment(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: UploadedMulterFile,
     @Body('label') label?: string,
     @CurrentUser() user?: User,
   ) {
