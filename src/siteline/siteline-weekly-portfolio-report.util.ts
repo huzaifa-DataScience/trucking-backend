@@ -19,34 +19,9 @@ export type PortfolioReportRow = {
   corTmIssueCount: number;
 };
 
-/** True when Clearstory bill and Siteline contract total do not agree (beyond $0.01). */
-export function hasClearstorySitelineAmountDifference(
-  difference: number | null,
-  comparisonStatus: string,
-  tolerance = 0.01,
-): boolean {
-  if (comparisonStatus === 'mismatch') return true;
-  if (difference != null && Math.abs(difference) > tolerance) return true;
-  return false;
-}
-
-/** PM weekly AR table: only rows that need attention (not a clean match). */
-export function isPmWeeklyReportIssueRow(row: {
-  comparisonStatus: string;
-  difference: number | null;
-  corTmIssueCount: number;
-}): boolean {
-  if (row.corTmIssueCount > 0) return true;
-  if (
-    row.comparisonStatus === 'inactive_clearstory' ||
-    row.comparisonStatus === 'inactive_siteline'
-  ) {
-    return false;
-  }
-  if (row.comparisonStatus === 'match') {
-    return hasClearstorySitelineAmountDifference(row.difference, row.comparisonStatus);
-  }
-  return true;
+/** PM weekly comparison table: only dollar mismatches (not match, missing, or COR-only rows). */
+export function isPmWeeklyReportIssueRow(row: { comparisonStatus: string }): boolean {
+  return row.comparisonStatus === 'mismatch';
 }
 
 export function escapeHtmlForReport(s: string): string {
@@ -79,7 +54,10 @@ export async function buildPortfolioReportRows(
     if (jobNumber) {
       const cmp = await contractComparison.getByJobNumber(jobNumber);
       if (cmp) {
-        clearstoryDollars = cmp.clearstory.approvedToProceedAndCoIssuedContractValue;
+        if (cmp.comparison.status === 'inactive_clearstory') {
+          continue;
+        }
+        clearstoryDollars = cmp.clearstory.approvedCoIssuedContractValue;
         sitelineDollars = cmp.siteline.latestTotalValue;
         difference = cmp.comparison.difference;
         comparisonStatus = cmp.comparison.status;
@@ -162,8 +140,8 @@ export function buildPortfolioReportTableHtml(
           <th>Job #</th>
           <th>Overdue AR (&gt;${daysThreshold}d)</th>
           <th>Total AR</th>
-          <th>Clearstory bill</th>
-          <th>Siteline bill</th>
+          <th>Clearstory Contract Value</th>
+          <th>Siteline Contract Value</th>
           <th>Difference</th>
           <th>Compare</th>
           <th>COR TM issues</th>

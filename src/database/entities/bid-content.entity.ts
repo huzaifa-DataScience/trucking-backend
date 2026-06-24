@@ -22,6 +22,10 @@ export class BidContent {
   @Column({ name: 'SystemsJson', type: 'nvarchar', length: 'MAX', nullable: true })
   systemsJson!: string | null;
 
+  /** Client / GC / owner the bid is for (not our entity). */
+  @Column({ name: 'CompanyInfoJson', type: 'nvarchar', length: 'MAX', nullable: true })
+  companyInfoJson!: string | null;
+
   @Column({ name: 'InputsSchemaVer', type: 'int', default: 1 })
   inputsSchemaVer!: number;
 

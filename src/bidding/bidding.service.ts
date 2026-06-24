@@ -6,18 +6,43 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   Bid,
   BidContent,
   BidCalcSnapshot,
   BidState,
+  Job,
 } from '../database/entities';
 import { CalculateBidDto, CreateBidDto, PatchBidDto } from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
+import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingActivityService } from './bidding-activity.service';
 
 /** Soft cap for the client `computed` snapshot (matches frontend handoff §3.1). */
 const MAX_COMPUTED_BYTES = 256 * 1024;
+const COMPANY_INFO_STRING_MAX = 500;
+
+const parseCompanyInfo = (s: string | null | undefined): Record<string, unknown> =>
+  parseJson<Record<string, unknown>>(s ?? null, {});
+
+const clientCompanyNameFrom = (companyInfo: Record<string, unknown>): string | null => {
+  const name = companyInfo.companyName;
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  return trimmed || null;
+};
+
+const assertCompanyInfo = (value: Record<string, unknown>): void => {
+  assertFiniteNumbers(value, 'companyInfo');
+  for (const [key, val] of Object.entries(value)) {
+    if (typeof val === 'string' && val.length > COMPANY_INFO_STRING_MAX) {
+      throw new BadRequestException(
+        `companyInfo.${key} exceeds ${COMPANY_INFO_STRING_MAX} characters`,
+      );
+    }
+  }
+};
 
 const parseJson = <T>(s: string | null | undefined, fallback: T): T => {
   if (!s) return fallback;
@@ -54,6 +79,9 @@ export class BiddingService {
     @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
     @InjectRepository(BidCalcSnapshot) private readonly snapshotRepo: Repository<BidCalcSnapshot>,
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
+    @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
+    private readonly attachments: BiddingAttachmentsService,
+    private readonly activity: BiddingActivityService,
   ) {}
 
   async list(params: { status?: string; entityId?: number; search?: string }) {
@@ -65,22 +93,51 @@ export class BiddingService {
     if (params.status) qb.andWhere('b.status = :status', { status: params.status });
     if (params.entityId != null) qb.andWhere('b.ourEntityId = :eid', { eid: params.entityId });
     if (params.search) {
-      qb.andWhere('(b.estimateNumber LIKE :q OR b.bidName LIKE :q)', { q: `%${params.search}%` });
+      qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
+      qb.andWhere(
+        '(b.estimateNumber LIKE :q OR b.bidName LIKE :q OR JSON_VALUE(cnt.CompanyInfoJson, \'$.companyName\') LIKE :q)',
+        { q: `%${params.search}%` },
+      );
     }
     qb.orderBy('b.updatedAt', 'DESC');
 
     const rows = await qb.getMany();
-    return rows.map((b) => this.toSummary(b));
+    const contents =
+      rows.length > 0
+        ? await this.contentRepo.find({ where: { bidId: In(rows.map((r) => r.id)) } })
+        : [];
+    const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
+    return rows.map((b) => this.toSummary(b, contentByBid.get(b.id)));
   }
 
-  async create(dto: CreateBidDto) {
+  async getCompanyInfoPrefillFromJob(jobId: number): Promise<Record<string, unknown>> {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, isActive: true } });
+    if (!job) throw new NotFoundException(`Job ${jobId} not found`);
+    return {
+      companyName: job.name?.trim() || null,
+      address: job.jobAddress?.trim() || null,
+      city: job.city?.trim() || null,
+      state: null,
+      zip: null,
+      contactName: null,
+      contactEmail: null,
+      contactPhone: null,
+      notes: job.jobNumber ? `Job # ${job.jobNumber}` : null,
+    };
+  }
+
+  async create(dto: CreateBidDto, userId?: number) {
     const bid = this.bidRepo.create({
       ourEntityId: dto.ourEntityId,
       jobId: dto.jobId ?? null,
       estimateNumber: dto.estimateNumber,
       bidName: dto.bidName ?? null,
       bidDate: dto.bidDate ? new Date(dto.bidDate) : null,
+      submitDate: dto.submitDate ? new Date(dto.submitDate) : null,
+      timeEstimate: dto.timeEstimate ?? null,
       status: 'draft',
+      createdByUserId: userId ?? null,
+      updatedByUserId: userId ?? null,
     });
     const saved = await this.bidRepo.save(bid);
 
@@ -88,12 +145,20 @@ export class BiddingService {
       bidId: saved.id,
       baseBidJson: dto.baseBid ? JSON.stringify(dto.baseBid) : null,
       systemsJson: dto.systems ? JSON.stringify(dto.systems) : null,
+      companyInfoJson: dto.companyInfo
+        ? JSON.stringify(dto.companyInfo)
+        : dto.jobId
+          ? JSON.stringify(await this.getCompanyInfoPrefillFromJob(dto.jobId))
+          : null,
     });
     if (dto.baseBid) assertFiniteNumbers(dto.baseBid, 'baseBid');
+    if (dto.companyInfo) assertCompanyInfo(dto.companyInfo);
     if (dto.systems) assertFiniteNumbers(dto.systems, 'systems');
     await this.contentRepo.save(content);
 
     if (dto.computed) await this.storeClientSnapshot(saved.id, dto.computed);
+
+    await this.activity.recordCreated(saved.id, userId, dto.estimateNumber);
 
     return this.getDetail(saved.id);
   }
@@ -136,25 +201,37 @@ export class BiddingService {
       (await this.snapshotRepo.findOne({ where: { bidId: id }, order: { id: 'DESC' } }));
 
     return {
-      ...this.toSummary(bid),
+      ...this.toSummary(bid, content),
       jobId: bid.jobId,
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
       systems: parseJson<unknown[]>(content?.systemsJson ?? null, []),
+      companyInfo: parseCompanyInfo(content?.companyInfoJson ?? null),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
+      attachments: await this.attachments.listForBid(id),
+      activitySummary: await this.activity.getSummary(id),
     };
   }
 
-  async patch(id: number, dto: PatchBidDto) {
+  async getActivity(id: number) {
+    return this.activity.listForBid(id);
+  }
+
+  async patch(id: number, dto: PatchBidDto, userId?: number) {
     const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false } });
     if (!bid) throw new NotFoundException(`Bid ${id} not found`);
+
+    const beforeBid = { ...bid };
 
     // Content (inputs + computed) is editable only while the bid is a draft.
     // Reopen via a status-only PATCH (`{ "status": "draft" }`) before editing.
     const touchesContent =
-      dto.baseBid !== undefined || dto.systems !== undefined || dto.computed !== undefined;
+      dto.baseBid !== undefined ||
+      dto.systems !== undefined ||
+      dto.computed !== undefined ||
+      dto.companyInfo !== undefined;
     if (touchesContent && bid.status !== 'draft') {
       throw new ConflictException(
-        `Bid ${id} is ${bid.status}; reopen to draft before editing inputs or computed`,
+        `Bid ${id} is ${bid.status}; reopen to draft before editing inputs, company info, or computed`,
       );
     }
 
@@ -163,11 +240,24 @@ export class BiddingService {
     if (dto.estimateNumber != null) bid.estimateNumber = dto.estimateNumber;
     if (dto.bidName !== undefined) bid.bidName = dto.bidName ?? null;
     if (dto.bidDate !== undefined) bid.bidDate = dto.bidDate ? new Date(dto.bidDate) : null;
+    if (dto.submitDate !== undefined) bid.submitDate = dto.submitDate ? new Date(dto.submitDate) : null;
+    if (dto.timeEstimate !== undefined) {
+      if (dto.timeEstimate != null && !Number.isFinite(dto.timeEstimate)) {
+        throw new BadRequestException('timeEstimate must be a finite number');
+      }
+      bid.timeEstimate = dto.timeEstimate ?? null;
+    }
+    const wasDraft = bid.status === 'draft';
     if (dto.status != null) bid.status = dto.status as Bid['status'];
+    if (dto.status === 'submitted' && wasDraft && bid.submitDate == null && dto.submitDate === undefined) {
+      bid.submitDate = new Date();
+    }
     bid.updatedAt = new Date();
+    bid.updatedByUserId = userId ?? null;
     await this.bidRepo.save(bid);
 
     let content = await this.contentRepo.findOne({ where: { bidId: id } });
+    const contentBefore = content ? { ...content } : null;
     if (!content) content = this.contentRepo.create({ bidId: id });
 
     if (dto.baseBid !== undefined) {
@@ -179,6 +269,11 @@ export class BiddingService {
       assertFiniteNumbers(dto.systems, 'systems');
       content.systemsJson = JSON.stringify(dto.systems);
     }
+    if (dto.companyInfo !== undefined) {
+      assertCompanyInfo(dto.companyInfo);
+      const existing = parseCompanyInfo(content.companyInfoJson ?? null);
+      content.companyInfoJson = JSON.stringify({ ...existing, ...dto.companyInfo });
+    }
     content.updatedAt = new Date();
     await this.contentRepo.save(content);
 
@@ -188,15 +283,27 @@ export class BiddingService {
       await this.storeClientSnapshot(id, dto.computed);
     }
 
+    await this.activity.recordPatch(
+      id,
+      userId,
+      beforeBid,
+      bid,
+      dto,
+      contentBefore,
+      content,
+    );
+
     return this.getDetail(id);
   }
 
-  async remove(id: number) {
+  async remove(id: number, userId?: number) {
     const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false } });
     if (!bid) throw new NotFoundException(`Bid ${id} not found`);
     bid.isDeleted = true;
     bid.updatedAt = new Date();
+    bid.updatedByUserId = userId ?? null;
     await this.bidRepo.save(bid);
+    await this.activity.recordDeleted(id, userId);
     return { ok: true };
   }
 
@@ -254,7 +361,8 @@ export class BiddingService {
     return result;
   }
 
-  private toSummary(bid: Bid) {
+  private toSummary(bid: Bid, content?: BidContent | null) {
+    const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     return {
       id: String(bid.id),
       estimateNumber: bid.estimateNumber,
@@ -262,7 +370,11 @@ export class BiddingService {
       status: bid.status,
       ourEntityId: bid.ourEntityId,
       companyName: bid.ourEntity?.name ?? null,
+      clientCompanyName: clientCompanyNameFrom(companyInfo),
       bidDate: bid.bidDate instanceof Date ? bid.bidDate.toISOString().slice(0, 10) : bid.bidDate,
+      submitDate:
+        bid.submitDate instanceof Date ? bid.submitDate.toISOString().slice(0, 10) : bid.submitDate,
+      timeEstimate: bid.timeEstimate != null ? Number(bid.timeEstimate) : null,
       updatedAt: bid.updatedAt instanceof Date ? bid.updatedAt.toISOString() : bid.updatedAt,
     };
   }

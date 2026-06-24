@@ -109,7 +109,10 @@ BEGIN
     BidName nvarchar(500) NULL,
     Status nvarchar(20) NOT NULL CONSTRAINT DF_Bids_Status DEFAULT 'draft',
     BidDate date NULL,
+    SubmitDate date NULL,
+    TimeEstimate decimal(12,2) NULL,
     CreatedByUserId int NULL,
+    UpdatedByUserId int NULL,
     CreatedAt datetime2 NOT NULL CONSTRAINT DF_Bids_CreatedAt DEFAULT SYSUTCDATETIME(),
     UpdatedAt datetime2 NOT NULL CONSTRAINT DF_Bids_UpdatedAt DEFAULT SYSUTCDATETIME(),
     IsDeleted bit NOT NULL CONSTRAINT DF_Bids_IsDeleted DEFAULT 0,
@@ -125,11 +128,13 @@ BEGIN
     BidId int NOT NULL PRIMARY KEY,
     BaseBidJson nvarchar(max) NULL,
     SystemsJson nvarchar(max) NULL,
+    CompanyInfoJson nvarchar(max) NULL,
     InputsSchemaVer int NOT NULL CONSTRAINT DF_Bid_Content_Ver DEFAULT 1,
     UpdatedAt datetime2 NOT NULL CONSTRAINT DF_Bid_Content_UpdatedAt DEFAULT SYSUTCDATETIME(),
     CONSTRAINT FK_Bid_Content_Bid FOREIGN KEY (BidId) REFERENCES dbo.Bids(BidId) ON DELETE CASCADE,
     CONSTRAINT CK_Bid_Content_BaseBidJson CHECK (BaseBidJson IS NULL OR ISJSON(BaseBidJson) = 1),
-    CONSTRAINT CK_Bid_Content_SystemsJson CHECK (SystemsJson IS NULL OR ISJSON(SystemsJson) = 1)
+    CONSTRAINT CK_Bid_Content_SystemsJson CHECK (SystemsJson IS NULL OR ISJSON(SystemsJson) = 1),
+    CONSTRAINT CK_Bid_Content_CompanyInfoJson CHECK (CompanyInfoJson IS NULL OR ISJSON(CompanyInfoJson) = 1)
   );
 END
 
@@ -156,6 +161,29 @@ BEGIN
   ALTER TABLE dbo.Bid_CalcSnapshots
     ADD Source nvarchar(20) NOT NULL CONSTRAINT DF_Bid_CalcSnapshots_Source DEFAULT 'client';
 END
+
+-- Cover-sheet fields (idempotent).
+IF OBJECT_ID('dbo.Bids', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.Bids', 'SubmitDate') IS NULL
+BEGIN
+  ALTER TABLE dbo.Bids ADD SubmitDate date NULL;
+END
+
+IF OBJECT_ID('dbo.Bids', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.Bids', 'TimeEstimate') IS NULL
+BEGIN
+  ALTER TABLE dbo.Bids ADD TimeEstimate decimal(12,2) NULL;
+END
+
+IF OBJECT_ID('dbo.Bid_Content', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.Bid_Content', 'CompanyInfoJson') IS NULL
+BEGIN
+  ALTER TABLE dbo.Bid_Content ADD
+    CompanyInfoJson nvarchar(max) NULL
+    CONSTRAINT CK_Bid_Content_CompanyInfoJson CHECK (CompanyInfoJson IS NULL OR ISJSON(CompanyInfoJson) = 1);
+END
+
+GO
 
 -------------------------------------------------------------------------------
 -- Seed lookups (only when empty)
@@ -225,5 +253,63 @@ INSERT INTO dbo.Bid_PayrollBurden (Code, Label, RateType, Rate, AnnualCap, Hours
  (N'ppo_health',       N'PPO Health',                 N'per_hour',      2.400000, NULL,    NULL, 1, 8),
  (N'other_cba_fringe', N'Other CBA Fringe',           N'per_hour',      4.570000, NULL,    NULL, 1, 9),
  (N'company_benefits', N'Company Benefits',           N'per_hour',      6.562500, NULL,    NULL, 1, 10);
+
+-------------------------------------------------------------------------------
+-- File attachments (images/PDFs on disk; metadata in SQL)
+-------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.App_Files', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.App_Files (
+    FileId int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    StoragePath nvarchar(500) NOT NULL,
+    OriginalFileName nvarchar(255) NOT NULL,
+    MimeType nvarchar(100) NOT NULL,
+    SizeBytes bigint NOT NULL,
+    UploadedByUserId int NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_App_Files_CreatedAt DEFAULT SYSUTCDATETIME(),
+    IsDeleted bit NOT NULL CONSTRAINT DF_App_Files_IsDeleted DEFAULT 0
+  );
+END
+
+IF OBJECT_ID('dbo.Bid_Attachments', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.Bid_Attachments (
+    AttachmentId int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    BidId int NOT NULL,
+    FileId int NOT NULL,
+    Label nvarchar(200) NULL,
+    SortOrder int NOT NULL CONSTRAINT DF_Bid_Attachments_SortOrder DEFAULT 0,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Bid_Attachments_CreatedAt DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT FK_Bid_Attachments_Bid FOREIGN KEY (BidId) REFERENCES dbo.Bids(BidId) ON DELETE CASCADE,
+    CONSTRAINT FK_Bid_Attachments_File FOREIGN KEY (FileId) REFERENCES dbo.App_Files(FileId) ON DELETE CASCADE
+  );
+  CREATE INDEX IX_Bid_Attachments_BidId ON dbo.Bid_Attachments(BidId);
+END
+
+IF OBJECT_ID('dbo.Bid_ActivityLog', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.Bid_ActivityLog (
+    ActivityId int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    BidId int NOT NULL,
+    UserId int NULL,
+    Action nvarchar(40) NOT NULL,
+    Area nvarchar(40) NOT NULL,
+    Summary nvarchar(500) NOT NULL,
+    ChangedFieldsJson nvarchar(max) NULL,
+    CreatedAt datetime2 NOT NULL CONSTRAINT DF_Bid_ActivityLog_CreatedAt DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT FK_Bid_ActivityLog_Bid FOREIGN KEY (BidId) REFERENCES dbo.Bids(BidId) ON DELETE CASCADE,
+    CONSTRAINT CK_Bid_ActivityLog_ChangedFieldsJson CHECK (ChangedFieldsJson IS NULL OR ISJSON(ChangedFieldsJson) = 1)
+  );
+  CREATE INDEX IX_Bid_ActivityLog_BidId ON dbo.Bid_ActivityLog(BidId);
+  CREATE INDEX IX_Bid_ActivityLog_BidId_CreatedAt ON dbo.Bid_ActivityLog(BidId, CreatedAt DESC);
+END
+
+IF OBJECT_ID('dbo.Bids', 'U') IS NOT NULL
+   AND COL_LENGTH('dbo.Bids', 'UpdatedByUserId') IS NULL
+BEGIN
+  ALTER TABLE dbo.Bids ADD UpdatedByUserId int NULL;
+END
+
+GO
 
 PRINT 'Bidding tables ready.';

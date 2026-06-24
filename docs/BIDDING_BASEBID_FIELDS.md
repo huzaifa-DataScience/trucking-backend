@@ -20,7 +20,10 @@ These are user-entered. They are stored in `baseBid` / `systems` (see `BIDDING_F
 |------|-------|-----------|-----------|
 | B1 | BID Estimate # | text | `estimateNumber` |
 | D1 | Bid Name | text | `bidName` |
-| B2 | Bid Date | date | `bidDate` |
+| B2 | Bid Date | date | `bidDate` (header) |
+| — | Submit Date | date | `submitDate` (header) |
+| — | Time Estimate | number (hours) | `timeEstimate` (header) |
+| — | Client / GC company | form section | `companyInfo` (§3.5 in API doc) — **not** `ourEntityId` |
 | D2 | Company Bidding | dropdown (our-entities) | `ourEntityId` |
 | F2 | Team | dropdown (`/lookups/bidding/teams`) | `teamName` |
 | C3 | Assistant Estimator | text | `assistantEstimator` |

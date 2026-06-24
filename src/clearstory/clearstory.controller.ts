@@ -326,7 +326,7 @@ export class ClearstoryController {
       contractComparison,
       reconciliation: {
         redFlag: contractComparison.comparison.status === 'mismatch',
-        clearstory: contractComparison.clearstory.approvedToProceedAndCoIssuedContractValue,
+        clearstory: contractComparison.clearstory.approvedCoIssuedContractValue,
         siteline: contractComparison.siteline.latestTotalValue,
         foundation: null,
         lastCheckedAt: contractComparison.comparison.lastCheckedAt,

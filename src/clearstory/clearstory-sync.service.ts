@@ -68,6 +68,12 @@ function strOpt(v: unknown): string | null {
   return s === '' ? null : s;
 }
 
+function strOptMax(v: unknown, maxLen: number): string | null {
+  const s = strOpt(v);
+  if (!s || s.length <= maxLen) return s;
+  return s.slice(0, maxLen);
+}
+
 /** SQL Server uniqueidentifier — reject non-GUID strings so inserts do not fail */
 function uuidOpt(v: unknown): string | null {
   const s = strOpt(v);
@@ -731,6 +737,22 @@ export class ClearstorySyncService implements OnModuleInit {
     }
   }
 
+  /** Refresh archived Clearstory projects only (typically a few minutes). */
+  async syncArchivedProjectsNow(): Promise<number> {
+    if (this.syncInFlight) {
+      this.logger.warn('Clearstory syncArchivedProjectsNow skipped: a sync is already running.');
+      return 0;
+    }
+    this.syncInFlight = true;
+    try {
+      await this.ensureTables();
+      this.allowedOfficeIds = await this.officeScope.resolveAllowedOfficeIds();
+      return await this.runSyncPhase('archivedProjects', () => this.syncProjectsByArchivedFlag(true));
+    } finally {
+      this.syncInFlight = false;
+    }
+  }
+
   async syncNow(): Promise<void> {
     if (this.syncInFlight) {
       this.logger.warn('Clearstory syncNow skipped: a sync is already running.');
@@ -745,13 +767,6 @@ export class ClearstorySyncService implements OnModuleInit {
       this.logger.log('Clearstory sync started.');
 
       try {
-        const lastRun = (await this.getState('lastSuccessfulRunAt')) ?? null;
-        const overlapMinutes = 15;
-        const fromUpdatedAt =
-          lastRun && Number.isFinite(new Date(lastRun).getTime())
-            ? new Date(new Date(lastRun).getTime() - overlapMinutes * 60_000).toISOString()
-            : undefined;
-
         this.allowedOfficeIds = await this.officeScope.resolveAllowedOfficeIds();
         this.scopedProjectIds = null;
 
@@ -767,7 +782,7 @@ export class ClearstorySyncService implements OnModuleInit {
         counts.labels = await this.runSyncPhase('labels', () => this.syncLabels());
         counts.projects = await this.runSyncPhase('projects', () => this.syncProjects());
         await this.refreshScopedProjectIds();
-        counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(fromUpdatedAt), { swallowErrors: true });
+        counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(), { swallowErrors: true });
         counts.customers = await this.runSyncPhase('customers', () => this.syncCustomers());
         counts.contracts = await this.runSyncPhase('contracts', () => this.syncContracts());
         counts.changeNotifications = await this.runSyncPhase('changeNotifications', () =>
@@ -888,8 +903,8 @@ export class ClearstorySyncService implements OnModuleInit {
     const l = list;
     const d = detail;
     const addr = d?.address ?? l?.address ?? d?.site ?? l?.site ?? null;
-    row.jobNumber = strOpt(d?.jobNumber ?? d?.companyJobNumber ?? l?.jobNumber ?? l?.companyJobNumber);
-    row.customerJobNumber = strOpt(d?.customerJobNumber ?? l?.customerJobNumber);
+    row.jobNumber = strOptMax(d?.jobNumber ?? d?.companyJobNumber ?? l?.jobNumber ?? l?.companyJobNumber, 100);
+    row.customerJobNumber = strOptMax(d?.customerJobNumber ?? l?.customerJobNumber, 100);
     row.name = strOpt(
       d?.projectTitle ?? l?.projectTitle ?? d?.title ?? d?.name ?? l?.title ?? l?.name,
     );
@@ -962,7 +977,7 @@ export class ClearstorySyncService implements OnModuleInit {
       l?.ownerReview;
     row.ballInCourt = strOpt(bic);
     row.version = intOpt(d?.version ?? l?.version);
-    row.customerJobNumber = strOpt(d?.customerJobNumber ?? l?.customerJobNumber);
+    row.customerJobNumber = strOptMax(d?.customerJobNumber ?? l?.customerJobNumber, 100);
     row.customerReferenceNumber = strOpt(d?.customerReferenceNumber ?? l?.customerReferenceNumber);
     row.changeNotificationId = intOpt(d?.changeNotificationId ?? d?.changeNotification?.id ?? l?.changeNotificationId);
     row.projectName = strOpt(d?.projectName ?? d?.project?.title ?? d?.project?.name ?? l?.projectName);
@@ -1364,11 +1379,18 @@ export class ClearstorySyncService implements OnModuleInit {
   }
 
   private async syncProjects(): Promise<number> {
+    const active = await this.syncProjectsByArchivedFlag(false);
+    const archived = await this.syncProjectsByArchivedFlag(true);
+    return active + archived;
+  }
+
+  /** Active and archived lists are separate in Clearstory — sync both so Archived stays accurate. */
+  private async syncProjectsByArchivedFlag(archived: boolean): Promise<number> {
     let saved = 0;
     let skip = 0;
     const take = 100;
     while (true) {
-      const { records, count } = await this.api.listProjects({ skip, take });
+      const { records, count } = await this.api.listProjects({ skip, take, archived });
       const list = Array.isArray(records) ? records : [];
       if (!list.length) break;
 
@@ -1380,13 +1402,18 @@ export class ClearstorySyncService implements OnModuleInit {
             (await this.projectRepo.findOne({ where: { id } })) ?? this.projectRepo.create({ id });
           entity.lastSyncedAt = new Date();
           let mergedProject: unknown = p;
-          try {
-            const detail = await this.api.getProject(id);
-            mergedProject = mergeClearstoryApiObjects(p, detail);
-            this.mapProjectFromPayload(entity, p, detail);
-          } catch (err: any) {
-            this.logger.warn(`Clearstory project detail failed for ${id}: ${err?.message ?? err}`);
+          // Archived list already includes archived=true; skip slow per-project detail fetches.
+          if (archived) {
             this.mapProjectFromPayload(entity, p, null);
+          } else {
+            try {
+              const detail = await this.api.getProject(id);
+              mergedProject = mergeClearstoryApiObjects(p, detail);
+              this.mapProjectFromPayload(entity, p, detail);
+            } catch (err: any) {
+              this.logger.warn(`Clearstory project detail failed for ${id}: ${err?.message ?? err}`);
+              this.mapProjectFromPayload(entity, p, null);
+            }
           }
           if (!this.shouldPersistProjectOffice(entity.officeId)) continue;
           await this.persistClearstoryApiPayload('project', String(id), mergedProject);
@@ -1590,17 +1617,25 @@ export class ClearstorySyncService implements OnModuleInit {
     return saved;
   }
 
-  private async syncCorsAll(fromUpdatedAt?: string): Promise<number> {
+  private async syncCorsAll(): Promise<number> {
     let total = 0;
     const inboxes = ['sent', 'received'] as const;
     for (const inbox of inboxes) {
-      total += await this.syncCorsInbox(inbox, fromUpdatedAt);
+      total += await this.syncCorsInbox(inbox);
     }
     return total;
   }
 
-  private async syncCorsInbox(inbox: string, fromUpdatedAt?: string): Promise<number> {
+  /**
+   * Always pulls the FULL COR list (no incremental watermark) so a newly in-scope office /
+   * company can never silently miss its historical CORs. The expensive per-COR detail GET is
+   * fetched only when a row is new or its list `updatedAt` is newer than what we stored —
+   * unchanged CORs are skipped (we just touch lastSyncedAt), keeping each run fast.
+   */
+  private async syncCorsInbox(inbox: string): Promise<number> {
     let saved = 0;
+    let detailFetched = 0;
+    let skippedUnchanged = 0;
     let offset = 0;
     const limit = 100;
     while (true) {
@@ -1609,7 +1644,6 @@ export class ClearstorySyncService implements OnModuleInit {
         limit,
         inbox,
         ...this.officeScopeApiParams(),
-        ...(fromUpdatedAt ? { fromUpdatedAt } : {}),
       });
       const list = Array.isArray(records) ? records : [];
       if (!list.length) break;
@@ -1619,7 +1653,25 @@ export class ClearstorySyncService implements OnModuleInit {
         if (idRaw === undefined || idRaw === null) continue;
         const id = String(idRaw);
 
-        const entity = (await this.corRepo.findOne({ where: { id } })) ?? this.corRepo.create({ id });
+        const existing = await this.corRepo.findOne({ where: { id } });
+        const listUpdatedAt = toDate(c?.updatedAt);
+        const needsDetail =
+          !existing ||
+          !existing.updatedAt ||
+          !listUpdatedAt ||
+          listUpdatedAt.getTime() > existing.updatedAt.getTime();
+
+        // Unchanged COR already mirrored with detail: skip the expensive GET, just mark synced.
+        if (!needsDetail && existing) {
+          if (!this.projectIdInScope(existing.projectId)) continue;
+          existing.lastSyncedAt = new Date();
+          await this.corRepo.save(existing);
+          skippedUnchanged += 1;
+          saved += 1;
+          continue;
+        }
+
+        const entity = existing ?? this.corRepo.create({ id });
         this.mapCorFromPayload(entity, c, null);
         entity.lastSyncedAt = new Date();
         let mergedCor: unknown = c;
@@ -1633,6 +1685,7 @@ export class ClearstorySyncService implements OnModuleInit {
           const detail = await this.api.getCor(id, true);
           mergedCor = mergeClearstoryApiObjects(c, detail);
           this.mapCorFromPayload(entity, c, detail);
+          detailFetched += 1;
         } catch (err: any) {
           this.logger.warn(`Clearstory COR detail failed for ${id}: ${err?.message ?? err}`);
         }
@@ -1652,6 +1705,9 @@ export class ClearstorySyncService implements OnModuleInit {
       offset += limit;
       if (offset >= Number(count ?? 0)) break;
     }
+    this.logger.log(
+      `Clearstory cors inbox=${inbox}: ${saved} processed (${detailFetched} detail-fetched, ${skippedUnchanged} unchanged-skipped)`,
+    );
     return saved;
   }
 

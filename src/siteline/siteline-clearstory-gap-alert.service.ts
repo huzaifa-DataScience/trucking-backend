@@ -29,7 +29,7 @@ export class SitelineClearstoryGapAlertService {
   }
 
   /**
-   * Manual trigger (admin) + cron. One combined email for all companies with gaps.
+   * Manual trigger (admin) + cron. One combined email for all companies (gaps or all-clear).
    */
   async runGapAlertJob(): Promise<{ ok: boolean; message: string; gapCount: number }> {
     const status = await this.appSettings.getSitelineClearstoryGapAlertStatus();
@@ -49,23 +49,17 @@ export class SitelineClearstoryGapAlertService {
       };
     }
 
-    const sections: Array<{ entityName: string; items: SitelineReconciliationGapItem[] }> = [];
+    const scanned: Array<{ entityName: string; items: SitelineReconciliationGapItem[] }> = [];
     for (const entityId of SITELINE_ENTITY_IDS) {
       const { items, entityName } = await this.gapsService.findGaps(entityId);
-      if (items.length) sections.push({ entityName, items });
+      scanned.push({ entityName, items });
     }
 
+    const sections = scanned.filter((s) => s.items.length);
     const totalGaps = sections.reduce((n, s) => n + s.items.length, 0);
-    if (totalGaps === 0) {
-      return {
-        ok: true,
-        message: 'No Siteline/Clearstory gaps found for entities 1–3.',
-        gapCount: 0,
-      };
-    }
-
-    const entityName = sections.map((s) => s.entityName).join(', ');
-    const gapsTableHtml = this.buildCombinedGapsTableHtml(sections);
+    const entityName = scanned.map((s) => s.entityName).join(', ');
+    const gapsTableHtml =
+      totalGaps > 0 ? this.buildCombinedGapsTableHtml(sections) : '';
     const { subject, html } = await this.emailTemplates.renderSitelineClearstoryDataGapEmail({
       gapCount: totalGaps,
       entityName,
@@ -81,12 +75,19 @@ export class SitelineClearstoryGapAlertService {
         subject,
         html,
       });
+      const detail =
+        totalGaps === 0
+          ? 'all clear (0 gaps)'
+          : `${totalGaps} project(s), ${sections.length} companies with gaps`;
       this.logger.log(
-        `Clearstory gap alert sent via ${provider} (${totalGaps} project(s), ${sections.length} companies) → ${recipients.to}`,
+        `Clearstory gap alert sent via ${provider} (${detail}) → ${recipients.to}`,
       );
       return {
         ok: true,
-        message: `Gap alert finished. ${totalGaps} project(s) in 1 email.`,
+        message:
+          totalGaps === 0
+            ? 'Gap alert sent — all clear (0 gaps).'
+            : `Gap alert finished. ${totalGaps} project(s) in 1 email.`,
         gapCount: totalGaps,
       };
     } catch (err: unknown) {

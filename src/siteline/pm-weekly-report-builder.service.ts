@@ -97,7 +97,7 @@ export class PmWeeklyReportBuilderService {
     const leadPmName = contracts.find((c) => c.leadPmName)?.leadPmName ?? 'PM';
     const reportTableHtml = reportRows.length
       ? this.buildReportTableHtml(reportRows, options.daysThreshold)
-      : `<p style="font-family:Arial,sans-serif;font-size:13px;color:#374151;margin:0 0 16px;">No Clearstory vs Siteline issues on your projects this week (COR / T&amp;M section below may still apply).</p>`;
+      : `<p style="font-family:Arial,sans-serif;font-size:13px;color:#374151;margin:0 0 16px;">No Clearstory vs Siteline dollar mismatches on your projects this week (COR / T&amp;M section below may still apply).</p>`;
     const corDataQualityTableHtml = buildCorDataQualityAlertSectionHtml(corAlertRows, (s) =>
       this.escapeHtml(s),
     );
@@ -157,7 +157,10 @@ export class PmWeeklyReportBuilderService {
       if (jobNumber) {
         const cmp = await this.contractComparison.getByJobNumber(jobNumber);
         if (cmp) {
-          clearstoryDollars = cmp.clearstory.approvedToProceedAndCoIssuedContractValue;
+          if (cmp.comparison.status === 'inactive_clearstory') {
+            continue;
+          }
+          clearstoryDollars = cmp.clearstory.approvedCoIssuedContractValue;
           sitelineDollars = cmp.siteline.latestTotalValue;
           difference = cmp.comparison.difference;
           comparisonStatus = cmp.comparison.status;
@@ -239,8 +242,8 @@ export class PmWeeklyReportBuilderService {
             <th>Job #</th>
             <th>Overdue AR (&gt;${daysThreshold}d)</th>
             <th>Total AR</th>
-            <th>Clearstory bill</th>
-            <th>Siteline bill</th>
+            <th>Clearstory Contract Value</th>
+            <th>Siteline Contract Value</th>
             <th>Difference</th>
             <th>Issue</th>
             <th>COR TM issues</th>

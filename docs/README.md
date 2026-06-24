@@ -62,9 +62,12 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [QUICK_FIX_DB_CONNECTION.md](./QUICK_FIX_DB_CONNECTION.md) | Quick DB connection fix |
 | [TROUBLESHOOT_DB_CONNECTION.md](./TROUBLESHOOT_DB_CONNECTION.md) | DB troubleshooting |
 
-## Other
+## Bidding
 
 | Doc | Description |
 |-----|-------------|
-| [BIDDING_NAMED_RANGES.md](./BIDDING_NAMED_RANGES.md) | Bidding named ranges |
+| **[BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md)** | **Single frontend handoff** — all bidding API changes (calc, attachments, cover sheet, planned company info) |
+| [BIDDING_FRONTEND_CALCULATOR_HANDOFF.md](./BIDDING_FRONTEND_CALCULATOR_HANDOFF.md) | Client-calc contract (backend change history) |
+| [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) | Excel cell ↔ `baseBid` field map |
 | [BIDDING_DATABASE_DESIGN.md](./BIDDING_DATABASE_DESIGN.md) | Bidding DB schema — reuse `Ref_*`, no duplicates |
+| [BIDDING_NAMED_RANGES.md](./BIDDING_NAMED_RANGES.md) | Bidding named ranges |

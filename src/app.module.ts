@@ -18,6 +18,7 @@ import { ClearstoryMockModule } from './clearstory-mock/clearstory-mock.module';
 import { ClearstoryModule } from './clearstory/clearstory.module';
 import { TrimbleModule } from './trimble/trimble.module';
 import { BiddingModule } from './bidding/bidding.module';
+import { ConnecteamModule } from './connecteam/connecteam.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { BiddingModule } from './bidding/bidding.module';
     ClearstoryModule,
     TrimbleModule,
     BiddingModule,
+    ConnecteamModule,
   ],
   controllers: [AppController],
 })

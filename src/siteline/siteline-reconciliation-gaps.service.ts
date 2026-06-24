@@ -150,12 +150,14 @@ export class SitelineReconciliationGapsService {
       if (!cmp) {
         continue;
       }
+      if (cmp.comparison.status === 'inactive_clearstory') {
+        return null;
+      }
 
-      const csValue = cmp.clearstory.approvedToProceedAndCoIssuedContractValue;
+      const csValue = cmp.clearstory.approvedCoIssuedContractValue;
       const csEmpty =
         csValue < 0.01 &&
         cmp.clearstory.totalApprovedCoIssued < 0.01 &&
-        cmp.clearstory.totalApprovedToProceed < 0.01 &&
         cmp.clearstory.totalInReview < 0.01;
 
       if (csEmpty && cmp.comparison.status !== 'match') {
