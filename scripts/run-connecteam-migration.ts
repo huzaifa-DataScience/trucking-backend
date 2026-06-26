@@ -15,15 +15,19 @@ async function main(): Promise<void> {
   });
   try {
     const ds = app.get(DataSource);
-    const sql = readFileSync(join(__dirname, 'sql', 'add-connecteam-tables.sql'), 'utf8');
-    const batches = sql
-      .split(/\r?\n\s*GO\s*\r?\n/i)
-      .map((b) => b.trim())
-      .filter((b) => b.replace(/--[^\n]*/g, '').trim().length > 0);
-    for (const batch of batches) {
-      await ds.query(batch);
+    const sqlFiles = ['add-connecteam-tables.sql', 'add-connecteam-write-support.sql'];
+    for (const file of sqlFiles) {
+      const sql = readFileSync(join(__dirname, 'sql', file), 'utf8');
+      const batches = sql
+        .split(/\r?\n\s*GO\s*\r?\n/i)
+        .map((b) => b.trim())
+        .filter((b) => b.replace(/--[^\n]*/g, '').trim().length > 0);
+      for (const batch of batches) {
+        await ds.query(batch);
+      }
+      console.log(`✓ ${file}`);
     }
-    console.log('✓ Connecteam tables created.');
+    console.log('✓ Connecteam tables ready.');
   } finally {
     await app.close();
   }

@@ -50,6 +50,7 @@ export { ConnecteamTaskBoard } from './connecteam-task-board.entity';
 export { ConnecteamTask } from './connecteam-task.entity';
 export { ConnecteamConversation } from './connecteam-conversation.entity';
 export { ConnecteamWebhookEvent } from './connecteam-webhook-event.entity';
+export { ConnecteamMessage } from './connecteam-message.entity';
 export { TrimbleSyncState } from './trimble-sync-state.entity';
 export { TrimbleProject } from './trimble-project.entity';
 export { TrimbleLineItemRawExport } from './trimble-line-item-raw-export.entity';

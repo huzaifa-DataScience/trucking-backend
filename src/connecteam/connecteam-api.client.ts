@@ -309,10 +309,176 @@ export class ConnecteamApiClient {
         typeof parsed.error === 'string'
           ? parsed.error
           : JSON.stringify(parsed.detail ?? text).slice(0, 500);
-      this.logger.warn(`Connecteam GET ${path} → ${res.status}: ${msg}`);
+      this.logger.warn(`Connecteam ${path} → ${res.status}: ${msg}`);
       throw new Error(`Connecteam API ${res.status}: ${msg}`);
     }
     return (parsed.data ?? parsed) as T;
+  }
+
+  private async requestJson<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const key = this.apiKey();
+    if (!key) throw new Error('CONNECTEAM_API_KEY is not set');
+    const url = `${this.baseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-API-KEY': key,
+      },
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+    return this.parseJson<T>(res, `${method} ${path}`);
+  }
+
+  async clockIn(
+    timeClockId: number,
+    body: {
+      userId: number;
+      jobId?: string;
+      timezone?: string;
+      timestamp?: number;
+      schedulerShiftId?: string;
+      locationData?: Record<string, unknown>;
+    },
+  ): Promise<{ shiftId?: string; id?: string }> {
+    return this.requestJson('POST', `/time-clock/v1/time-clocks/${timeClockId}/clock-in`, body);
+  }
+
+  async clockOut(
+    timeClockId: number,
+    body: {
+      userId: number;
+      timezone?: string;
+      timestamp?: number;
+      locationData?: Record<string, unknown>;
+    },
+  ): Promise<unknown> {
+    return this.requestJson('POST', `/time-clock/v1/time-clocks/${timeClockId}/clock-out`, body);
+  }
+
+  async createTimeActivities(
+    timeClockId: number,
+    timeActivities: Array<{
+      userId: number;
+      shifts: Array<{
+        start: { timestamp: number; timezone?: string };
+        end?: { timestamp: number; timezone?: string };
+        jobId?: string;
+        employeeNote?: string;
+        managerNote?: string;
+      }>;
+      manualbreaks?: unknown[];
+    }>,
+  ): Promise<{ timeActivities?: Array<{ shifts?: Array<{ id?: string }> }> }> {
+    return this.requestJson('POST', `/time-clock/v1/time-clocks/${timeClockId}/time-activities`, {
+      timeActivities,
+    });
+  }
+
+  async updateTimeActivities(
+    timeClockId: number,
+    timeActivities: Array<{
+      userId: number;
+      shifts: Array<{
+        id: string;
+        start?: { timestamp: number; timezone?: string };
+        end?: { timestamp: number; timezone?: string };
+        jobId?: string;
+        employeeNote?: string;
+        managerNote?: string;
+      }>;
+    }>,
+  ): Promise<unknown> {
+    return this.requestJson('PUT', `/time-clock/v1/time-clocks/${timeClockId}/time-activities`, {
+      timeActivities,
+    });
+  }
+
+  async createSchedulerShifts(
+    schedulerId: number,
+    shifts: Array<Record<string, unknown>>,
+  ): Promise<{ shifts?: Array<{ id: string }> }> {
+    return this.requestJson('POST', `/scheduler/v1/schedulers/${schedulerId}/shifts`, shifts);
+  }
+
+  async updateSchedulerShifts(
+    schedulerId: number,
+    shifts: Array<Record<string, unknown>>,
+  ): Promise<unknown> {
+    return this.requestJson('PUT', `/scheduler/v1/schedulers/${schedulerId}/shifts`, shifts);
+  }
+
+  async deleteSchedulerShifts(schedulerId: number, shiftIds: string[]): Promise<unknown> {
+    const qs = shiftIds.map((id) => `shiftIds=${encodeURIComponent(id)}`).join('&');
+    return this.requestJson('DELETE', `/scheduler/v1/schedulers/${schedulerId}/shifts?${qs}`);
+  }
+
+  async createTimeOffRequest(body: Record<string, unknown>): Promise<{ id?: string; requestId?: string }> {
+    return this.requestJson('POST', '/time-off/v1/requests', body);
+  }
+
+  async updateTimeOffRequest(requestId: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.requestJson('PUT', `/time-off/v1/requests/${encodeURIComponent(requestId)}`, body);
+  }
+
+  async createFormSubmission(
+    formId: string,
+    body: Record<string, unknown>,
+  ): Promise<{ formSubmissionId?: string; id?: string }> {
+    return this.requestJson(
+      'POST',
+      `/forms/v1/forms/${encodeURIComponent(formId)}/form-submissions`,
+      body,
+    );
+  }
+
+  async createTask(taskBoardId: number, body: Record<string, unknown>): Promise<{ id?: string }> {
+    return this.requestJson('POST', `/tasks/v1/taskboards/${taskBoardId}/tasks`, body);
+  }
+
+  async updateTask(
+    taskBoardId: number,
+    taskId: string,
+    body: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.requestJson(
+      'PUT',
+      `/tasks/v1/taskboards/${taskBoardId}/tasks/${encodeURIComponent(taskId)}`,
+      body,
+    );
+  }
+
+  async deleteTask(taskBoardId: number, taskId: string): Promise<unknown> {
+    return this.requestJson(
+      'DELETE',
+      `/tasks/v1/taskboards/${taskBoardId}/tasks/${encodeURIComponent(taskId)}`,
+    );
+  }
+
+  async sendChatMessage(
+    conversationId: string,
+    body: { userId?: number; text?: string; body?: string; message?: string },
+  ): Promise<{ id?: string; messageId?: string }> {
+    return this.requestJson(
+      'POST',
+      `/chat/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+      body,
+    );
+  }
+
+  async listChatMessages(
+    conversationId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<{ messages?: Array<Record<string, unknown>> }> {
+    return this.getJson(
+      `/chat/v1/conversations/${encodeURIComponent(conversationId)}/messages?limit=${limit}&offset=${offset}`,
+    );
   }
 
   private async paginate<T>(

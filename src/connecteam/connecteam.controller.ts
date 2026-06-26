@@ -58,7 +58,7 @@ export class ConnecteamController {
       ready: h.configured === 'true',
       ...h,
       message:
-        'Connecteam mirror: users, jobs, time clock, scheduler, forms, time off, tasks, chat. SQL-backed; POST /connecteam/sync to refresh.',
+        'Workforce mirror + write API: clock, schedule, PTO, forms, tasks, chat. Native records use app-* IDs and survive Connecteam sync off. POST /connecteam/sync to refresh mirror.',
     };
   }
 
