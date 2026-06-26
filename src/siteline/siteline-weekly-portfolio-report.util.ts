@@ -1,10 +1,15 @@
-import { SitelineAgingContract } from '../database/entities';
+import { Repository } from 'typeorm';
+import { SitelineAgingContract, SitelineContract } from '../database/entities';
 import { ClearstoryContractComparisonService } from '../clearstory/clearstory-contract-comparison.service';
 import {
   agingCentsToDollars,
   overdueCentsFromAgingContract,
   totalAgedCentsFromAgingContract,
 } from './siteline-aging-overdue.util';
+import {
+  isInactiveComparisonStatus,
+  isInactiveSitelineAgingRow,
+} from './siteline-aging-inactive.util';
 
 export type PortfolioReportRow = {
   leadPmName: string;
@@ -36,6 +41,7 @@ export async function buildPortfolioReportRows(
   contracts: SitelineAgingContract[],
   daysThreshold: number,
   contractComparison: ClearstoryContractComparisonService,
+  sitelineContractRepo: Repository<SitelineContract>,
   corTmIssuesByJob: Map<string, number>,
   leadPmNameForRow: (ac: SitelineAgingContract) => string,
 ): Promise<PortfolioReportRow[]> {
@@ -45,6 +51,11 @@ export async function buildPortfolioReportRows(
     const jobNumber = ac.internalProjectNumber?.trim() || ac.projectNumber?.trim() || '';
     const overdueCents = overdueCentsFromAgingContract(ac, daysThreshold);
     const totalCents = totalAgedCentsFromAgingContract(ac);
+    if (totalCents <= 0) continue;
+
+    if (await isInactiveSitelineAgingRow(sitelineContractRepo, ac)) {
+      continue;
+    }
 
     let clearstoryDollars: number | null = null;
     let sitelineDollars: number | null = null;
@@ -54,7 +65,7 @@ export async function buildPortfolioReportRows(
     if (jobNumber) {
       const cmp = await contractComparison.getByJobNumber(jobNumber);
       if (cmp) {
-        if (cmp.comparison.status === 'inactive_clearstory') {
+        if (isInactiveComparisonStatus(cmp.comparison.status)) {
           continue;
         }
         clearstoryDollars = cmp.clearstory.approvedCoIssuedContractValue;

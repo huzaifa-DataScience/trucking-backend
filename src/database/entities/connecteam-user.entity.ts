@@ -43,4 +43,8 @@ export class ConnecteamUser {
 
   @Column({ name: 'LastSyncedAt', type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   lastSyncedAt!: Date;
+
+  @Index()
+  @Column({ name: 'AppUserId', type: 'int', nullable: true })
+  appUserId!: number | null;
 }

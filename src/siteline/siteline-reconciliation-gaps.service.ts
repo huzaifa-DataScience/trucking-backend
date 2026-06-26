@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClearstoryContractComparisonService } from '../clearstory/clearstory-contract-comparison.service';
-import { SitelineAgingContract, SitelineAgingSummary } from '../database/entities';
+import { SitelineAgingContract, SitelineAgingSummary, SitelineContract } from '../database/entities';
 import {
   agingCentsToDollars,
   totalAgedCentsFromAgingContract,
 } from './siteline-aging-overdue.util';
 import { resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
 import { SitelineEntityConfigService } from './siteline-entity-config.service';
+import { isInactiveSitelineAgingRow, isInactiveComparisonStatus } from './siteline-aging-inactive.util';
 
 export type SitelineReconciliationGapReason =
   | 'NO_CLEARSTORY_PROJECT'
@@ -39,6 +40,8 @@ export class SitelineReconciliationGapsService {
     private readonly agingSummaryRepo: Repository<SitelineAgingSummary>,
     @InjectRepository(SitelineAgingContract)
     private readonly agingContractRepo: Repository<SitelineAgingContract>,
+    @InjectRepository(SitelineContract)
+    private readonly sitelineContractRepo: Repository<SitelineContract>,
   ) {}
 
   async findGaps(entityId?: number): Promise<{
@@ -70,6 +73,10 @@ export class SitelineReconciliationGapsService {
     for (const row of contracts) {
       const totalCents = totalAgedCentsFromAgingContract(row);
       if (totalCents <= 0) continue;
+
+      if (await isInactiveSitelineAgingRow(this.sitelineContractRepo, row)) {
+        continue;
+      }
 
       const netDollars = agingCentsToDollars(totalCents);
       const gap = await this.evaluateContractGap(row, netDollars);
@@ -150,7 +157,7 @@ export class SitelineReconciliationGapsService {
       if (!cmp) {
         continue;
       }
-      if (cmp.comparison.status === 'inactive_clearstory') {
+      if (isInactiveComparisonStatus(cmp.comparison.status)) {
         return null;
       }
 

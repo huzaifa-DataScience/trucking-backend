@@ -21,6 +21,7 @@
     "contract-comparison-report": "ts-node scripts/run-contract-comparison-report.ts",
     "run-pm-weekly-report": "ts-node scripts/run-pm-weekly-report-once.ts",
     "run-pj-cor-weekly-report": "ts-node scripts/run-pj-cor-weekly-report-once.ts",
+    "run-clearstory-gap-alert": "ts-node scripts/run-clearstory-gap-alert-once.ts",
     "backfill-clearstory-cor-tm-tags": "ts-node scripts/backfill-clearstory-cor-tm-tags.ts",
     "bidding-migrate": "ts-node scripts/run-bidding-migration.ts",
     "connecteam-migrate": "ts-node scripts/run-connecteam-migration.ts",

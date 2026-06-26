@@ -16,4 +16,7 @@ export class ConnecteamConversation {
 
   @Column({ name: 'LastSyncedAt', type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   lastSyncedAt!: Date;
+
+  @Column({ name: 'RecordSource', type: 'nvarchar', length: 10, default: 'sync' })
+  recordSource!: 'sync' | 'native';
 }

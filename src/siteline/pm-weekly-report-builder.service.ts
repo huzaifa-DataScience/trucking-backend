@@ -8,7 +8,7 @@ import {
   buildCorDataQualityAlertSectionHtml,
   type CorLogRow,
 } from '../clearstory/clearstory-cor-log.util';
-import { SitelineAgingContract, SitelineAgingSummary } from '../database/entities';
+import { SitelineAgingContract, SitelineAgingSummary, SitelineContract } from '../database/entities';
 import {
   agingCentsToDollars,
   overdueCentsFromAgingContract,
@@ -16,6 +16,10 @@ import {
 } from './siteline-aging-overdue.util';
 import { loadAgingContractsFromLatestPerEntitySnapshots } from './siteline-aging-snapshot.util';
 import { resolveLeadPmEmailFromFullName } from './siteline-pm-email.util';
+import {
+  isInactiveComparisonStatus,
+  isInactiveSitelineAgingRow,
+} from './siteline-aging-inactive.util';
 import { isPmWeeklyReportIssueRow } from './siteline-weekly-portfolio-report.util';
 
 const ENTITY_LABELS: Record<number, string> = {
@@ -57,6 +61,8 @@ export class PmWeeklyReportBuilderService {
     private readonly agingSummaryRepo: Repository<SitelineAgingSummary>,
     @InjectRepository(SitelineAgingContract)
     private readonly agingContractRepo: Repository<SitelineAgingContract>,
+    @InjectRepository(SitelineContract)
+    private readonly sitelineContractRepo: Repository<SitelineContract>,
   ) {}
 
   async loadContractsGroupedByPm(): Promise<Map<string, SitelineAgingContract[]>> {
@@ -149,6 +155,10 @@ export class PmWeeklyReportBuilderService {
       const totalCents = totalAgedCentsFromAgingContract(ac);
       if (totalCents <= 0) continue;
 
+      if (await isInactiveSitelineAgingRow(this.sitelineContractRepo, ac)) {
+        continue;
+      }
+
       let clearstoryDollars: number | null = null;
       let sitelineDollars: number | null = null;
       let difference: number | null = null;
@@ -157,7 +167,7 @@ export class PmWeeklyReportBuilderService {
       if (jobNumber) {
         const cmp = await this.contractComparison.getByJobNumber(jobNumber);
         if (cmp) {
-          if (cmp.comparison.status === 'inactive_clearstory') {
+          if (isInactiveComparisonStatus(cmp.comparison.status)) {
             continue;
           }
           clearstoryDollars = cmp.clearstory.approvedCoIssuedContractValue;

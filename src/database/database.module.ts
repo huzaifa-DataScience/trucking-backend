@@ -71,6 +71,7 @@ import {
   ConnecteamTask,
   ConnecteamConversation,
   ConnecteamWebhookEvent,
+  ConnecteamMessage,
 } from './entities';
 
 @Module({
@@ -178,6 +179,7 @@ import {
             ConnecteamTask,
             ConnecteamConversation,
             ConnecteamWebhookEvent,
+            ConnecteamMessage,
           ],
           synchronize: false,
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
@@ -268,6 +270,7 @@ import {
       ConnecteamTask,
       ConnecteamConversation,
       ConnecteamWebhookEvent,
+      ConnecteamMessage,
     ]),
   ],
   exports: [TypeOrmModule],

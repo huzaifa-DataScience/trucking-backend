@@ -350,6 +350,7 @@ export class ConnecteamSyncService implements OnModuleInit {
           createdAt: unixSecondsToDate(shift.createdAt),
           modifiedAt: unixSecondsToDate(shift.modifiedAt),
           lastSyncedAt: now,
+          recordSource: 'sync',
         } as ConnecteamTimeActivity);
       }
     }
@@ -403,6 +404,7 @@ export class ConnecteamSyncService implements OnModuleInit {
           assignedUserIdsJson: JSON.stringify(s.assignedUserIds ?? []),
           locationAddress: s.locationData?.gps?.address ?? null,
           lastSyncedAt: now,
+          recordSource: 'sync',
         } as ConnecteamScheduledShift);
       }
     }
@@ -457,6 +459,7 @@ export class ConnecteamSyncService implements OnModuleInit {
           status: s.status ?? null,
           summaryJson: s.answers != null ? JSON.stringify(s.answers).slice(0, 4000) : null,
           lastSyncedAt: now,
+          recordSource: 'sync',
         } as ConnecteamFormSubmission);
       }
     }
@@ -491,6 +494,7 @@ export class ConnecteamSyncService implements OnModuleInit {
       managerNote: r.managerNote ?? null,
       timeClockId: r.timeClockId ?? null,
       lastSyncedAt: now,
+      recordSource: 'sync' as const,
     }));
     for (const part of chunkArray(entities, UPSERT_CHUNK)) {
       await this.timeOffRequests.upsert(part, ['requestId']);
@@ -536,6 +540,7 @@ export class ConnecteamSyncService implements OnModuleInit {
           isArchived: Boolean(t.isArchived),
           descriptionSummary: summary,
           lastSyncedAt: now,
+          recordSource: 'sync',
         } as ConnecteamTask);
       }
     }
@@ -555,6 +560,7 @@ export class ConnecteamSyncService implements OnModuleInit {
       type: c.type ?? null,
       conversationSource: c.conversationSource ?? null,
       lastSyncedAt: now,
+      recordSource: 'sync' as const,
     }));
     for (const part of chunkArray(entities, UPSERT_CHUNK)) {
       await this.conversations.upsert(part, ['conversationId']);
