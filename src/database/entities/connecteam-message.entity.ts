@@ -27,4 +27,16 @@ export class ConnecteamMessage {
 
   @Column({ name: 'ExternalMessageId', type: 'nvarchar', length: 64, nullable: true })
   externalMessageId!: string | null;
+
+  @Column({ name: 'IsDeleted', type: 'bit', default: false })
+  isDeleted!: boolean;
+
+  @Column({ name: 'MessageType', type: 'nvarchar', length: 40, nullable: true })
+  messageType!: string | null;
+
+  @Column({ name: 'AttachmentsJson', type: 'nvarchar', length: 'MAX', nullable: true })
+  attachmentsJson!: string | null;
+
+  @Column({ name: 'ModifiedAt', type: 'datetime2', nullable: true })
+  modifiedAt!: Date | null;
 }

@@ -30,6 +30,17 @@ const RATE_TYPES = ['labor', 'material', 'equipment', 'other'] as const;
 
 type BackfillMode = 'ALL' | 'ONLY_MISSING';
 
+/** Smaller batches avoid MSSQL request timeouts on large tag JSON upserts. */
+const CLEARSTORY_DB_SAVE_CHUNK = 25;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (!items.length) return [];
+  const n = Math.max(1, size);
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += n) out.push(items.slice(i, i + n));
+  return out;
+}
+
 /** Persisted under Clearstory_SyncState key `tagsPhaseLast` after each tags sync attempt. */
 export type ClearstoryTagsPhaseDiag = {
   ranAt: string;
@@ -658,6 +669,14 @@ export class ClearstorySyncService implements OnModuleInit {
       payloadJson: json,
       lastFetchedAt: new Date(),
     });
+  }
+
+  private async saveApiPayloadBatch(
+    rows: { resourceType: string; resourceKey: string; payloadJson: string; lastFetchedAt: Date }[],
+  ): Promise<void> {
+    for (const part of chunkArray(rows, CLEARSTORY_DB_SAVE_CHUNK)) {
+      await this.apiPayloadRepo.save(part);
+    }
   }
 
   private async getState(key: string): Promise<string | null> {
@@ -1852,8 +1871,12 @@ export class ClearstorySyncService implements OnModuleInit {
             });
           }
 
-          if (entitiesToSave.length) await this.tagRepo.save(entitiesToSave);
-          if (payloadRows.length) await this.apiPayloadRepo.save(payloadRows);
+          if (entitiesToSave.length) {
+            for (const part of chunkArray(entitiesToSave, CLEARSTORY_DB_SAVE_CHUNK)) {
+              await this.tagRepo.save(part);
+            }
+          }
+          if (payloadRows.length) await this.saveApiPayloadBatch(payloadRows);
           saved += entitiesToSave.length;
 
           this.logger.log(

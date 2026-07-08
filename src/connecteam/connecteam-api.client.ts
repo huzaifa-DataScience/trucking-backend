@@ -462,15 +462,57 @@ export class ConnecteamApiClient {
 
   async sendChatMessage(
     conversationId: string,
-    body: { userId?: number; text?: string; body?: string; message?: string },
+    body: { senderId: number; text: string; attachments?: unknown[] },
   ): Promise<{ id?: string; messageId?: string }> {
     return this.requestJson(
       'POST',
-      `/chat/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+      `/chat/v1/conversations/${encodeURIComponent(conversationId)}/message`,
       body,
     );
   }
 
+  /**
+   * Send a direct message to a single user. Connecteam reuses the existing
+   * publisher↔user private conversation or creates one. Returns no conversation
+   * id (`data: {}`), so we track DMs locally by the target userId.
+   */
+  async sendPrivateMessage(
+    userId: number,
+    body: { senderId: number; text: string; attachments?: unknown[] },
+  ): Promise<{ id?: string; messageId?: string }> {
+    return this.requestJson(
+      'POST',
+      `/chat/v1/conversations/privateMessage/${userId}`,
+      body,
+    );
+  }
+
+  /**
+   * Create a real Connecteam team chat or channel with assigned members.
+   * At least one of assignedUserIds / assignedSmartGroupIds is required.
+   */
+  async createConversation(body: {
+    title: string;
+    type: 'team' | 'channel';
+    assignedUserIds?: number[];
+    assignedSmartGroupIds?: number[];
+    adminUserIds?: number[];
+  }): Promise<{ conversation?: { id?: string; title?: string; type?: string } }> {
+    return this.requestJson('POST', '/chat/v1/conversations', body);
+  }
+
+  async registerWebhook(body: {
+    name: string;
+    url: string;
+    featureType: string;
+    eventTypes: string[];
+    secretKey?: string;
+    entityId?: string;
+  }): Promise<unknown> {
+    return this.requestJson('POST', '/settings/v1/webhooks', body);
+  }
+
+  /** @deprecated Connecteam has no public message-history GET API; use webhooks + SQL mirror. */
   async listChatMessages(
     conversationId: string,
     limit = 50,

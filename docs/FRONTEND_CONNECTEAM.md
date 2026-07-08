@@ -66,11 +66,17 @@ GET /connecteam/users/me
   "linked": true,
   "connecteamUser": {
     "userId": 9170357,
+    "displayName": "Jane Doe",
+    "initials": "JD",
     "firstName": "Jane",
     "lastName": "Doe",
     "email": "jane@goelservices.com",
     "employeeId": "12345",
-    "isArchived": false
+    "phoneNumber": "+1...",
+    "userType": "user",
+    "profilePictureUrl": "https://...",
+    "isArchived": false,
+    "appUserId": 42
   }
 }
 ```
@@ -96,11 +102,93 @@ PATCH /connecteam/users/:userId/link-app-user
 
 ---
 
-## 4. Read APIs (lists & reports)
+## 4. UI display contract (read first)
 
-All list endpoints support pagination where noted. Response field names are **camelCase** (TypeORM entities).
+**Rule:** Every list/detail row is UI-ready. Use **labels and nested objects** for display. Keep raw IDs only for API writes, filters, and keys — never as the primary visible text.
 
-### 4.1 Users
+### 4.0 Standard nested shapes
+
+**`user` (employee)** — on time activities, shifts, PTO, forms, messages, tasks:
+
+```json
+{
+  "userId": 9170357,
+  "displayName": "Jane Doe",
+  "initials": "JD",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane@goelservices.com",
+  "employeeId": "12345",
+  "phoneNumber": null,
+  "userType": "user",
+  "profilePictureUrl": "https://..."
+}
+```
+
+**`job` (Connecteam job)** — on time activities, scheduled shifts, jobs list:
+
+```json
+{
+  "jobId": "job-456",
+  "jobLabel": "02768 — Hospital HVAC Rough-in",
+  "title": "Hospital HVAC Rough-in",
+  "code": "2768",
+  "normalizedJobNumber": "02768",
+  "companyLabel": "Goel Services",
+  "gpsAddress": "123 Main St",
+  "refJobId": 42,
+  "refJob": {
+    "id": 42,
+    "jobNumber": "02768",
+    "name": "Hospital HVAC",
+    "jobAddress": "123 Main St",
+    "city": "San Jose",
+    "isActive": true
+  }
+}
+```
+
+`refJob` links to our **`Ref_Jobs`** record — use for Job detail navigation (`/jobs/42`).
+
+**Timing** (time activities & scheduled shifts):
+
+| Field | UI use |
+|-------|--------|
+| `startAt` / `endAt` | ISO 8601 — format with locale (`new Date(startAt)`) |
+| `isOpen` | `true` = currently clocked in |
+| `durationHours` | Show `"8.5 hrs"` (preferred over raw minutes) |
+| `durationMinutes` | Fallback |
+
+**Row labels** (single string for table title column):
+
+| Endpoint | Primary column |
+|----------|----------------|
+| Time activity | `shiftLabel` |
+| Scheduled shift | `shiftLabel` |
+| Task | `taskLabel` |
+| Conversation | `conversationLabel` |
+| Time off | `user.displayName` + `dateRangeLabel` |
+| Form submission | `formName` + `submittedByName` |
+| Message | `senderName` + `body` |
+
+### 4.1 What to show where (cheat sheet)
+
+| Screen | Show this | Not this |
+|--------|-----------|----------|
+| Crew list | `displayName`, `email`, `employeeId`, avatar from `profilePictureUrl` / `initials` | `userId` |
+| Job picker | `jobLabel`, `companyLabel` | `jobId` |
+| Hours table | `user.displayName`, `job.jobLabel`, `startAt`–`endAt`, `durationHours` | raw timestamps |
+| Schedule | `shiftLabel`, `assignedUserNames.join(', ')`, `startAt`–`endAt` | `assignedUserIdsJson` |
+| PTO inbox | `user.displayName`, `dateRangeLabel`, `status` | `userId` |
+| Reports | `jobLabel` / `displayName`, `totalHours` | `totalMinutes` only |
+
+---
+
+## 5. Read APIs (lists & reports)
+
+All list endpoints support pagination where noted. Response field names are **camelCase**.
+
+### 5.1 Users
 
 ```
 GET /connecteam/users?search=&page=1&pageSize=50&includeArchived=false
@@ -121,25 +209,24 @@ GET /connecteam/users?search=&page=1&pageSize=50&includeArchived=false
       "userType": "user",
       "employeeId": "12345",
       "isArchived": false,
-      "appUserId": 42
+      "appUserId": 42,
+      "displayName": "Jane Doe"
     }
   ]
 }
 ```
 
-### 4.2 Jobs
+### 5.2 Jobs
 
 ```
 GET /connecteam/jobs?search=&page=1&pageSize=50&includeDeleted=false
 ```
 
-Key fields: `jobId` (Connecteam string id), `code`, `normalizedJobNumber`, `title`, `refJobId`, `companyLabel`, `gpsAddress`.
+Each job includes **`jobLabel`** for display (e.g. `"02768 — Hospital HVAC Rough-in"`), plus `title`, `code`, `normalizedJobNumber`, `refJobId`, `companyLabel`, `gpsAddress`.
 
-**Job detail tab:** `GET /connecteam/time-activities?jobId=<jobId>` and `GET /connecteam/scheduled-shifts?jobId=<jobId>`.
+**Job detail tab:** `GET /connecteam/time-activities?jobId=<jobId>` — rows include nested `job.jobLabel` and `user.displayName`.
 
-Or via our job: find Connecteam job where `refJobId === job.id` or `normalizedJobNumber` matches.
-
-### 4.3 Time clocks
+### 5.3 Time clocks
 
 ```
 GET /connecteam/time-clocks?includeArchived=false
@@ -151,54 +238,79 @@ GET /connecteam/time-clocks?includeArchived=false
 
 Store default `timeClockId` in app settings or pick the first non-archived clock.
 
-### 4.4 Time activities (worked hours)
+### 5.4 Time activities (worked hours)
 
 ```
 GET /connecteam/time-activities?timeClockId=&userId=&jobId=&page=1&pageSize=50
 ```
 
-Row fields: `timeClockId`, `shiftId`, `userId`, `jobId`, `startTimestamp`, `endTimestamp` (Unix **seconds**, often string), `durationMinutes`, `employeeNote`, `managerNote`, `recordSource` (`sync` | `native`).
+**Example row (display fields highlighted):**
+
+```json
+{
+  "shiftId": "abc-123",
+  "userId": 9170357,
+  "jobId": "job-456",
+  "startTimestamp": "1736924400",
+  "endTimestamp": null,
+  "durationMinutes": null,
+  "user": {
+    "userId": 9170357,
+    "displayName": "Jane Doe",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane@goelservices.com",
+    "employeeId": "12345"
+  },
+  "job": {
+    "jobId": "job-456",
+    "jobLabel": "02768 — Hospital HVAC",
+    "title": "Hospital HVAC",
+    "normalizedJobNumber": "02768",
+    "refJobId": 42
+  },
+  "timeClockName": "Field Crew"
+}
+```
 
 **Open shift:** `endTimestamp === null` means user is clocked in.
 
-### 4.5 Schedulers & scheduled shifts
+### 5.5 Schedulers & scheduled shifts
 
 ```
 GET /connecteam/schedulers
 GET /connecteam/scheduled-shifts?schedulerId=&jobId=&userId=&page=1&pageSize=50
 ```
 
-`assignedUserIdsJson` is a JSON string array of Connecteam user ids, e.g. `"[9170357,9170358]"` — `JSON.parse` on the client.
+Each shift includes `shiftLabel`, `schedulerName`, `startAt`/`endAt`/`durationHours`, nested `job`, **`assignedUsers`**, and **`assignedUserNames`** (string array for chips).
 
-Timestamps: `startTime`, `endTime` = Unix seconds.
-
-### 4.6 Forms & submissions
+### 5.6 Forms & submissions
 
 ```
 GET /connecteam/forms?search=&page=1&pageSize=50
 GET /connecteam/form-submissions?formId=&userId=&page=1&pageSize=50
 ```
 
-`summaryJson` on submissions is a JSON string of answers.
+Each submission includes `formName`, `submittedByName`, `submittedAtIso`, parsed **`answers`** object (from `summaryJson`), and nested `user`.
 
-### 4.7 Time off
+### 5.7 Time off
 
 ```
 GET /connecteam/time-off?userId=&status=pending&page=1&pageSize=50
 ```
 
-`status`: `pending` | `approved` | `denied`. Dates: `startDate`, `endDate` as `YYYY-MM-DD`.
+Each row includes `user`, **`dateRangeLabel`** (e.g. `"2026-07-01 → 2026-07-03"`), and optional **`durationLabel`**.
 
-### 4.8 Tasks
+### 5.8 Tasks
 
 ```
 GET /connecteam/task-boards
 GET /connecteam/tasks?taskBoardId=&status=&search=&page=1&pageSize=50
 ```
 
-`userIdsJson` — JSON string array of assigned user ids.
+Each task includes `taskLabel`, `taskBoardName`, `assignedUsers`, `assignedUserNames`, `startAt`, `dueAt`.
 
-### 4.9 Conversations (team chats / channels)
+### 5.9 Conversations
 
 ```
 GET /connecteam/conversations?search=&type=&page=1&pageSize=50
@@ -206,7 +318,9 @@ GET /connecteam/conversations?search=&type=&page=1&pageSize=50
 
 Types from Connecteam: typically `team`, `channel`. **Private DMs are not listed** by Connecteam’s API.
 
-### 4.10 Reports
+Each row includes **`conversationLabel`** and **`typeLabel`**.
+
+### 5.10 Reports
 
 ```
 GET /connecteam/reports/hours-by-job?jobId=&normalizedJobNumber=&limit=50
@@ -214,12 +328,24 @@ GET /connecteam/reports/hours-by-user?userId=&limit=50
 ```
 
 ```json
-{ "rows": [{ "jobId": "...", "normalizedJobNumber": "02768", "totalHours": 120.5, "shiftCount": 45 }] }
+{
+  "rows": [{
+    "jobLabel": "02768 — Hospital HVAC",
+    "normalizedJobNumber": "02768",
+    "companyLabel": "Goel Services",
+    "totalHours": 120.5,
+    "totalMinutes": 7230,
+    "shiftCount": 45,
+    "refJob": { "id": 42, "name": "Hospital HVAC", "jobNumber": "02768" }
+  }]
+}
 ```
+
+`hours-by-user` rows include `displayName`, `initials`, `employeeId`, **`totalHours`**.
 
 ---
 
-## 5. Write APIs
+## 6. Write APIs
 
 Writes save to **our SQL first**. Optional Connecteam push is server-side (`CONNECTEAM_WRITE_THROUGH`); frontend does not set this.
 
@@ -410,73 +536,84 @@ DELETE /connecteam/task-boards/:taskBoardId/tasks/:taskId
 
 ### 5.8 Chat
 
-**List conversations** — §4.9.
+> **Full live-chat handoff (recommended for frontend):** [FRONTEND_CONNECTEAM_CHAT.md](./FRONTEND_CONNECTEAM_CHAT.md) — architecture, polling vs WebSocket options, APIs, UI checklist, limitations.
 
-**Messages:**
+Chat is **SQL-backed**. Connecteam has **no GET message-history API** — new Connecteam messages arrive via **webhook** into `Connecteam_Messages`. App-native messages (`app-*` conversations) are stored directly.
+
+#### Conversation list (inbox-style)
 
 ```
-GET /connecteam/conversations/:conversationId/messages?page=1&pageSize=50
+GET /connecteam/conversations?search=&type=&page=1&pageSize=50
+GET /connecteam/conversations/:conversationId
 ```
 
-```json
-{
-  "page": 1,
-  "pageSize": 50,
-  "total": 12,
-  "source": "local",
-  "messages": [
-    {
-      "messageId": "1",
-      "conversationId": "conv-abc",
-      "userId": 9170357,
-      "appUserId": 42,
-      "body": "Heading to site",
-      "sentAt": "2026-06-20T15:00:00.000Z",
-      "recordSource": "native"
-    }
-  ]
-}
+Each conversation includes:
+
+| Field | UI use |
+|-------|--------|
+| `conversationLabel` | Row title |
+| `lastMessagePreview` | Subtitle / snippet |
+| `lastMessageSenderName` | "Jane: …" prefix |
+| `lastMessageAtIso` | Sort + "2h ago" |
+| `messageCount` | Badge (optional) |
+| `type` | `team`, `channel`, `private` |
+
+Sort: most recent `lastMessageAt` first (backend default).
+
+#### Messages thread
+
+```
+GET /connecteam/conversations/:conversationId/messages?page=1&pageSize=50&includeDeleted=false
 ```
 
-`source`: `local` (SQL) or `connecteam` (live API fallback when SQL empty).
+Each message includes `senderName`, `user`, `body`, `sentAtIso`, `attachments` (array), `messageType`, `isDeleted`.
 
 **Send:**
 
 ```
 POST /connecteam/conversations/:conversationId/messages
-```
-
-```json
 { "body": "On my way", "userId": 9170357 }
 ```
 
-**Create app-native channel (optional):**
+**Create app-native channel:**
 
 ```
 POST /connecteam/conversations
-```
-
-```json
 { "title": "Job 2768 Crew", "type": "team" }
 ```
 
 Returns `conversationId` like `app-<uuid>`.
 
-#### Chat limitations (important)
+#### Connecteam webhook setup (ops / admin — one time)
+
+1. `.env`:
+   ```env
+   CONNECTEAM_WEBHOOK_PUBLIC_URL=https://your-api.example.com/connecteam/webhooks/inbound
+   CONNECTEAM_WEBHOOK_SECRET=<long-random-string>
+   CONNECTEAM_WRITE_THROUGH=true   # optional: also send to Connecteam app
+   ```
+2. Run migration: `npm run connecteam-migrate`
+3. Register webhook (admin JWT):
+   ```
+   POST /connecteam/webhooks/register-chat
+   ```
+4. Connecteam must enable **chat webhooks (Beta)** on your company account.
+
+Inbound: `POST /connecteam/webhooks/inbound` (public, `x-webhook-secret` header).
+
+#### Chat UI notes
 
 | Topic | Detail |
 |-------|--------|
-| Connecteam history | Full message history is **not** pre-synced to SQL yet |
-| Connecteam Expert plan | Chat API may require Connecteam Expert — server env dependent |
-| Private DMs | Not in conversation list; Connecteam API limitation |
-| Real-time | No WebSocket today — **poll** `GET .../messages` every 15–30s or on focus |
-| Connecteam send | Server pushes to Connecteam only when `CONNECTEAM_WRITE_THROUGH=true` |
-
-Plan UI for **team/channel chats** first; treat DMs as out of scope until backend adds private-message support.
+| History before webhook | **Not available** — only messages after webhook is live are mirrored |
+| Private DMs | Appear via webhook even if not in initial conversation sync |
+| Real-time | Poll inbox + thread every **15–30s** (no WebSocket yet) |
+| Expert plan | Connecteam chat API/webhooks may require Expert tier |
+| Display | Use `senderName`, `conversationLabel`, `lastMessagePreview` — never raw IDs |
 
 ---
 
-## 6. Recommended UI structure
+## 7. Recommended UI structure
 
 ### 6.1 Top-level **Workforce** workspace
 
@@ -509,19 +646,19 @@ Filter by Connecteam `jobId` or resolve via `refJobId` / `normalizedJobNumber`:
 
 ---
 
-## 7. Data conventions
+## 8. Data conventions
 
 | Topic | Rule |
 |-------|------|
 | Timestamps | Unix **seconds** (not ms). API may return as string for large ints. |
 | IDs | Connecteam ids are strings (`jobId`, `shiftId`). Native app ids: `app-<uuid>`. |
 | `recordSource` | `sync` = from Connecteam mirror; `native` = created on our site |
-| JSON columns | `assignedUserIdsJson`, `userIdsJson`, `summaryJson` — parse on client |
+| JSON columns | `assignedUserIdsJson`, `userIdsJson`, `summaryJson` — prefer enriched `assignedUsers` / `user` / `formName` when present |
 | Timezones | IANA, e.g. `America/Los_Angeles` |
 
 ---
 
-## 8. Error handling
+## 9. Error handling
 
 | HTTP | Meaning |
 |------|---------|
@@ -534,7 +671,7 @@ Show Connecteam link errors clearly: “Ask admin to link your email to workforc
 
 ---
 
-## 9. What frontend should NOT do
+## 10. What frontend should NOT do
 
 - Do not call `api.connecteam.com` or embed Connecteam widgets (unless product explicitly wants hybrid).
 - Do not store `CONNECTEAM_API_KEY` in the browser.
@@ -596,11 +733,10 @@ Server `.env` (backend only): `CONNECTEAM_API_KEY`, `CONNECTEAM_SYNC_ENABLED`, o
 
 ---
 
-## 12. Open questions / future backend work
+## 12. Future backend work
 
-- Full Connecteam **message history sync** + chat webhooks (for reliable chat without polling Connecteam).
-- WebSocket or SSE for live chat notifications.
-- Form field definitions API (currently name-only in mirror).
-- Offline punch queue contract for PWA.
+- WebSocket/SSE for live chat (replace polling)
+- Form field definitions API
+- Offline punch queue for PWA
 
-Coordinate with backend before building chat-heavy or form-builder UIs.
+Chat mirroring via webhooks is **implemented** — see §5.8 setup.

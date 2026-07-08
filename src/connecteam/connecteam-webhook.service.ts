@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConnecteamWebhookEvent } from '../database/entities';
+import { ConnecteamChatService } from './connecteam-chat.service';
 
 export type ConnecteamWebhookPayload = {
   requestId?: string;
@@ -19,6 +20,7 @@ export class ConnecteamWebhookService {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly chat: ConnecteamChatService,
     @InjectRepository(ConnecteamWebhookEvent)
     private readonly events: Repository<ConnecteamWebhookEvent>,
   ) {}
@@ -31,7 +33,7 @@ export class ConnecteamWebhookService {
     }
   }
 
-  async storeInbound(payload: ConnecteamWebhookPayload, rawBody: unknown): Promise<{ id: string }> {
+  async storeInbound(payload: ConnecteamWebhookPayload, rawBody: unknown): Promise<{ id: string; chatHandled?: boolean; chatDetail?: string }> {
     const saved = await this.events.save({
       requestId: payload.requestId ?? null,
       featureType: this.inferFeatureType(payload),
@@ -44,7 +46,22 @@ export class ConnecteamWebhookService {
     this.logger.log(
       `Connecteam webhook stored: id=${saved.id} eventType=${payload.eventType ?? 'unknown'}`,
     );
-    return { id: String(saved.id) };
+
+    let chatResult: { handled: boolean; detail?: string } = { handled: false };
+    try {
+      chatResult = await this.chat.processWebhook(payload);
+      if (chatResult.handled) {
+        this.logger.log(`Chat webhook applied: ${chatResult.detail ?? payload.eventType}`);
+      }
+    } catch (e) {
+      this.logger.warn(`Chat webhook processing failed: ${(e as Error).message}`);
+    }
+
+    return {
+      id: String(saved.id),
+      chatHandled: chatResult.handled,
+      chatDetail: chatResult.detail,
+    };
   }
 
   async listRecent(limit = 50): Promise<ConnecteamWebhookEvent[]> {

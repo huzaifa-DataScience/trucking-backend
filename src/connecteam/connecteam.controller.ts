@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Param,
   Post,
   Query,
   UseGuards,
@@ -23,6 +24,8 @@ import {
   ConnecteamTask,
   ConnecteamConversation,
 } from '../database/entities';
+import { ConnecteamChatService } from './connecteam-chat.service';
+import { ConnecteamDisplayService } from './connecteam-display.service';
 import { ConnecteamReportService } from './connecteam-report.service';
 import { ConnecteamSyncService } from './connecteam-sync.service';
 
@@ -32,6 +35,8 @@ export class ConnecteamController {
   constructor(
     private readonly sync: ConnecteamSyncService,
     private readonly reports: ConnecteamReportService,
+    private readonly display: ConnecteamDisplayService,
+    private readonly chat: ConnecteamChatService,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
     @InjectRepository(ConnecteamJob) private readonly jobs: Repository<ConnecteamJob>,
     @InjectRepository(ConnecteamTimeClock) private readonly timeClocks: Repository<ConnecteamTimeClock>,
@@ -57,9 +62,16 @@ export class ConnecteamController {
       module: 'connecteam',
       ready: h.configured === 'true',
       ...h,
+      chatSync: this.chat.getChatSyncStatus(),
       message:
         'Workforce mirror + write API: clock, schedule, PTO, forms, tasks, chat. Native records use app-* IDs and survive Connecteam sync off. POST /connecteam/sync to refresh mirror.',
     };
+  }
+
+  /** Bidirectional chat sync readiness (Connecteam ↔ our site). */
+  @Get('chat/sync-status')
+  getChatSyncStatus() {
+    return this.chat.getChatSyncStatus();
   }
 
   @Post('sync')
@@ -76,23 +88,21 @@ export class ConnecteamController {
     @Query('normalizedJobNumber') normalizedJobNumber?: string,
     @Query('limit') limit?: string,
   ) {
-    return {
-      rows: await this.reports.hoursByJob({
-        jobId,
-        normalizedJobNumber,
-        limit: limit ? Number(limit) : undefined,
-      }),
-    };
+    const rows = await this.reports.hoursByJob({
+      jobId,
+      normalizedJobNumber,
+      limit: limit ? Number(limit) : undefined,
+    });
+    return { rows: await this.reports.enrichHoursByJob(rows) };
   }
 
   @Get('reports/hours-by-user')
   async hoursByUser(@Query('userId') userId?: string, @Query('limit') limit?: string) {
-    return {
-      rows: await this.reports.hoursByUser({
-        userId: userId ? Number(userId) : undefined,
-        limit: limit ? Number(limit) : undefined,
-      }),
-    };
+    const rows = await this.reports.hoursByUser({
+      userId: userId ? Number(userId) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+    return { rows: await this.reports.enrichHoursByUser(rows) };
   }
 
   @Get('users')
@@ -116,7 +126,7 @@ export class ConnecteamController {
     qb.orderBy('u.lastName', 'ASC').addOrderBy('u.firstName', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, users: rows };
+    return { page: pageNum, pageSize: pageSizeNum, total, users: await this.display.enrichUserRows(rows) };
   }
 
   @Get('jobs')
@@ -140,7 +150,7 @@ export class ConnecteamController {
     qb.orderBy('j.lastSyncedAt', 'DESC').addOrderBy('j.title', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, jobs: rows };
+    return { page: pageNum, pageSize: pageSizeNum, total, jobs: await this.display.enrichJobRows(rows) };
   }
 
   @Get('time-clocks')
@@ -176,7 +186,12 @@ export class ConnecteamController {
     qb.orderBy('a.startTimestamp', 'DESC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, timeActivities: rows };
+    return {
+      page: pageNum,
+      pageSize: pageSizeNum,
+      total,
+      timeActivities: await this.display.enrichTimeActivities(rows),
+    };
   }
 
   @Get('schedulers')
@@ -210,7 +225,12 @@ export class ConnecteamController {
     qb.orderBy('s.startTime', 'DESC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, scheduledShifts: rows };
+    return {
+      page: pageNum,
+      pageSize: pageSizeNum,
+      total,
+      scheduledShifts: await this.display.enrichScheduledShifts(rows),
+    };
   }
 
   @Get('forms')
@@ -251,7 +271,12 @@ export class ConnecteamController {
     qb.orderBy('s.submittedAt', 'DESC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, formSubmissions: rows };
+    return {
+      page: pageNum,
+      pageSize: pageSizeNum,
+      total,
+      formSubmissions: await this.display.enrichFormSubmissions(rows),
+    };
   }
 
   @Get('time-off')
@@ -273,7 +298,12 @@ export class ConnecteamController {
     qb.orderBy('t.startDate', 'DESC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, timeOffRequests: rows };
+    return {
+      page: pageNum,
+      pageSize: pageSizeNum,
+      total,
+      timeOffRequests: await this.display.enrichTimeOffRequests(rows),
+    };
   }
 
   @Get('task-boards')
@@ -310,7 +340,15 @@ export class ConnecteamController {
     qb.orderBy('t.dueDate', 'DESC').addOrderBy('t.title', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, tasks: rows };
+    return { page: pageNum, pageSize: pageSizeNum, total, tasks: await this.display.enrichTasks(rows) };
+  }
+
+  @Get('conversations/:conversationId')
+  async getConversation(@Param('conversationId') conversationId: string) {
+    const row = await this.conversations.findOne({ where: { conversationId } });
+    if (!row || row.isDeleted) return { conversation: null };
+    const [enriched] = this.display.enrichConversations([row]);
+    return { conversation: enriched };
   }
 
   @Get('conversations')
@@ -319,16 +357,23 @@ export class ConnecteamController {
     @Query('type') type?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('includeDeleted') includeDeleted?: string,
   ) {
     const q = (search ?? '').trim().toLowerCase();
     const pageNum = Math.max(1, Math.floor(Number(page) || 1));
     const pageSizeNum = Math.max(1, Math.min(200, Math.floor(Number(pageSize) || 50)));
     const qb = this.conversations.createQueryBuilder('c');
+    if (includeDeleted !== 'true') qb.andWhere('c.isDeleted = :deleted', { deleted: false });
     if (type?.trim()) qb.andWhere('c.type = :type', { type: type.trim() });
-    if (q) qb.andWhere('LOWER(c.title) LIKE :q', { q: `%${q}%` });
-    qb.orderBy('c.title', 'ASC');
+    if (q) {
+      qb.andWhere(
+        '(LOWER(c.title) LIKE :q OR LOWER(c.lastMessagePreview) LIKE :q OR LOWER(c.lastMessageSenderName) LIKE :q)',
+        { q: `%${q}%` },
+      );
+    }
+    qb.orderBy('c.lastMessageAt', 'DESC').addOrderBy('c.title', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, conversations: rows };
+    return { page: pageNum, pageSize: pageSizeNum, total, conversations: this.display.enrichConversations(rows) };
   }
 }

@@ -15,7 +15,11 @@ async function main(): Promise<void> {
   });
   try {
     const ds = app.get(DataSource);
-    const sqlFiles = ['add-connecteam-tables.sql', 'add-connecteam-write-support.sql'];
+    const sqlFiles = [
+      'add-connecteam-tables.sql',
+      'add-connecteam-write-support.sql',
+      'add-connecteam-chat-support.sql',
+    ];
     for (const file of sqlFiles) {
       const sql = readFileSync(join(__dirname, 'sql', file), 'utf8');
       const batches = sql

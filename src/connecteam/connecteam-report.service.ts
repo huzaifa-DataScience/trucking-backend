@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConnecteamJob, ConnecteamTimeActivity, ConnecteamUser } from '../database/entities';
+import { ConnecteamDisplayService } from './connecteam-display.service';
 
 export type HoursByJobRow = {
   jobId: string | null;
@@ -28,6 +29,7 @@ export class ConnecteamReportService {
     private readonly timeActivities: Repository<ConnecteamTimeActivity>,
     @InjectRepository(ConnecteamJob) private readonly jobs: Repository<ConnecteamJob>,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
+    private readonly display: ConnecteamDisplayService,
   ) {}
 
   async hoursByJob(opts?: {
@@ -77,6 +79,10 @@ export class ConnecteamReportService {
     }));
   }
 
+  async enrichHoursByJob(rows: HoursByJobRow[]) {
+    return this.display.enrichReportHoursByJob(rows);
+  }
+
   async hoursByUser(opts?: { userId?: number; limit?: number }): Promise<HoursByUserRow[]> {
     const limit = Math.max(1, Math.min(500, opts?.limit ?? 100));
     const qb = this.timeActivities
@@ -117,5 +123,12 @@ export class ConnecteamReportService {
       totalMinutes: Number(r.totalMinutes ?? 0),
       shiftCount: Number(r.shiftCount ?? 0),
     }));
+  }
+
+  async enrichHoursByUser(rows: HoursByUserRow[]) {
+    const userIds = rows.map((r) => r.userId);
+    const uRows = userIds.length ? await this.users.find({ where: { userId: In(userIds) } }) : [];
+    const uMap = new Map(uRows.map((u) => [u.userId, u]));
+    return this.display.enrichReportHoursByUser(rows, uMap);
   }
 }

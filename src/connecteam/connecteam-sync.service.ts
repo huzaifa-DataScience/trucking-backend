@@ -554,18 +554,25 @@ export class ConnecteamSyncService implements OnModuleInit {
   private async syncConversations(): Promise<number> {
     const rows = await this.api.listConversations();
     const now = new Date();
-    const entities = rows.map((c) => ({
-      conversationId: c.id,
-      title: c.title ?? null,
-      type: c.type ?? null,
-      conversationSource: c.conversationSource ?? null,
-      lastSyncedAt: now,
-      recordSource: 'sync' as const,
-    }));
-    for (const part of chunkArray(entities, UPSERT_CHUNK)) {
-      await this.conversations.upsert(part, ['conversationId']);
+
+    for (const c of rows) {
+      await this.conversations
+        .createQueryBuilder()
+        .insert()
+        .into(ConnecteamConversation)
+        .values({
+          conversationId: c.id,
+          title: c.title ?? null,
+          type: c.type ?? null,
+          conversationSource: c.conversationSource ?? null,
+          lastSyncedAt: now,
+          recordSource: 'sync',
+          isDeleted: false,
+        })
+        .orUpdate(['Title', 'Type', 'ConversationSource', 'LastSyncedAt', 'RecordSource', 'IsDeleted'], ['ConversationId'])
+        .execute();
     }
-    return entities.length;
+    return rows.length;
   }
 
   private async loadRefJobIds(): Promise<Map<string, number>> {

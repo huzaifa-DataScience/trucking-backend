@@ -549,9 +549,9 @@ export class SitelineService implements OnModuleInit {
             id
             latestTotalValue
             contractNumber
-            projectNumber
             project {
               name
+              projectNumber
             }
           }
         }
@@ -611,7 +611,6 @@ export class SitelineService implements OnModuleInit {
             id
             latestTotalValue
             contractNumber
-            projectNumber
             company {
               id
             }
@@ -652,7 +651,6 @@ export class SitelineService implements OnModuleInit {
               totalValue
               totalBilled
               totalRetention
-              progressComplete
               lineItems {
                 id
                 code
