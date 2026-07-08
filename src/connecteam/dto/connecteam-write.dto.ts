@@ -120,6 +120,8 @@ export class PatchTaskDto {
 export class CreateConversationDto {
   @IsString() @MaxLength(500) title!: string;
   @IsOptional() @IsString() @MaxLength(40) type?: string;
+  @IsOptional() @IsArray() @IsInt({ each: true }) assignedUserIds?: number[];
+  @IsOptional() @IsArray() @IsInt({ each: true }) adminUserIds?: number[];
 }
 
 export class SendMessageDto {

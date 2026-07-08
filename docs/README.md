@@ -30,6 +30,8 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [FRONTEND_AGING_REPORT.md](./FRONTEND_AGING_REPORT.md) | Aging report UI |
 | [FRONTEND_SITELINE.md](./FRONTEND_SITELINE.md) | Siteline API for frontend |
 | [FRONTEND_CONNECTEAM.md](./FRONTEND_CONNECTEAM.md) | Workforce / Connecteam API for frontend |
+| [FRONTEND_CONNECTEAM_CHAT.md](./FRONTEND_CONNECTEAM_CHAT.md) | **Live chat handoff** — polling, APIs, UI, limitations |
+| [CONNECTEAM_WEBHOOK_OWNER_SETUP.md](./CONNECTEAM_WEBHOOK_OWNER_SETUP.md) | **Owner-only** Connecteam webhook + Custom Publisher setup (PJ) |
 | [FRONTEND_SITELINE_COMPANY_FILTER.md](./FRONTEND_SITELINE_COMPANY_FILTER.md) | Siteline multi-company `entityId` |
 | [FRONTEND_EMAIL_TEMPLATES.md](./FRONTEND_EMAIL_TEMPLATES.md) | Email templates (frontend) |
 | [FRONTEND_RECENT_CHANGES_MAR2026.md](./FRONTEND_RECENT_CHANGES_MAR2026.md) | Mar 2026 backend changes summary |

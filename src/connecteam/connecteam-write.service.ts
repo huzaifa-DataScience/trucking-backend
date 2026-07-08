@@ -25,7 +25,14 @@ import {
   Role,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
-import { isNativeConnecteamId, nativeConnecteamId } from './connecteam-native-id.util';
+import { ConnecteamChatService } from './connecteam-chat.service';
+import { ConnecteamDisplayService } from './connecteam-display.service';
+import {
+  dmConversationId,
+  dmTargetUserId,
+  isNativeConnecteamId,
+  nativeConnecteamId,
+} from './connecteam-native-id.util';
 import { shiftDurationMinutes } from './connecteam.util';
 import type {
   ClockInDto,
@@ -50,6 +57,8 @@ export class ConnecteamWriteService {
   constructor(
     private readonly config: ConfigService,
     private readonly api: ConnecteamApiClient,
+    private readonly display: ConnecteamDisplayService,
+    private readonly chat: ConnecteamChatService,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
     @InjectRepository(ConnecteamTimeClock) private readonly timeClocks: Repository<ConnecteamTimeClock>,
     @InjectRepository(ConnecteamTimeActivity)
@@ -71,6 +80,14 @@ export class ConnecteamWriteService {
 
   private writeThroughEnabled(): boolean {
     return this.config.get<string>('CONNECTEAM_WRITE_THROUGH', 'false') === 'true' && this.api.isConfigured();
+  }
+
+  /** Connecteam Chat API requires a Custom Publisher id as senderId — not the employee userId. */
+  private chatPublisherId(): number | null {
+    const raw = (this.config.get<string>('CONNECTEAM_CHAT_PUBLISHER_ID') ?? '').trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
   }
 
   private isAdmin(actor: RequestUser): boolean {
@@ -104,7 +121,7 @@ export class ConnecteamWriteService {
 
   async getMe(actor: RequestUser) {
     const user = await this.resolveConnecteamUser(actor);
-    return { linked: Boolean(user), connecteamUser: user };
+    return { linked: Boolean(user), connecteamUser: user ? this.display.enrichUserRow(user) : null };
   }
 
   async linkAppUser(connecteamUserId: number, appUserId: number) {
@@ -112,7 +129,7 @@ export class ConnecteamWriteService {
     if (!row) throw new NotFoundException('Connecteam user not found');
     row.appUserId = appUserId;
     await this.users.save(row);
-    return { ok: true, user: row };
+    return { ok: true, user: this.display.enrichUserRow(row) };
   }
 
   async getOpenShift(timeClockId: number, userId: number, actor: RequestUser) {
@@ -124,7 +141,9 @@ export class ConnecteamWriteService {
       .andWhere('a.endTimestamp IS NULL')
       .orderBy('a.startTimestamp', 'DESC')
       .getOne();
-    return { openShift: row };
+    if (!row) return { openShift: null };
+    const [enriched] = await this.display.enrichTimeActivities([row]);
+    return { openShift: enriched };
   }
 
   async clockIn(timeClockId: number, dto: ClockInDto, actor: RequestUser) {
@@ -180,7 +199,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(shiftId) ? 'native' : 'sync',
     });
     await this.timeActivities.save(row);
-    return { ok: true, timeActivity: row };
+    const [enriched] = await this.display.enrichTimeActivities([row]);
+    return { ok: true, timeActivity: enriched };
   }
 
   async clockOut(timeClockId: number, dto: ClockOutDto, actor: RequestUser) {
@@ -220,7 +240,8 @@ export class ConnecteamWriteService {
     open.modifiedAt = new Date();
     open.lastSyncedAt = new Date();
     await this.timeActivities.save(open);
-    return { ok: true, timeActivity: open };
+    const [enriched] = await this.display.enrichTimeActivities([open]);
+    return { ok: true, timeActivity: enriched };
   }
 
   async createTimeActivity(timeClockId: number, dto: CreateTimeActivityDto, actor: RequestUser) {
@@ -276,7 +297,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(shiftId) ? 'native' : 'sync',
     });
     await this.timeActivities.save(row);
-    return { ok: true, timeActivity: row };
+    const [enriched] = await this.display.enrichTimeActivities([row]);
+    return { ok: true, timeActivity: enriched };
   }
 
   async patchTimeActivity(
@@ -329,7 +351,8 @@ export class ConnecteamWriteService {
     row.modifiedAt = new Date();
     row.lastSyncedAt = new Date();
     await this.timeActivities.save(row);
-    return { ok: true, timeActivity: row };
+    const [enriched] = await this.display.enrichTimeActivities([row]);
+    return { ok: true, timeActivity: enriched };
   }
 
   async createScheduledShift(schedulerId: number, dto: CreateScheduledShiftDto, actor: RequestUser) {
@@ -373,7 +396,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(shiftId) ? 'native' : 'sync',
     });
     await this.scheduledShifts.save(row);
-    return { ok: true, scheduledShift: row };
+    const [enriched] = await this.display.enrichScheduledShifts([row]);
+    return { ok: true, scheduledShift: enriched };
   }
 
   async patchScheduledShift(
@@ -417,7 +441,8 @@ export class ConnecteamWriteService {
     if (dto.locationAddress !== undefined) row.locationAddress = dto.locationAddress;
     row.lastSyncedAt = new Date();
     await this.scheduledShifts.save(row);
-    return { ok: true, scheduledShift: row };
+    const [enriched] = await this.display.enrichScheduledShifts([row]);
+    return { ok: true, scheduledShift: enriched };
   }
 
   async deleteScheduledShift(schedulerId: number, shiftId: string, actor: RequestUser) {
@@ -481,7 +506,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(requestId) ? 'native' : 'sync',
     });
     await this.timeOffRequests.save(row);
-    return { ok: true, timeOffRequest: row };
+    const [enriched] = await this.display.enrichTimeOffRequests([row]);
+    return { ok: true, timeOffRequest: enriched };
   }
 
   async patchTimeOffStatus(requestId: string, dto: PatchTimeOffStatusDto, actor: RequestUser) {
@@ -504,7 +530,8 @@ export class ConnecteamWriteService {
     if (dto.managerNote !== undefined) row.managerNote = dto.managerNote;
     row.lastSyncedAt = new Date();
     await this.timeOffRequests.save(row);
-    return { ok: true, timeOffRequest: row };
+    const [enriched] = await this.display.enrichTimeOffRequests([row]);
+    return { ok: true, timeOffRequest: enriched };
   }
 
   async submitForm(formId: string, dto: SubmitFormDto, actor: RequestUser) {
@@ -538,7 +565,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(submissionId) ? 'native' : 'sync',
     });
     await this.formSubmissions.save(row);
-    return { ok: true, formSubmission: row };
+    const [enriched] = await this.display.enrichFormSubmissions([row]);
+    return { ok: true, formSubmission: enriched };
   }
 
   async createTask(taskBoardId: number, dto: CreateTaskDto, actor: RequestUser) {
@@ -581,7 +609,8 @@ export class ConnecteamWriteService {
       recordSource: isNativeConnecteamId(taskId) ? 'native' : 'sync',
     });
     await this.tasks.save(row);
-    return { ok: true, task: row };
+    const [enriched] = await this.display.enrichTasks([row]);
+    return { ok: true, task: enriched };
   }
 
   async patchTask(taskBoardId: number, taskId: string, dto: PatchTaskDto, actor: RequestUser) {
@@ -615,7 +644,8 @@ export class ConnecteamWriteService {
     if (dto.isArchived != null) row.isArchived = dto.isArchived;
     row.lastSyncedAt = new Date();
     await this.tasks.save(row);
-    return { ok: true, task: row };
+    const [enriched] = await this.display.enrichTasks([row]);
+    return { ok: true, task: enriched };
   }
 
   async deleteTask(taskBoardId: number, taskId: string, actor: RequestUser) {
@@ -636,41 +666,105 @@ export class ConnecteamWriteService {
   }
 
   async createConversation(dto: CreateConversationDto, actor: RequestUser) {
-    const conversationId = nativeConnecteamId();
+    const type = dto.type === 'channel' ? 'channel' : 'team';
+    const memberIds = (dto.assignedUserIds ?? []).filter((id) => Number.isInteger(id) && id > 0);
+
+    let conversationId = nativeConnecteamId();
+    let conversationSource = 'app';
+    let recordSource: 'sync' | 'native' = 'native';
+    let connecteamSent = false;
+    let connecteamError: string | null = null;
+
+    // With members + write-through we create a real Connecteam group; otherwise
+    // it's an app-native channel that lives only on our site.
+    if (memberIds.length && this.writeThroughEnabled()) {
+      try {
+        const res = await this.api.createConversation({
+          title: dto.title,
+          type,
+          assignedUserIds: memberIds,
+          adminUserIds: dto.adminUserIds?.filter((id) => Number.isInteger(id) && id > 0),
+        });
+        const realId = res.conversation?.id ? String(res.conversation.id) : '';
+        if (realId) {
+          conversationId = realId;
+          conversationSource = 'chat';
+          recordSource = 'sync';
+          connecteamSent = true;
+        } else {
+          connecteamError = 'Connecteam did not return a conversation id';
+        }
+      } catch (e) {
+        connecteamError = e instanceof Error ? e.message : String(e);
+        this.logger.warn(`Connecteam create conversation write-through failed: ${connecteamError}`);
+      }
+    } else if (memberIds.length && !this.writeThroughEnabled()) {
+      connecteamError =
+        'Members were provided but write-through is off — created an app-only channel. Set CONNECTEAM_WRITE_THROUGH=true + CONNECTEAM_CHAT_PUBLISHER_ID to create a real Connecteam group.';
+    }
+
     const row = this.conversations.create({
       conversationId,
       title: dto.title,
-      type: dto.type ?? 'team',
-      conversationSource: 'app',
+      type,
+      conversationSource,
       lastSyncedAt: new Date(),
-      recordSource: 'native',
+      recordSource,
+      isDeleted: false,
+      messageCount: 0,
     });
     await this.conversations.save(row);
-    return { ok: true, conversation: row, createdByAppUserId: actor.id };
+    const [enriched] = this.display.enrichConversations([row]);
+    return {
+      ok: true,
+      conversation: enriched,
+      createdByAppUserId: actor.id,
+      connecteam: { sent: connecteamSent, error: connecteamError },
+    };
   }
 
-  async listMessages(conversationId: string, page = 1, pageSize = 50) {
-    await this.ensureConversation(conversationId);
-    const take = Math.max(1, Math.min(200, pageSize));
-    const skip = (Math.max(1, page) - 1) * take;
+  /**
+   * Start (or continue) a direct message with a single Connecteam user. Creates
+   * the local `dm-<userId>` thread on first use, then delegates to sendMessage
+   * which forwards to Connecteam's privateMessage endpoint.
+   */
+  async startDm(targetUserId: number, dto: SendMessageDto, actor: RequestUser) {
+    const target = await this.users.findOne({ where: { userId: targetUserId } });
+    if (!target) throw new NotFoundException('Connecteam user not found');
+    if (target.isArchived) throw new BadRequestException('Cannot message an archived user');
 
-    const [rows, total] = await this.messages.findAndCount({
-      where: { conversationId },
-      order: { sentAt: 'DESC' },
-      skip,
-      take,
-    });
-
-    if (this.writeThroughEnabled() && rows.length === 0) {
-      try {
-        const remote = await this.api.listChatMessages(conversationId, take, skip);
-        return { page, pageSize: take, total: remote.messages?.length ?? 0, messages: remote.messages ?? [], source: 'connecteam' };
-      } catch {
-        // fall through to local
-      }
+    const conversationId = dmConversationId(targetUserId);
+    let conv = await this.conversations.findOne({ where: { conversationId } });
+    if (!conv) {
+      conv = this.conversations.create({
+        conversationId,
+        title: this.display.formatUserDisplayName(target),
+        type: 'private',
+        conversationSource: 'chat',
+        lastSyncedAt: new Date(),
+        recordSource: 'native',
+        isDeleted: false,
+        messageCount: 0,
+      });
+      await this.conversations.save(conv);
+    } else if (conv.isDeleted) {
+      conv.isDeleted = false;
+      await this.conversations.save(conv);
     }
 
-    return { page, pageSize: take, total, messages: rows, source: 'local' };
+    const result = await this.sendMessage(conversationId, dto, actor);
+    const [enrichedConv] = this.display.enrichConversations([conv]);
+    return { ...result, conversation: enrichedConv };
+  }
+
+  async listMessages(
+    conversationId: string,
+    page = 1,
+    pageSize = 50,
+    includeDeleted = false,
+  ) {
+    await this.ensureConversation(conversationId);
+    return this.chat.listMessagesForConversation(conversationId, page, pageSize, includeDeleted);
   }
 
   async sendMessage(conversationId: string, dto: SendMessageDto, actor: RequestUser) {
@@ -680,29 +774,53 @@ export class ConnecteamWriteService {
     if (userId != null) await this.requireUserAccess(actor, userId);
 
     let externalMessageId: string | null = null;
+    let connecteamSent = false;
+    let connecteamError: string | null = null;
+
     if (this.writeThroughEnabled() && !isNativeConnecteamId(conversationId)) {
-      try {
-        const res = await this.api.sendChatMessage(conversationId, {
-          userId: userId ?? undefined,
-          text: dto.body,
-        });
-        externalMessageId = String(res.id ?? res.messageId ?? '') || null;
-      } catch (e) {
-        this.logger.warn(`Connecteam send message write-through failed: ${(e as Error).message}`);
+      const publisherId = this.chatPublisherId();
+      if (!publisherId) {
+        connecteamError =
+          'CONNECTEAM_CHAT_PUBLISHER_ID is not set — create a Custom Publisher in Connecteam (Settings → Feed settings) and add its id to .env';
+        this.logger.warn(`Connecteam chat write-through skipped: ${connecteamError}`);
+      } else {
+        try {
+          const dmUserId = dmTargetUserId(conversationId);
+          const res = dmUserId != null
+            ? await this.api.sendPrivateMessage(dmUserId, {
+                senderId: publisherId,
+                text: dto.body.trim(),
+              })
+            : await this.api.sendChatMessage(conversationId, {
+                senderId: publisherId,
+                text: dto.body.trim(),
+              });
+          externalMessageId = String(res.id ?? res.messageId ?? '') || null;
+          connecteamSent = true;
+        } catch (e) {
+          connecteamError = e instanceof Error ? e.message : String(e);
+          this.logger.warn(`Connecteam send message write-through failed: ${connecteamError}`);
+        }
       }
     }
 
-    const row = this.messages.create({
+    const row = await this.chat.saveNativeMessage({
       conversationId,
       userId,
       appUserId: actor.id,
-      body: dto.body.trim(),
-      sentAt: new Date(),
-      recordSource: 'native',
+      body: dto.body,
       externalMessageId,
     });
-    await this.messages.save(row);
-    return { ok: true, message: row };
+    const [enriched] = await this.display.enrichMessages([row]);
+    return {
+      ok: true,
+      message: enriched,
+      connecteam: {
+        sent: connecteamSent,
+        externalMessageId,
+        error: connecteamError,
+      },
+    };
   }
 
   private async ensureTimeClock(timeClockId: number): Promise<void> {

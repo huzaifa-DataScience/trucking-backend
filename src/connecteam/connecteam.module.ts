@@ -20,6 +20,8 @@ import {
   Job,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
+import { ConnecteamChatService } from './connecteam-chat.service';
+import { ConnecteamDisplayService } from './connecteam-display.service';
 import { ConnecteamController } from './connecteam.controller';
 import { ConnecteamReportService } from './connecteam-report.service';
 import { ConnecteamSyncService } from './connecteam-sync.service';
@@ -53,17 +55,21 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
   controllers: [ConnecteamController, ConnecteamWebhookController, ConnecteamWriteController],
   providers: [
     ConnecteamApiClient,
+    ConnecteamDisplayService,
     ConnecteamSyncService,
     ConnecteamReportService,
     ConnecteamWebhookService,
     ConnecteamWriteService,
+    ConnecteamChatService,
   ],
   exports: [
     ConnecteamApiClient,
+    ConnecteamDisplayService,
     ConnecteamSyncService,
     ConnecteamReportService,
     ConnecteamWebhookService,
     ConnecteamWriteService,
+    ConnecteamChatService,
   ],
 })
 export class ConnecteamModule {}

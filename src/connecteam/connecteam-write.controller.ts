@@ -196,16 +196,28 @@ export class ConnecteamWriteController {
     return this.write.createConversation(dto, req.user);
   }
 
+  /** Start or continue a direct message with a single Connecteam user. */
+  @Post('conversations/dm/:userId')
+  startDm(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() dto: SendMessageDto,
+    @Req() req: AuthedRequest,
+  ) {
+    return this.write.startDm(userId, dto, req.user);
+  }
+
   @Get('conversations/:conversationId/messages')
   listMessages(
     @Param('conversationId') conversationId: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('includeDeleted') includeDeleted?: string,
   ) {
     return this.write.listMessages(
       conversationId,
       page ? Number(page) : 1,
       pageSize ? Number(pageSize) : 50,
+      includeDeleted === 'true',
     );
   }
 
