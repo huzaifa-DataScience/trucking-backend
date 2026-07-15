@@ -1,9 +1,10 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   ConnecteamConversation,
+  ConnecteamConversationRead,
   ConnecteamMessage,
   ConnecteamUser,
 } from '../database/entities';
@@ -14,6 +15,9 @@ import type { ConnecteamWebhookPayload } from './connecteam-webhook.service';
 import { unixSecondsToIso } from './connecteam-display.util';
 import { unixSecondsToDate } from './connecteam.util';
 import { dmConversationId } from './connecteam-native-id.util';
+
+/** No cursor yet → treat as never read (all prior non-own messages count). */
+const UNREAD_EPOCH = new Date('1970-01-01T00:00:00.000Z');
 
 type ConnecteamWebhookMessage = {
   id?: string;
@@ -44,8 +48,9 @@ type ConnecteamWebhookConversation = {
 };
 
 @Injectable()
-export class ConnecteamChatService {
+export class ConnecteamChatService implements OnModuleInit {
   private readonly logger = new Logger(ConnecteamChatService.name);
+  private readsTableReady = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -55,9 +60,14 @@ export class ConnecteamChatService {
     private readonly conversations: Repository<ConnecteamConversation>,
     @InjectRepository(ConnecteamMessage) private readonly messages: Repository<ConnecteamMessage>,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
+    @InjectRepository(ConnecteamConversationRead)
+    private readonly reads: Repository<ConnecteamConversationRead>,
     @Optional() private readonly chatGateway?: ConnecteamChatGateway,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    await this.ensureReadsTable();
+  }
   skipSystemMessages(): boolean {
     return this.config.get<string>('CONNECTEAM_CHAT_SKIP_SYSTEM', 'true') !== 'false';
   }
@@ -65,6 +75,225 @@ export class ConnecteamChatService {
   skippedSources(): Set<string> {
     const raw = (this.config.get<string>('CONNECTEAM_CHAT_SKIP_SOURCES') ?? 'helpDesk,connecteamTips').trim();
     return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+  }
+
+  /** Inbox noise: Connecteam auto clock-out DMs titled "Time & Attendance", etc. */
+  skippedTitles(): Set<string> {
+    const raw = (this.config.get<string>('CONNECTEAM_CHAT_SKIP_TITLES') ?? 'Time & Attendance').trim();
+    return new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+  }
+
+  isSkippedConversationTitle(title: string | null | undefined): boolean {
+    const t = (title ?? '').trim().toLowerCase();
+    return Boolean(t) && this.skippedTitles().has(t);
+  }
+
+  /**
+   * Attach unreadCount to enriched conversation rows for the dashboard user.
+   * Own messages (appUserId / linked Connecteam userId) never count.
+   */
+  async withUnreadCounts<T extends { conversationId: string }>(
+    appUserId: number,
+    conversations: T[],
+  ): Promise<Array<T & { unreadCount: number }>> {
+    if (!conversations.length) return [];
+    const counts = await this.unreadCountsByConversation(
+      appUserId,
+      conversations.map((c) => c.conversationId),
+    );
+    return conversations.map((c) => ({
+      ...c,
+      unreadCount: counts.get(c.conversationId) ?? 0,
+    }));
+  }
+
+  async totalUnreadForUser(appUserId: number): Promise<number> {
+    await this.ensureReadsTable();
+    const connecteamUserId = await this.linkedConnecteamUserId(appUserId);
+    const skipTitles = [...this.skippedTitles()];
+    const qb = this.messages
+      .createQueryBuilder('m')
+      .innerJoin(ConnecteamConversation, 'c', 'c.conversationId = m.conversationId')
+      .leftJoin(
+        ConnecteamConversationRead,
+        'r',
+        'r.conversationId = m.conversationId AND r.appUserId = :appUserId',
+        { appUserId },
+      )
+      .where('c.isDeleted = 0')
+      .andWhere('m.isDeleted = 0')
+      .andWhere('m.sentAt > COALESCE(r.lastReadAt, :epoch)', { epoch: UNREAD_EPOCH })
+      .andWhere('(m.appUserId IS NULL OR m.appUserId <> :appUserId)', { appUserId });
+    if (connecteamUserId != null) {
+      qb.andWhere('(m.userId IS NULL OR m.userId <> :ctUserId)', { ctUserId: connecteamUserId });
+    }
+    if (skipTitles.length) {
+      qb.andWhere(
+        `(c.title IS NULL OR LOWER(LTRIM(RTRIM(c.title))) NOT IN (${skipTitles
+          .map((_, i) => `:st${i}`)
+          .join(',')}))`,
+        Object.fromEntries(skipTitles.map((t, i) => [`st${i}`, t])),
+      );
+    }
+    return qb.getCount();
+  }
+
+  async markConversationRead(
+    appUserId: number,
+    conversationId: string,
+    messageId?: string | null,
+  ): Promise<{
+    conversationId: string;
+    lastReadMessageId: string | null;
+    lastReadAt: string;
+    unreadCount: number;
+    totalUnread: number;
+  }> {
+    await this.ensureReadsTable();
+    const conv = await this.conversations.findOne({ where: { conversationId } });
+    if (!conv || conv.isDeleted) throw new NotFoundException('Conversation not found');
+
+    let target: ConnecteamMessage | null = null;
+    if (messageId?.trim()) {
+      target = await this.messages.findOne({
+        where: { conversationId, messageId: messageId.trim() },
+      });
+      if (!target) throw new NotFoundException('Message not found in this conversation');
+    } else {
+      target = await this.messages.findOne({
+        where: { conversationId, isDeleted: false },
+        order: { sentAt: 'DESC', messageId: 'DESC' },
+      });
+    }
+
+    const lastReadAt = target?.sentAt ?? new Date();
+    const lastReadMessageId = target ? String(target.messageId) : null;
+
+    let row = await this.reads.findOne({ where: { appUserId, conversationId } });
+    if (!row) {
+      row = this.reads.create({
+        appUserId,
+        conversationId,
+        lastReadAt,
+        lastReadMessageId,
+        updatedAt: new Date(),
+      });
+      await this.reads.save(row);
+    } else if (row.lastReadAt.getTime() <= lastReadAt.getTime()) {
+      // Only move cursor forward (multi-device: later read wins).
+      row.lastReadAt = lastReadAt;
+      row.lastReadMessageId = lastReadMessageId;
+      row.updatedAt = new Date();
+      await this.reads.save(row);
+    }
+
+    const unreadCount = (await this.unreadCountsByConversation(appUserId, [conversationId])).get(
+      conversationId,
+    ) ?? 0;
+    const totalUnread = await this.totalUnreadForUser(appUserId);
+    this.chatGateway?.emitUnreadUpdated(appUserId, { conversationId, unreadCount, totalUnread });
+    return {
+      conversationId,
+      lastReadMessageId: row.lastReadMessageId,
+      lastReadAt: row.lastReadAt.toISOString(),
+      unreadCount,
+      totalUnread,
+    };
+  }
+
+  /** After a live message, push per-user unread badges to connected sockets (skip sender). */
+  async notifyUnreadAfterMessage(conversationId: string, message: ConnecteamMessage): Promise<void> {
+    if (!this.chatGateway) return;
+    const conv = await this.conversations.findOne({ where: { conversationId } });
+    if (conv && this.isSkippedConversationTitle(conv.title)) return;
+
+    const connected = await this.chatGateway.connectedAppUserIds();
+    if (!connected.length) return;
+
+    const senderAppUserId = message.appUserId != null && message.appUserId > 0 ? message.appUserId : null;
+    let senderCtUserId = message.userId != null && message.userId > 0 ? message.userId : null;
+    // Resolve Connecteam→app link so webhook senders don't get their own badge.
+    const linkedAppByCt =
+      senderCtUserId != null
+        ? await this.users.findOne({ where: { userId: senderCtUserId } })
+        : null;
+    const linkedSenderAppId = linkedAppByCt?.appUserId ?? null;
+
+    for (const appUserId of connected) {
+      if (senderAppUserId != null && appUserId === senderAppUserId) continue;
+      if (linkedSenderAppId != null && appUserId === linkedSenderAppId) continue;
+      const unreadCount =
+        (await this.unreadCountsByConversation(appUserId, [conversationId])).get(conversationId) ??
+        0;
+      const totalUnread = await this.totalUnreadForUser(appUserId);
+      this.chatGateway.emitUnreadUpdated(appUserId, { conversationId, unreadCount, totalUnread });
+    }
+  }
+
+  private async unreadCountsByConversation(
+    appUserId: number,
+    conversationIds: string[],
+  ): Promise<Map<string, number>> {
+    await this.ensureReadsTable();
+    const out = new Map<string, number>();
+    const unique = [...new Set(conversationIds.filter(Boolean))];
+    for (const id of unique) out.set(id, 0);
+    if (!unique.length) return out;
+
+    const connecteamUserId = await this.linkedConnecteamUserId(appUserId);
+    const qb = this.messages
+      .createQueryBuilder('m')
+      .select('m.conversationId', 'conversationId')
+      .addSelect('COUNT(*)', 'cnt')
+      .leftJoin(
+        ConnecteamConversationRead,
+        'r',
+        'r.conversationId = m.conversationId AND r.appUserId = :appUserId',
+        { appUserId },
+      )
+      .where('m.conversationId IN (:...ids)', { ids: unique })
+      .andWhere('m.isDeleted = 0')
+      .andWhere('m.sentAt > COALESCE(r.lastReadAt, :epoch)', { epoch: UNREAD_EPOCH })
+      .andWhere('(m.appUserId IS NULL OR m.appUserId <> :appUserId)', { appUserId });
+    if (connecteamUserId != null) {
+      qb.andWhere('(m.userId IS NULL OR m.userId <> :ctUserId)', { ctUserId: connecteamUserId });
+    }
+    qb.groupBy('m.conversationId');
+
+    const rows = await qb.getRawMany<{ conversationId: string; cnt: string | number }>();
+    for (const row of rows) {
+      out.set(String(row.conversationId), Number(row.cnt) || 0);
+    }
+    return out;
+  }
+
+  private async linkedConnecteamUserId(appUserId: number): Promise<number | null> {
+    const u = await this.users.findOne({ where: { appUserId } });
+    return u?.userId ?? null;
+  }
+
+  private async ensureReadsTable(): Promise<void> {
+    if (this.readsTableReady) return;
+    try {
+      await this.reads.query(`
+        IF OBJECT_ID('dbo.Connecteam_ConversationReads', 'U') IS NULL
+        BEGIN
+          CREATE TABLE dbo.Connecteam_ConversationReads (
+            AppUserId int NOT NULL,
+            ConversationId nvarchar(64) NOT NULL,
+            LastReadMessageId bigint NULL,
+            LastReadAt datetime2 NOT NULL,
+            UpdatedAt datetime2 NOT NULL CONSTRAINT DF_Connecteam_ConversationReads_UpdatedAt DEFAULT SYSUTCDATETIME(),
+            CONSTRAINT PK_Connecteam_ConversationReads PRIMARY KEY (AppUserId, ConversationId)
+          );
+          CREATE INDEX IX_Connecteam_ConversationReads_Conv
+            ON dbo.Connecteam_ConversationReads(ConversationId);
+        END
+      `);
+      this.readsTableReady = true;
+    } catch (e) {
+      this.logger.warn(`Connecteam_ConversationReads ensure failed: ${(e as Error).message}`);
+    }
   }
 
   async processWebhook(payload: ConnecteamWebhookPayload): Promise<{ handled: boolean; detail?: string }> {
@@ -88,6 +317,10 @@ export class ConnecteamChatService {
       if (eventType === 'conversation_deleted') {
         await this.markConversationDeleted(conv.id);
         return { handled: true, detail: 'conversation_deleted' };
+      }
+      if (this.isSkippedConversationTitle(conv.title ?? null)) {
+        await this.markConversationDeleted(String(conv.id));
+        return { handled: true, detail: 'skipped_title' };
       }
       await this.upsertWebhookConversation(conv);
       return { handled: true, detail: eventType };
@@ -231,6 +464,10 @@ export class ConnecteamChatService {
     const conv = await this.conversations.findOne({ where: { conversationId } });
     const [enrichedConv] = conv ? this.display.enrichConversations([conv]) : [null];
     this.chatGateway.emitMessage({ message: enrichedMsg, conversation: enrichedConv });
+    // Fire-and-forget unread badges for other connected users.
+    void this.notifyUnreadAfterMessage(conversationId, message).catch((e) =>
+      this.logger.warn(`Unread notify failed: ${(e as Error).message}`),
+    );
   }
 
   async emitConversationLive(conversationId: string): Promise<void> {
@@ -251,10 +488,27 @@ export class ConnecteamChatService {
     return data?.conversation ?? null;
   }
 
-  private shouldSkipMessage(msg: ConnecteamWebhookMessage): boolean {
+  private async shouldSkipMessage(msg: ConnecteamWebhookMessage): Promise<boolean> {
     if (msg.isSystem && this.skipSystemMessages()) return true;
     const src = (msg.conversationSource ?? '').trim();
     if (src && this.skippedSources().has(src)) return true;
+
+    // Connecteam clock-out bots set isSystem=false + source=app — filter by content / title.
+    const body = (msg.content ?? '').toLowerCase();
+    if (
+      body.includes('shift ended automatically') ||
+      body.includes('turno terminó automáticamente') ||
+      body.includes('turno programado finalizó') ||
+      body.includes('scheduled shift ended automatically')
+    ) {
+      return true;
+    }
+
+    const conversationId = msg.conversationId ? this.conversationKeyFor(msg) : null;
+    if (conversationId) {
+      const conv = await this.conversations.findOne({ where: { conversationId } });
+      if (conv && this.isSkippedConversationTitle(conv.title)) return true;
+    }
     return false;
   }
 
@@ -302,14 +556,16 @@ export class ConnecteamChatService {
   }
 
   private async upsertWebhookMessage(msg: ConnecteamWebhookMessage): Promise<void> {
-    if (this.shouldSkipMessage(msg)) return;
+    if (await this.shouldSkipMessage(msg)) return;
 
     const conversationId = this.conversationKeyFor(msg);
     const externalId = String(msg.id);
-    const body = this.formatMessageBody(msg);
+    const body = this.formatMessageBody(msg) || '(empty)';
     const sentAt = unixSecondsToDate(msg.createdAt) ?? new Date();
     const modifiedAt = unixSecondsToDate(msg.modifiedAt);
     const userId = msg.senderId != null && msg.senderId > 0 ? msg.senderId : null;
+    const messageType = msg.type ?? null;
+    const attachmentsJson = msg.attachments?.length ? JSON.stringify(msg.attachments) : null;
 
     const dmTitle = await this.privateThreadTitle(msg, conversationId);
     await this.ensureConversationStub(
@@ -319,35 +575,41 @@ export class ConnecteamChatService {
       dmTitle,
     );
 
-    let row = await this.messages.findOne({
-      where: { conversationId, externalMessageId: externalId },
-    });
+    // Raw SQL: TypeORM nvarchar(length) binding previously dropped Connecteam composite ids (~73).
+    const existing: Array<{ MessageId: string }> = await this.messages.query(
+      `SELECT MessageId FROM dbo.Connecteam_Messages WHERE ConversationId = @0 AND ExternalMessageId = @1`,
+      [conversationId, externalId],
+    );
 
-    if (!row) {
-      row = this.messages.create({
-        conversationId,
-        externalMessageId: externalId,
-        userId,
-        appUserId: null,
-        body: body || '(empty)',
-        sentAt,
-        recordSource: 'sync',
-        isDeleted: false,
-        messageType: msg.type ?? null,
-        attachmentsJson: msg.attachments?.length ? JSON.stringify(msg.attachments) : null,
-        modifiedAt,
-      });
+    if (existing.length) {
+      await this.messages.query(
+        `UPDATE dbo.Connecteam_Messages
+         SET Body = @0,
+             UserId = COALESCE(@1, UserId),
+             MessageType = COALESCE(@2, MessageType),
+             AttachmentsJson = COALESCE(@3, AttachmentsJson),
+             ModifiedAt = @4,
+             IsDeleted = 0,
+             SentAt = @5
+         WHERE MessageId = @6`,
+        [body, userId, messageType, attachmentsJson, modifiedAt, sentAt, existing[0].MessageId],
+      );
     } else {
-      row.body = body || row.body;
-      row.userId = userId ?? row.userId;
-      row.messageType = msg.type ?? row.messageType;
-      row.attachmentsJson = msg.attachments?.length ? JSON.stringify(msg.attachments) : row.attachmentsJson;
-      row.modifiedAt = modifiedAt ?? row.modifiedAt;
-      row.isDeleted = false;
-      row.sentAt = sentAt;
+      await this.messages.query(
+        `INSERT INTO dbo.Connecteam_Messages
+           (ConversationId, UserId, AppUserId, Body, SentAt, RecordSource, ExternalMessageId, IsDeleted, MessageType, AttachmentsJson, ModifiedAt)
+         VALUES (@0, @1, NULL, @2, @3, 'sync', @4, 0, @5, @6, @7)`,
+        [conversationId, userId, body, sentAt, externalId, messageType, attachmentsJson, modifiedAt],
+      );
     }
 
-    await this.messages.save(row);
+    const row = await this.messages.findOne({
+      where: { conversationId, externalMessageId: externalId },
+    });
+    if (!row) {
+      this.logger.warn(`Webhook message upsert missing after write: ${externalId.slice(0, 48)}`);
+      return;
+    }
     await this.refreshConversationPreview(conversationId, row);
     await this.emitMessageLive(conversationId, row);
   }

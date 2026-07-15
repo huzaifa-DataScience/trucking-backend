@@ -5,11 +5,13 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/guards';
+import type { RequestUser } from '../auth/strategies/jwt.strategy';
 import {
   ConnecteamForm,
   ConnecteamFormSubmission,
@@ -29,6 +31,7 @@ import { ConnecteamDisplayService } from './connecteam-display.service';
 import { ConnecteamReportService } from './connecteam-report.service';
 import { ConnecteamSyncService } from './connecteam-sync.service';
 
+type AuthedRequest = { user: RequestUser };
 @UseGuards(JwtAuthGuard)
 @Controller('connecteam')
 export class ConnecteamController {
@@ -344,15 +347,20 @@ export class ConnecteamController {
   }
 
   @Get('conversations/:conversationId')
-  async getConversation(@Param('conversationId') conversationId: string) {
+  async getConversation(
+    @Param('conversationId') conversationId: string,
+    @Req() req: AuthedRequest,
+  ) {
     const row = await this.conversations.findOne({ where: { conversationId } });
     if (!row || row.isDeleted) return { conversation: null };
     const [enriched] = this.display.enrichConversations([row]);
-    return { conversation: enriched };
+    const [withUnread] = await this.chat.withUnreadCounts(req.user.id, [enriched]);
+    return { conversation: withUnread };
   }
 
   @Get('conversations')
   async listConversations(
+    @Req() req: AuthedRequest,
     @Query('search') search?: string,
     @Query('type') type?: string,
     @Query('page') page?: string,
@@ -364,6 +372,13 @@ export class ConnecteamController {
     const pageSizeNum = Math.max(1, Math.min(200, Math.floor(Number(pageSize) || 50)));
     const qb = this.conversations.createQueryBuilder('c');
     if (includeDeleted !== 'true') qb.andWhere('c.isDeleted = :deleted', { deleted: false });
+    const skipTitles = [...this.chat.skippedTitles()];
+    if (skipTitles.length) {
+      qb.andWhere(
+        `(c.title IS NULL OR LOWER(LTRIM(RTRIM(c.title))) NOT IN (${skipTitles.map((_, i) => `:st${i}`).join(',')}))`,
+        Object.fromEntries(skipTitles.map((t, i) => [`st${i}`, t])),
+      );
+    }
     if (type?.trim()) qb.andWhere('c.type = :type', { type: type.trim() });
     if (q) {
       qb.andWhere(
@@ -374,6 +389,9 @@ export class ConnecteamController {
     qb.orderBy('c.lastMessageAt', 'DESC').addOrderBy('c.title', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, conversations: this.display.enrichConversations(rows) };
+    const enriched = this.display.enrichConversations(rows);
+    const conversations = await this.chat.withUnreadCounts(req.user.id, enriched);
+    const totalUnread = await this.chat.totalUnreadForUser(req.user.id);
+    return { page: pageNum, pageSize: pageSizeNum, total, totalUnread, conversations };
   }
 }

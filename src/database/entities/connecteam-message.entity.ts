@@ -25,7 +25,8 @@ export class ConnecteamMessage {
   @Column({ name: 'RecordSource', type: 'nvarchar', length: 10, default: 'native' })
   recordSource!: 'sync' | 'native';
 
-  @Column({ name: 'ExternalMessageId', type: 'nvarchar', length: 64, nullable: true })
+  // Connecteam team replies use `{conversationId}-{uuid}` (~73 chars). Keep headroom.
+  @Column({ name: 'ExternalMessageId', type: 'nvarchar', length: 200, nullable: true })
   externalMessageId!: string | null;
 
   @Column({ name: 'IsDeleted', type: 'bit', default: false })

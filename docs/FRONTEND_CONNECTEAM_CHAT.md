@@ -144,6 +144,10 @@ socket.on('chat.message_deleted', ({ conversationId, messageId, externalMessageI
 socket.on('chat.conversation_updated', ({ conversation }) => {
   // Upsert inbox row; re-sort by lastMessageAtIso desc
 });
+
+socket.on('chat.unread_updated', ({ conversationId, unreadCount, totalUnread }) => {
+  // Update inbox row badge + global unread badge (server is source of truth)
+});
 ```
 
 **Auth alternatives (any one):** `auth.token`, query `?token=`, or `Authorization: Bearer` handshake header.
@@ -155,6 +159,7 @@ socket.on('chat.conversation_updated', ({ conversation }) => {
 | `chat.message` | `{ message, conversation }` — same enriched shapes as REST list/thread |
 | `chat.message_deleted` | `{ conversationId, messageId, externalMessageId }` |
 | `chat.conversation_updated` | `{ conversation }` — enriched inbox row |
+| `chat.unread_updated` | `{ conversationId, unreadCount, totalUnread }` — per authenticated user only |
 
 **Proxy note:** TLS terminators / nginx must allow WebSocket upgrade to the API host. Same port as HTTP API (no separate WS port).
 
@@ -680,15 +685,53 @@ type ChatState = {
 
 ---
 
-## 13. Roadmap (beyond live push)
+## 13. Unread counts / last-read cursor
 
-| Item | Benefit |
-|------|---------|
-| Attachment upload | Send files from our site |
-| Unread counts / last-read cursor | Inbox badges |
-| Per-conversation WS rooms | Smaller payloads for huge fleets |
+Server is the source of truth (multi-device). Drop client-only localStorage badges in production.
 
-**WebSocket is live.** Use §2.1. Keep a rare poll only if the socket is down.
+### Rules
+
+| Rule | Detail |
+|------|--------|
+| Cursor | Per `(appUserId, conversationId)` → `lastReadMessageId` + `lastReadAt` |
+| Unread | Non-deleted messages with `sentAt > lastReadAt` |
+| Own messages | Excluded when `appUserId` or linked Connecteam `userId` matches the reader |
+| No cursor yet | Treated as never-read (all prior non-own messages count) |
+| Mark read | Only moves cursor **forward** (later read on another device wins) |
+
+### API
+
+```http
+GET /connecteam/conversations
+→ { totalUnread, conversations: [{ …, unreadCount }, …] }
+
+GET /connecteam/conversations/:id
+→ { conversation: { …, unreadCount } }
+
+POST /connecteam/conversations/:id/read
+Body (optional): { "messageId": "195" }   // defaults to latest message
+→ { conversationId, lastReadMessageId, lastReadAt, unreadCount, totalUnread }
+```
+
+Call `POST .../read` when the user opens the thread or scrolls to the bottom. Sending a message also advances the sender’s cursor.
+
+### Socket.IO
+
+| Event | Payload | Who receives |
+|-------|---------|--------------|
+| `chat.unread_updated` | `{ conversationId, unreadCount, totalUnread }` | That user’s personal room only |
+
+On connect, the gateway joins `connecteam-user-<appUserId>` in addition to `workforce-chat`. After each new message, connected peers (not the sender) get `chat.unread_updated`.
+
+```typescript
+socket.on('chat.unread_updated', ({ conversationId, unreadCount, totalUnread }) => {
+  // Update inbox badge + global nav badge
+});
+```
+
+### SQL
+
+Run once (also auto-created on Nest boot): `scripts/sql/add-connecteam-conversation-reads.sql`
 
 ---
 
@@ -696,11 +739,12 @@ type ChatState = {
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| WS | `/connecteam-chat` (Socket.IO) | Live `chat.message` / `chat.conversation_updated` / `chat.message_deleted` |
+| WS | `/connecteam-chat` (Socket.IO) | Live `chat.message` / `chat.conversation_updated` / `chat.message_deleted` / `chat.unread_updated` |
 | GET | `/connecteam/chat/sync-status` | Bidirectional sync readiness |
 | GET | `/connecteam/users/me` | Link status + workforce profile |
-| GET | `/connecteam/conversations` | Inbox |
-| GET | `/connecteam/conversations/:id` | Thread header |
+| GET | `/connecteam/conversations` | Inbox (+ `unreadCount`, `totalUnread`) |
+| GET | `/connecteam/conversations/:id` | Thread header (+ `unreadCount`) |
+| POST | `/connecteam/conversations/:id/read` | Mark thread read (last-read cursor) |
 | GET | `/connecteam/conversations/:id/messages` | Message list |
 | POST | `/connecteam/conversations/:id/messages` | Send text |
 | POST | `/connecteam/conversations` | Create app channel, or real Connecteam group with `assignedUserIds` |
@@ -716,6 +760,7 @@ type ChatState = {
 - Do not skip JWT on the Socket.IO handshake — unauthenticated sockets are disconnected.
 - Do not show raw Connecteam IDs as the main user-visible text.
 - Do not implement “load full history” for pre-webhook era — data does not exist.
+- Do not rely on localStorage alone for unread badges in production — use `unreadCount` / `POST .../read`.
 
 ---
 
@@ -735,3 +780,6 @@ A: Out of scope — product goal is our own UI on `/connecteam/*` APIs.
 
 **Q: Max message length?**  
 A: 10,000 chars our API; if write-through to Connecteam, keep under 1,000 for compatibility.
+
+**Q: How do unread badges stay in sync across devices?**  
+A: `POST .../read` stores the cursor in SQL. Other devices pick it up on next inbox fetch or via `chat.unread_updated`.
