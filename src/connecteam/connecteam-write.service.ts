@@ -46,6 +46,7 @@ import type {
   PatchTaskDto,
   PatchTimeActivityDto,
   PatchTimeOffStatusDto,
+  MarkConversationReadDto,
   SendMessageDto,
   SubmitFormDto,
 } from './dto/connecteam-write.dto';
@@ -814,6 +815,10 @@ export class ConnecteamWriteService {
       body: dto.body,
       externalMessageId,
     });
+    // Sending advances the sender's read cursor (own message must not stay "unread").
+    await this.chat.markConversationRead(actor.id, conversationId, String(row.messageId)).catch((e) => {
+      this.logger.warn(`mark read after send failed: ${(e as Error).message}`);
+    });
     const [enriched] = await this.display.enrichMessages([row]);
     return {
       ok: true,
@@ -824,6 +829,14 @@ export class ConnecteamWriteService {
         error: connecteamError,
       },
     };
+  }
+
+  async markConversationRead(
+    conversationId: string,
+    dto: MarkConversationReadDto,
+    actor: RequestUser,
+  ) {
+    return this.chat.markConversationRead(actor.id, conversationId, dto.messageId);
   }
 
   private async ensureTimeClock(timeClockId: number): Promise<void> {

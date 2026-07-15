@@ -29,6 +29,7 @@ import {
   PatchTaskDto,
   PatchTimeActivityDto,
   PatchTimeOffStatusDto,
+  MarkConversationReadDto,
   SendMessageDto,
   SubmitFormDto,
 } from './dto/connecteam-write.dto';
@@ -219,6 +220,16 @@ export class ConnecteamWriteController {
       pageSize ? Number(pageSize) : 50,
       includeDeleted === 'true',
     );
+  }
+
+  /** Mark thread as read (opens thread / scrolled to bottom). Server cursor is source of truth. */
+  @Post('conversations/:conversationId/read')
+  markRead(
+    @Param('conversationId') conversationId: string,
+    @Body() dto: MarkConversationReadDto = {},
+    @Req() req: AuthedRequest,
+  ) {
+    return this.write.markConversationRead(conversationId, dto ?? {}, req.user);
   }
 
   @Post('conversations/:conversationId/messages')

@@ -70,6 +70,7 @@ import {
   ConnecteamTaskBoard,
   ConnecteamTask,
   ConnecteamConversation,
+  ConnecteamConversationRead,
   ConnecteamWebhookEvent,
   ConnecteamMessage,
 } from './entities';
@@ -178,6 +179,7 @@ import {
             ConnecteamTaskBoard,
             ConnecteamTask,
             ConnecteamConversation,
+            ConnecteamConversationRead,
             ConnecteamWebhookEvent,
             ConnecteamMessage,
           ],
@@ -269,6 +271,7 @@ import {
       ConnecteamTaskBoard,
       ConnecteamTask,
       ConnecteamConversation,
+      ConnecteamConversationRead,
       ConnecteamWebhookEvent,
       ConnecteamMessage,
     ]),

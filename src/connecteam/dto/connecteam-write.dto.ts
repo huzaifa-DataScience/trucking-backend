@@ -129,6 +129,11 @@ export class SendMessageDto {
   @IsOptional() @IsInt() userId?: number;
 }
 
+export class MarkConversationReadDto {
+  /** Optional message id (bigint string) to mark as last-read; defaults to latest message. */
+  @IsOptional() @IsString() messageId?: string;
+}
+
 export class LinkConnecteamUserDto {
   @IsInt() @Min(1) appUserId!: number;
 }

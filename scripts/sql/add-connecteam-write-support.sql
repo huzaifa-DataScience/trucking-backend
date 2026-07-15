@@ -51,7 +51,7 @@ BEGIN
     Body nvarchar(max) NOT NULL,
     SentAt datetime2 NOT NULL CONSTRAINT DF_Connecteam_Messages_SentAt DEFAULT SYSUTCDATETIME(),
     RecordSource nvarchar(10) NOT NULL CONSTRAINT DF_Connecteam_Messages_RecordSource DEFAULT 'native',
-    ExternalMessageId nvarchar(64) NULL
+    ExternalMessageId nvarchar(128) NULL
   );
   CREATE INDEX IX_Connecteam_Messages_Conversation ON dbo.Connecteam_Messages(ConversationId, SentAt DESC);
   CREATE INDEX IX_Connecteam_Messages_UserId ON dbo.Connecteam_Messages(UserId);

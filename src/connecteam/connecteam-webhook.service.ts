@@ -54,7 +54,11 @@ export class ConnecteamWebhookService {
         this.logger.log(`Chat webhook applied: ${chatResult.detail ?? payload.eventType}`);
       }
     } catch (e) {
-      this.logger.warn(`Chat webhook processing failed: ${(e as Error).message}`);
+      // Often "String or binary data would be truncated" when ExternalMessageId is too short.
+      this.logger.error(
+        `Chat webhook processing failed: ${(e as Error).message}`,
+        (e as Error).stack,
+      );
     }
 
     return {
