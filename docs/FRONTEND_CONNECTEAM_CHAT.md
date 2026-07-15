@@ -34,7 +34,7 @@ Our backend stores those events in SQL. Your frontend reads from **our REST API*
 
 **Messages sent from our website** are saved in SQL immediately. If `CONNECTEAM_WRITE_THROUGH=true` on the server, the backend also forwards them to Connecteam so mobile app users see them too.
 
-**Bottom line for frontend:** Live chat on the website = **poll our API** (v1) or **subscribe to our WebSocket** (future). You do not integrate Connecteam webhooks directly.
+**Bottom line for frontend:** Live chat on the website = **Socket.IO** on `/connecteam-chat` (preferred) or **poll our REST API** (fallback). You do not integrate Connecteam webhooks directly.
 
 ---
 
@@ -108,21 +108,57 @@ Also included on `GET /connecteam/status` as `chatSync`.
 
 | Option | How it works | Latency | Status | When to use |
 |--------|----------------|---------|--------|-------------|
-| **A. HTTP polling** | `GET` inbox + thread every N seconds while chat is open | ~5–30s delay | ✅ **Use now** | MVP live chat; simplest |
-| **B. Short polling + optimistic send** | Poll + immediately show own message after `POST` succeeds | Send feels instant; receive still polled | ✅ **Recommended MVP** | Best UX without WebSocket |
-| **C. Our WebSocket / SSE** | Backend pushes `message_created` to browser after webhook or send | Near instant | 🔜 **Not built yet** | Phase 2 — ask backend when ready |
+| **C. Our WebSocket (Socket.IO)** | Backend pushes after webhook or send | Near instant | ✅ **Recommended** | Default for live inbox + thread |
+| **B. Optimistic send + WS** | Show own message after `POST`; rely on WS for inbound | Instant send + receive | ✅ **Best UX** | Production chat |
+| **A. HTTP polling** | `GET` inbox + thread every N seconds | ~5–30s delay | Fallback | If WS blocked by proxy |
 | **D. Connecteam WebSocket** | Direct browser ↔ Connecteam | — | ❌ **Does not exist** | Do not plan for this |
 | **E. Connecteam webhook in browser** | Frontend receives Connecteam POST | — | ❌ **Wrong layer** | Webhooks are server-to-server only |
 
-### Recommended approach (v1)
+### Recommended approach (v1 — WebSocket)
 
-1. On chat screen mount: load conversation list + open thread.
-2. Start interval: **poll every 10–15s** while tab/screen is visible.
-3. On send: `POST` message → append to UI from response (optimistic or server-confirmed).
-4. On poll: merge new messages by `messageId` / `externalMessageId`; update inbox previews.
-5. Pause polling when chat screen unmounts or tab is hidden (`document.visibilityState`).
+1. On chat screen mount: load conversation list + open thread via REST.
+2. Connect Socket.IO to namespace `/connecteam-chat` with JWT (see §2.1).
+3. On `chat.message` / `chat.conversation_updated`: merge inbox (sort by `lastMessageAtIso` desc) and append/update thread.
+4. On send: `POST` message → append from response (optimistic or server-confirmed); WS will also fire for other tabs/users.
+5. On disconnect: optional light poll (30s) as fallback until reconnect.
 
-### Polling pattern (pseudo-code)
+### 2.1 Socket.IO client (official)
+
+```typescript
+import { io, Socket } from 'socket.io-client';
+
+const socket: Socket = io(`${API_ORIGIN}/connecteam-chat`, {
+  auth: { token: accessToken }, // same JWT as REST Bearer
+  transports: ['websocket', 'polling'],
+});
+
+socket.on('chat.message', ({ message, conversation }) => {
+  // Upsert conversation at top of inbox (by lastMessageAtIso)
+  // If open thread matches conversation.conversationId, append/dedup message
+});
+
+socket.on('chat.message_deleted', ({ conversationId, messageId, externalMessageId }) => {
+  // Soft-remove from open thread; refresh preview from next conversation_updated if any
+});
+
+socket.on('chat.conversation_updated', ({ conversation }) => {
+  // Upsert inbox row; re-sort by lastMessageAtIso desc
+});
+```
+
+**Auth alternatives (any one):** `auth.token`, query `?token=`, or `Authorization: Bearer` handshake header.
+
+**Events (server → client):**
+
+| Event | Payload |
+|-------|---------|
+| `chat.message` | `{ message, conversation }` — same enriched shapes as REST list/thread |
+| `chat.message_deleted` | `{ conversationId, messageId, externalMessageId }` |
+| `chat.conversation_updated` | `{ conversation }` — enriched inbox row |
+
+**Proxy note:** TLS terminators / nginx must allow WebSocket upgrade to the API host. Same port as HTTP API (no separate WS port).
+
+### Polling fallback (pseudo-code)
 
 ```typescript
 // Inbox
@@ -596,7 +632,7 @@ Use `user.initials` for avatars when no `profilePictureUrl`.
 
 | Scenario | What user sees |
 |----------|----------------|
-| Someone chats in **Connecteam mobile app** | Appears on our site after webhook (~seconds) + next poll |
+| Someone chats in **Connecteam mobile app** | Appears on our site via webhook → Socket.IO `chat.message` (~1–2s) |
 | Someone chats on **our website** | Immediate in our UI; Connecteam app users see it if write-through on |
 | **Before webhook was enabled** | Old messages **never** appear — only new traffic |
 | **helpDesk / system tips** | Filtered out server-side — will not appear |
@@ -644,23 +680,15 @@ type ChatState = {
 
 ---
 
-## 13. Phase 2 (coordinate with backend)
+## 13. Roadmap (beyond live push)
 
 | Item | Benefit |
 |------|---------|
-| WebSocket gateway (`message_created`, `conversation_updated`) | Replace polling; instant receive |
 | Attachment upload | Send files from our site |
 | Unread counts / last-read cursor | Inbox badges |
+| Per-conversation WS rooms | Smaller payloads for huge fleets |
 
-When WebSocket ships, expected client flow:
-
-```typescript
-// Future — not available yet
-socket.on('chat:message', (msg) => appendIfNew(msg));
-socket.emit('chat:join', { conversationId });
-```
-
-Until then, **polling is the official v1 approach**.
+**WebSocket is live.** Use §2.1. Keep a rare poll only if the socket is down.
 
 ---
 
@@ -668,6 +696,7 @@ Until then, **polling is the official v1 approach**.
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| WS | `/connecteam-chat` (Socket.IO) | Live `chat.message` / `chat.conversation_updated` / `chat.message_deleted` |
 | GET | `/connecteam/chat/sync-status` | Bidirectional sync readiness |
 | GET | `/connecteam/users/me` | Link status + workforce profile |
 | GET | `/connecteam/conversations` | Inbox |
@@ -684,7 +713,7 @@ Until then, **polling is the official v1 approach**.
 
 - Do not call `api.connecteam.com` or store `CONNECTEAM_API_KEY` in the browser.
 - Do not register Connecteam webhooks from the frontend.
-- Do not assume WebSocket exists — use polling until backend announces otherwise.
+- Do not skip JWT on the Socket.IO handshake — unauthenticated sockets are disconnected.
 - Do not show raw Connecteam IDs as the main user-visible text.
 - Do not implement “load full history” for pre-webhook era — data does not exist.
 
@@ -693,7 +722,7 @@ Until then, **polling is the official v1 approach**.
 ## 16. FAQ
 
 **Q: Is this “live” chat?**  
-A: Yes, with polling (10–15s). Connecteam → our server is push (webhook). Our server → browser is poll today, WebSocket later.
+A: Yes. Connecteam → our server is webhook push. Our server → browser is **Socket.IO** (`/connecteam-chat`). Poll only as fallback.
 
 **Q: Why are some DMs missing from the inbox?**  
 A: Connecteam does not list private conversations in their GET API. They appear when the first webhook event arrives.

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,6 +8,7 @@ import {
   ConnecteamUser,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
+import { ConnecteamChatGateway } from './connecteam-chat.gateway';
 import { ConnecteamDisplayService } from './connecteam-display.service';
 import type { ConnecteamWebhookPayload } from './connecteam-webhook.service';
 import { unixSecondsToIso } from './connecteam-display.util';
@@ -54,6 +55,7 @@ export class ConnecteamChatService {
     private readonly conversations: Repository<ConnecteamConversation>,
     @InjectRepository(ConnecteamMessage) private readonly messages: Repository<ConnecteamMessage>,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
+    @Optional() private readonly chatGateway?: ConnecteamChatGateway,
   ) {}
 
   skipSystemMessages(): boolean {
@@ -218,7 +220,25 @@ export class ConnecteamChatService {
     });
     await this.messages.save(row);
     await this.refreshConversationPreview(input.conversationId, row);
+    await this.emitMessageLive(input.conversationId, row);
     return row;
+  }
+
+  /** Push enriched message + conversation to connected Socket.IO clients. */
+  async emitMessageLive(conversationId: string, message: ConnecteamMessage): Promise<void> {
+    if (!this.chatGateway) return;
+    const [enrichedMsg] = await this.display.enrichMessages([message]);
+    const conv = await this.conversations.findOne({ where: { conversationId } });
+    const [enrichedConv] = conv ? this.display.enrichConversations([conv]) : [null];
+    this.chatGateway.emitMessage({ message: enrichedMsg, conversation: enrichedConv });
+  }
+
+  async emitConversationLive(conversationId: string): Promise<void> {
+    if (!this.chatGateway) return;
+    const conv = await this.conversations.findOne({ where: { conversationId } });
+    if (!conv) return;
+    const [enriched] = this.display.enrichConversations([conv]);
+    this.chatGateway.emitConversationUpdated({ conversation: enriched });
   }
 
   private extractMessage(payload: ConnecteamWebhookPayload): ConnecteamWebhookMessage | null {
@@ -329,6 +349,7 @@ export class ConnecteamChatService {
 
     await this.messages.save(row);
     await this.refreshConversationPreview(conversationId, row);
+    await this.emitMessageLive(conversationId, row);
   }
 
   private async markMessageDeleted(msg: ConnecteamWebhookMessage): Promise<void> {
@@ -340,6 +361,12 @@ export class ConnecteamChatService {
     row.modifiedAt = unixSecondsToDate(msg.deletedAt) ?? new Date();
     await this.messages.save(row);
     await this.recomputeConversationPreview(conversationId);
+    this.chatGateway?.emitMessageDeleted({
+      conversationId,
+      messageId: row.messageId,
+      externalMessageId: row.externalMessageId,
+    });
+    await this.emitConversationLive(conversationId);
   }
 
   private async upsertWebhookConversation(conv: ConnecteamWebhookConversation): Promise<void> {
@@ -368,6 +395,7 @@ export class ConnecteamChatService {
       row.lastSyncedAt = new Date();
     }
     await this.conversations.save(row);
+    await this.emitConversationLive(id);
   }
 
   private async markConversationDeleted(conversationId: string): Promise<void> {
@@ -376,6 +404,7 @@ export class ConnecteamChatService {
     row.isDeleted = true;
     row.lastSyncedAt = new Date();
     await this.conversations.save(row);
+    await this.emitConversationLive(conversationId);
   }
 
   private async ensureConversationStub(

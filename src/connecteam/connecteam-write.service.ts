@@ -715,6 +715,7 @@ export class ConnecteamWriteService {
     });
     await this.conversations.save(row);
     const [enriched] = this.display.enrichConversations([row]);
+    await this.chat.emitConversationLive(conversationId);
     return {
       ok: true,
       conversation: enriched,
@@ -753,7 +754,9 @@ export class ConnecteamWriteService {
     }
 
     const result = await this.sendMessage(conversationId, dto, actor);
-    const [enrichedConv] = this.display.enrichConversations([conv]);
+    // Reload so lastMessageAt / preview match what sendMessage wrote.
+    const fresh = await this.conversations.findOne({ where: { conversationId } });
+    const [enrichedConv] = this.display.enrichConversations([fresh ?? conv]);
     return { ...result, conversation: enrichedConv };
   }
 
