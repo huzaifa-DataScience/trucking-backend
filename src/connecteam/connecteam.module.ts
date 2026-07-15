@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ConnecteamAccount,
@@ -20,6 +22,7 @@ import {
   Job,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
+import { ConnecteamChatGateway } from './connecteam-chat.gateway';
 import { ConnecteamChatService } from './connecteam-chat.service';
 import { ConnecteamDisplayService } from './connecteam-display.service';
 import { ConnecteamController } from './connecteam.controller';
@@ -32,6 +35,16 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
 
 @Module({
   imports: [
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET', 'change-me-in-production'),
+        signOptions: {
+          expiresIn: config.get<string>('JWT_EXPIRES_IN', '7d'),
+        },
+      }),
+      inject: [ConfigService],
+    }),
     TypeOrmModule.forFeature([
       ConnecteamSyncState,
       ConnecteamAccount,
@@ -61,6 +74,7 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
     ConnecteamWebhookService,
     ConnecteamWriteService,
     ConnecteamChatService,
+    ConnecteamChatGateway,
   ],
   exports: [
     ConnecteamApiClient,
@@ -70,6 +84,7 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
     ConnecteamWebhookService,
     ConnecteamWriteService,
     ConnecteamChatService,
+    ConnecteamChatGateway,
   ],
 })
 export class ConnecteamModule {}
