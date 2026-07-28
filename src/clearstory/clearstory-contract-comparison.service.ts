@@ -151,7 +151,63 @@ export class ClearstoryContractComparisonService {
     }
 
     if (!matches.length) return null;
-    return matches.find((p) => isClearstoryProjectActive(p.archived)) ?? matches[0];
+    const active = matches.filter((p) => isClearstoryProjectActive(p.archived));
+    const pool = active.length ? active : matches;
+    if (pool.length === 1) return pool[0];
+    return this.selectBestDuplicateProject(pool, job);
+  }
+
+  /**
+   * Same JobNumber can map to multiple Clearstory projects (legacy clone vs live,
+   * or separate "issues"). Prefer the one that reconciles with Siteline:
+   * name overlap → closest approved-CO-issued contract value → most CORs → latest sync.
+   */
+  private async selectBestDuplicateProject(
+    pool: ClearstoryProject[],
+    job: string,
+  ): Promise<ClearstoryProject> {
+    const sitelineMatches = await this.sitelineContracts.find({
+      where: [{ internalProjectNumber: job }, { projectNumber: job }],
+    });
+    const activeSiteline = sitelineMatches.filter((c) => isSitelineContractActive(c.status));
+    const sitelineTotal = activeSiteline.reduce((sum, c) => {
+      const d = sitelineLatestTotalValueToDollars(c.latestTotalValue);
+      return sum + (d ?? 0);
+    }, 0);
+    const sitelineNames = activeSiteline
+      .map((c) => (c.projectName ?? '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const scored = await Promise.all(
+      pool.map(async (p) => {
+        const cors = await this.cors.find({ where: { projectId: p.id } });
+        const value = this.buildWebsiteSummary(p, cors).approvedCoIssuedContractValue;
+        const valueDelta =
+          sitelineTotal > 0 ? Math.abs(value - sitelineTotal) : Number.POSITIVE_INFINITY;
+        const name = (p.name ?? '').trim().toLowerCase();
+        let nameScore = 0;
+        for (const sn of sitelineNames) {
+          if (!name) break;
+          if (name === sn) nameScore = Math.max(nameScore, 100);
+          else if (name.includes(sn) || sn.includes(name)) nameScore = Math.max(nameScore, 60);
+        }
+        return {
+          p,
+          corCount: cors.length,
+          lastSyncedAt: p.lastSyncedAt?.getTime() ?? 0,
+          valueDelta,
+          nameScore,
+        };
+      }),
+    );
+
+    scored.sort((a, b) => {
+      if (b.nameScore !== a.nameScore) return b.nameScore - a.nameScore;
+      if (sitelineTotal > 0 && a.valueDelta !== b.valueDelta) return a.valueDelta - b.valueDelta;
+      if (b.corCount !== a.corCount) return b.corCount - a.corCount;
+      return b.lastSyncedAt - a.lastSyncedAt;
+    });
+    return scored[0].p;
   }
 
   /** Siteline bill for PM reports when Clearstory row is missing or comparison has no Siteline match. */

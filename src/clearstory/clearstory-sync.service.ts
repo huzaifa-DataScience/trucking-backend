@@ -772,6 +772,44 @@ export class ClearstorySyncService implements OnModuleInit {
     }
   }
 
+  /**
+   * Fast path for PM weekly report: projects + CORs + contracts + COR snapshots.
+   * Skips tags/users/labels/etc so a mid-sync SQL blip doesn't leave report data stale for hours.
+   */
+  async syncPmReportSourcesNow(): Promise<Record<string, number>> {
+    if (this.syncInFlight) {
+      this.logger.warn('Clearstory syncPmReportSourcesNow skipped: a sync is already running.');
+      return {};
+    }
+    this.syncInFlight = true;
+    const started = Date.now();
+    const counts: Record<string, number> = {};
+    try {
+      this.logger.log('Clearstory PM-report sync: ensuring tables…');
+      await this.ensureTables();
+      this.allowedOfficeIds = await this.officeScope.resolveAllowedOfficeIds();
+      this.scopedProjectIds = null;
+
+      counts.projects = await this.runSyncPhase('projects', () => this.syncProjects());
+      await this.refreshScopedProjectIds();
+      counts.cors = await this.runSyncPhase('cors', () => this.syncCorsAll(), { swallowErrors: true });
+      counts.contracts = await this.runSyncPhase('contracts', () => this.syncContracts());
+      counts.snapshots = await this.runSyncPhase('corSnapshots', () => this.syncCorAggregateSnapshots());
+
+      await this.setState('lastPmReportSourcesSyncAt', new Date().toISOString());
+      this.logger.log(
+        `Clearstory PM-report sync finished in ${Date.now() - started}ms: ${JSON.stringify(counts)}`,
+      );
+      return counts;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Clearstory PM-report sync failed after ${Date.now() - started}ms: ${msg}`);
+      throw err;
+    } finally {
+      this.syncInFlight = false;
+    }
+  }
+
   async syncNow(): Promise<void> {
     if (this.syncInFlight) {
       this.logger.warn('Clearstory syncNow skipped: a sync is already running.');
