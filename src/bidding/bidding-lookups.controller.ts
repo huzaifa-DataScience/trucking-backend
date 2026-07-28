@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,6 +23,7 @@ import {
 } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards';
 import { BiddingLookupsService } from './bidding-lookups.service';
+import { SpecsService } from './specs/specs.service';
 
 class CreateTeamDto {
   @IsString() @MinLength(1) @MaxLength(100) teamName!: string;
@@ -41,6 +43,10 @@ class UpdateWageRateDto {
   @IsOptional() @IsNumber() @Min(0) fringe?: number;
   @IsOptional() @IsString() @MaxLength(200) displayLabel?: string;
   @IsOptional() @IsISO8601() wageAsOf?: string;
+}
+
+class PatchItemCatalogPriceDto {
+  @IsNumber() @Min(0) price!: number;
 }
 
 const BURDEN_TYPES = ['pct_wage', 'capped_annual', 'per_hour'] as const;
@@ -69,7 +75,10 @@ class UpdatePayrollBurdenDto {
 @Controller('lookups/bidding')
 @UseGuards(JwtAuthGuard)
 export class BiddingLookupsController {
-  constructor(private readonly lookups: BiddingLookupsService) {}
+  constructor(
+    private readonly lookups: BiddingLookupsService,
+    private readonly specs: SpecsService,
+  ) {}
 
   @Get('teams')
   getTeams() {
@@ -150,5 +159,54 @@ export class BiddingLookupsController {
   @Get('preferences')
   getPreferences() {
     return this.lookups.getPreferences();
+  }
+
+  /** Specs Plumb masters (EstimationFile List + helpermap). */
+  @Get('spec-systems')
+  getSpecSystems() {
+    return this.specs.getSpecSystems();
+  }
+
+  @Get('spec-materials')
+  getSpecMaterials() {
+    return this.specs.getSpecMaterials();
+  }
+
+  @Get('spec-areas')
+  getSpecAreas() {
+    return this.specs.getSpecAreas();
+  }
+
+  @Get('spec-facings')
+  getSpecFacings() {
+    return this.specs.getSpecFacings();
+  }
+
+  @Get('helper-map')
+  getHelperMap() {
+    return this.specs.getHelperMap();
+  }
+
+  @Get('item-catalog')
+  listItemCatalog(
+    @Query('search') search?: string,
+    @Query('size1') size1?: string,
+    @Query('size2') size2?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.specs.listCatalog({
+      search,
+      size1: size1 != null && size1 !== '' ? Number(size1) : undefined,
+      size2: size2 != null && size2 !== '' ? Number(size2) : undefined,
+      limit: limit != null ? Number(limit) : undefined,
+    });
+  }
+
+  @Patch('item-catalog/:id')
+  patchItemCatalogPrice(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PatchItemCatalogPriceDto,
+  ) {
+    return this.specs.patchCatalogPrice(id, dto.price);
   }
 }

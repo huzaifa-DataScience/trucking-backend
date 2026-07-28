@@ -5,13 +5,7 @@ dist
 config.bat
 
 # Secrets — never commit real env files (only *example templates are allowed below)
-.env
-.env.*
-.env.local
 .env.*.local
-.env.production
-.env.development
-.env.test
 !.env.example
 !.env.production.example
 
@@ -26,3 +20,12 @@ uploads/
 # Playwright persistent profiles (Trimble / StructShare login cookies).
 # These contain session tokens — never commit.
 .playwright-profile-*
+
+# Local data dumps / samples (Mike CSV, estimation xlsx, generated reports).
+*.csv
+*.CSV
+*.xlsx
+~$*
+
+# One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
+/*.sql
