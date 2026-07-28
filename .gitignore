@@ -26,3 +26,12 @@ uploads/
 # Playwright persistent profiles (Trimble / StructShare login cookies).
 # These contain session tokens — never commit.
 .playwright-profile-*
+
+# Local data dumps / samples (Mike CSV, estimation xlsx, generated reports).
+*.csv
+*.CSV
+*.xlsx
+~$*
+
+# One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
+/*.sql

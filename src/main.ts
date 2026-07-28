@@ -5,6 +5,7 @@ import { json, urlencoded } from 'express';
 import { join } from 'path';
 import * as swaggerUi from 'swagger-ui-express';
 import { AppModule } from './app.module';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import 'dotenv/config';
 
 // Keep the process (and DB connection) alive when unhandled rejections occur.
@@ -21,6 +22,7 @@ process.on('uncaughtException', (err) => {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  app.useGlobalFilters(new ApiExceptionFilter());
   // Default Express JSON limit is 100kb; bidding bids carry a client `computed`
   // snapshot (capped at 256kb in the service), so raise the parser limit.
   app.use(json({ limit: '1mb' }));

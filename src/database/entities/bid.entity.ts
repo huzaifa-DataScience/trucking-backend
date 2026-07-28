@@ -36,6 +36,10 @@ export class Bid {
   @JoinColumn({ name: 'JobId' })
   job!: Job | null;
 
+  /** StructShare / Trimble project for Specs Qty Received (Trimble_ProjectLineItems). */
+  @Column({ name: 'TrimbleProjectId', type: 'bigint', nullable: true })
+  trimbleProjectId!: number | null;
+
   @Column({ name: 'EstimateNumber', type: 'nvarchar', length: 64 })
   estimateNumber!: string;
 

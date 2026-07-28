@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -7,6 +8,7 @@ import {
   ConnecteamConversationRead,
   ConnecteamMessage,
   ConnecteamUser,
+  ConnecteamWebhookEvent,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
 import { ConnecteamChatGateway } from './connecteam-chat.gateway';
@@ -51,6 +53,7 @@ type ConnecteamWebhookConversation = {
 export class ConnecteamChatService implements OnModuleInit {
   private readonly logger = new Logger(ConnecteamChatService.name);
   private readsTableReady = false;
+  private replayRunning = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -62,11 +65,63 @@ export class ConnecteamChatService implements OnModuleInit {
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
     @InjectRepository(ConnecteamConversationRead)
     private readonly reads: Repository<ConnecteamConversationRead>,
+    @InjectRepository(ConnecteamWebhookEvent)
+    private readonly webhookEvents: Repository<ConnecteamWebhookEvent>,
     @Optional() private readonly chatGateway?: ConnecteamChatGateway,
   ) {}
 
   async onModuleInit(): Promise<void> {
     await this.ensureReadsTable();
+    // Heal messages dropped by older servers / TypeORM length bugs.
+    void this.replayMissedChatMessages().catch((e) =>
+      this.logger.warn(`Startup chat replay failed: ${(e as Error).message}`),
+    );
+  }
+
+  /**
+   * ponytail: if another host stored the webhook but failed to upsert the message
+   * (e.g. ExternalMessageId nvarchar(64)), re-apply from Connecteam_WebhookEvents.
+   * Ceiling: last 150 message_created events every 2 minutes.
+   */
+  @Cron('*/2 * * * *', { name: 'connecteam-chat-replay' })
+  async replayMissedChatMessages(): Promise<{ scanned: number; replayed: number }> {
+    if (this.replayRunning) return { scanned: 0, replayed: 0 };
+    this.replayRunning = true;
+    let scanned = 0;
+    let replayed = 0;
+    try {
+      const rows = await this.webhookEvents.find({
+        where: { eventType: 'message_created' },
+        order: { receivedAt: 'DESC' },
+        take: 150,
+      });
+      for (const row of rows) {
+        if (!row.payloadJson) continue;
+        let payload: ConnecteamWebhookPayload;
+        try {
+          payload = JSON.parse(row.payloadJson) as ConnecteamWebhookPayload;
+        } catch {
+          continue;
+        }
+        const msg = (payload.data as { message?: { id?: string } } | undefined)?.message;
+        if (!msg?.id) continue;
+        scanned++;
+        const externalId = String(msg.id);
+        const existing: Array<{ x: number }> = await this.messages.query(
+          `SELECT 1 AS x FROM dbo.Connecteam_Messages WHERE ExternalMessageId = @0`,
+          [externalId],
+        );
+        if (existing.length) continue;
+        const result = await this.processWebhook(payload);
+        if (result.handled) replayed++;
+      }
+      if (replayed > 0) {
+        this.logger.log(`Connecteam chat replay: restored ${replayed}/${scanned} missed messages`);
+      }
+      return { scanned, replayed };
+    } finally {
+      this.replayRunning = false;
+    }
   }
   skipSystemMessages(): boolean {
     return this.config.get<string>('CONNECTEAM_CHAT_SKIP_SYSTEM', 'true') !== 'false';
