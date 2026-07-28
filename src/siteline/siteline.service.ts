@@ -42,6 +42,8 @@ export class SitelineService implements OnModuleInit {
   private readonly apiUrl: string;
   private readonly apiToken: string;
   private readonly agingApiUrlSecondary: string;
+  /** Siteline reporting GraphQL (`paginatedAgingDashboard`). Defaults to reporting.siteline.com. */
+  private readonly agingReportingApiUrl: string;
   private readonly agingApiTokenSecondary: string;
   private readonly agingRefreshTokenSecondary: string;
   private readonly agingIdentityApiKeySecondary: string;
@@ -69,6 +71,12 @@ export class SitelineService implements OnModuleInit {
         ? agingBase
         : `${agingBase}${GRAPHQL_PATH}`
       : '';
+    const reportingBase = (
+      this.config.get<string>('SITELINE_REPORTING_API_URL', '') || 'https://reporting.siteline.com'
+    ).replace(/\/$/, '');
+    this.agingReportingApiUrl = reportingBase.endsWith(GRAPHQL_PATH)
+      ? reportingBase
+      : `${reportingBase}${GRAPHQL_PATH}`;
     this.agingApiTokenSecondary = normalizeSitelineApiToken(
       this.config.get<string>('SITELINE_API_TOKEN_SECONDARY', '') ?? '',
     );
@@ -113,7 +121,7 @@ export class SitelineService implements OnModuleInit {
       !this.isAgingDashboardConfigured()
     ) {
       this.logger.warn(
-        'Siteline aging sync will fail until SITELINE_API_URL_SECONDARY and Firebase auth are set (agingDashboard is not on api-external).',
+        'Siteline aging sync will fail until SITELINE_API_URL_SECONDARY and Firebase auth are set (paginatedAgingDashboard is on reporting.siteline.com, not api-external).',
       );
     }
   }
@@ -192,11 +200,11 @@ export class SitelineService implements OnModuleInit {
   }
 
   /**
-   * `agingDashboard` exists only on the Siteline web app API (`api.siteline.com`), not on
-   * `api-external`. Requires secondary URL plus Firebase login or a static id token.
+   * Aging lives on Siteline's reporting GraphQL (`reporting.siteline.com`), not api-external.
+   * Auth is the same Firebase session used for `SITELINE_API_URL_SECONDARY`.
    */
   isAgingDashboardConfigured(): boolean {
-    if (!this.agingApiUrlSecondary) return false;
+    if (!this.agingApiUrlSecondary || !this.agingReportingApiUrl) return false;
     return Boolean(
       this.agingApiTokenSecondary ||
         (this.agingIdentityApiKeySecondary &&
@@ -292,27 +300,32 @@ export class SitelineService implements OnModuleInit {
   }
 
   private async agingGraphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    if (!this.agingApiUrlSecondary) {
+    return this.agingGraphqlAt(this.agingApiUrlSecondary || this.apiUrl, query, variables);
+  }
+
+  /** Same Firebase auth as secondary web API, but against reporting.siteline.com. */
+  private async reportingGraphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+    return this.agingGraphqlAt(this.agingReportingApiUrl, query, variables);
+  }
+
+  private async agingGraphqlAt<T>(
+    url: string,
+    query: string,
+    variables?: Record<string, unknown>,
+  ): Promise<T> {
+    if (!url) {
       return this.graphql<T>(query, variables);
     }
 
     let token = await this.getAgingSecondaryAccessToken(false);
     try {
-      return await this.graphqlWithTarget(
-        { url: this.agingApiUrlSecondary, token, authHeader: 'Authorization' },
-        query,
-        variables,
-      );
+      return await this.graphqlWithTarget({ url, token, authHeader: 'Authorization' }, query, variables);
     } catch (e: any) {
       if (!this.shouldRetryAgingSecondaryAuth(e?.message ?? String(e))) {
         throw e;
       }
       token = await this.getAgingSecondaryAccessToken(true);
-      return this.graphqlWithTarget(
-        { url: this.agingApiUrlSecondary, token, authHeader: 'Authorization' },
-        query,
-        variables,
-      );
+      return this.graphqlWithTarget({ url, token, authHeader: 'Authorization' }, query, variables);
     }
   }
 
@@ -1089,13 +1102,14 @@ export class SitelineService implements OnModuleInit {
   }
 
   /**
-   * Wraps Siteline's agingDashboard(input: DashboardInput!) query.
-   * Can use a dedicated secondary URL/token flow for aging only.
+   * Siteline moved aging off `api.siteline.com` onto reporting GraphQL:
+   * `paginatedAgingDashboard(input: PaginatedAgingDashboardInput!)`.
+   * Returns the legacy shape `{ payAppAgingSummary, contracts }` for sync persist.
    */
   async getAgingDashboard(
     input: {
       companyId?: string | null;
-      startDate: string; // YYYY-MM-DD
+      startDate: string; // YYYY-MM-DD (kept for callers; reporting API keys off endDate)
       endDate: string; // YYYY-MM-DD
       search?: string;
       overdueOnly?: boolean;
@@ -1106,28 +1120,26 @@ export class SitelineService implements OnModuleInit {
       return {
         configured: false,
         message:
-          'Siteline agingDashboard requires SITELINE_API_URL_SECONDARY (https://api.siteline.com) and Firebase auth (SITELINE_IDENTITY_API_KEY_SECONDARY + SITELINE_AUTH_EMAIL_SECONDARY / SITELINE_AUTH_PASSWORD_SECONDARY, or refresh token). Entity siteline_* tokens only work on api-external (contracts), not aging.',
+          'Siteline aging requires SITELINE_API_URL_SECONDARY + Firebase auth, and reporting GraphQL (SITELINE_REPORTING_API_URL, default https://reporting.siteline.com). Entity siteline_* tokens only work on api-external (contracts), not aging.',
       };
     }
 
-    const gqlInput: Record<string, unknown> = {
-      companyId: input.companyId ?? null,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      filters: {
-        overdueOnly: input.overdueOnly ?? false,
-        search: input.search ?? '',
-      },
-    };
+    const pageLimit = Math.min(
+      200,
+      Math.max(1, Number(this.config.get<string>('SITELINE_AGING_PAGE_SIZE', '50')) || 50),
+    );
+    const maxPages = Math.min(
+      100,
+      Math.max(1, Number(this.config.get<string>('SITELINE_AGING_MAX_PAGES', '40')) || 40),
+    );
 
-    try {
-      const data = await this.agingGraphql<{ agingDashboard: unknown }>(
-        `
-        query agingDashboard($input: DashboardInput!) {
-          agingDashboard(input: $input) {
-            __typename
+    const query = `
+        query paginatedAgingDashboard($input: PaginatedAgingDashboardInput!) {
+          paginatedAgingDashboard(input: $input) {
+            cursor
+            hasNext
+            totalCount
             payAppAgingSummary {
-              __typename
               amountOutstandingThisMonth
               amountOutstandingMonthOverMonthPercent
               amountAged30Days
@@ -1141,7 +1153,6 @@ export class SitelineService implements OnModuleInit {
               averageDaysToPaid
               averageDaysToPaidMonthOverMonthPercent
               payAppAgingBreakdown {
-                __typename
                 numCurrent
                 numAged30Days
                 numAged60Days
@@ -1158,39 +1169,9 @@ export class SitelineService implements OnModuleInit {
               }
             }
             contracts {
-              __typename
-              contract {
-                __typename
-                id
-                billingType
-                internalProjectNumber
-                paymentTermsType
-                paymentTerms
-                project {
-                  __typename
-                  id
-                  name
-                  projectNumber
-                  gcName
-                  gc {
-                    __typename
-                    id
-                    name
-                  }
-                }
-                company {
-                  __typename
-                  id
-                }
-                leadPMs {
-                  __typename
-                  id
-                  firstName
-                  lastName
-                }
-              }
+              billingStatus
+              hasMissingPreSitelinePayApps
               agingBreakdown {
-                __typename
                 numCurrent
                 numAged30Days
                 numAged60Days
@@ -1205,15 +1186,77 @@ export class SitelineService implements OnModuleInit {
                 amountAgedTotalOverdueOnly
                 averageDaysToPaid
               }
-              billingStatus
-              hasMissingPreSitelinePayApps
+              contract {
+                id
+                billingType
+                internalProjectNumber
+                paymentTermsType
+                paymentTerms
+                project {
+                  id
+                  name
+                  projectNumber
+                  gcName
+                  gc { id name }
+                }
+                company { id }
+                leadPMs { id firstName lastName }
+              }
             }
           }
         }
-      `,
-        { input: gqlInput },
-      );
-      return data.agingDashboard;
+      `;
+
+    try {
+      let cursor: string | null = null;
+      let payAppAgingSummary: unknown = null;
+      const contracts: unknown[] = [];
+      let totalCount: number | null = null;
+
+      for (let page = 0; page < maxPages; page++) {
+        const gqlInput: Record<string, unknown> = {
+          companyId: input.companyId ?? null,
+          endDate: input.endDate,
+          filters: {
+            overdueOnly: input.overdueOnly ?? false,
+            search: input.search ?? '',
+          },
+          sort: null,
+          limit: pageLimit,
+          ...(cursor ? { cursor } : {}),
+        };
+
+        const data = await this.reportingGraphql<{
+          paginatedAgingDashboard: {
+            cursor?: string | null;
+            hasNext?: boolean;
+            totalCount?: number;
+            payAppAgingSummary?: unknown;
+            contracts?: unknown[];
+          };
+        }>(query, { input: gqlInput });
+
+        const pageData = data.paginatedAgingDashboard;
+        if (!pageData) {
+          return { error: 'paginatedAgingDashboard returned empty data' };
+        }
+        if (page === 0) {
+          payAppAgingSummary = pageData.payAppAgingSummary ?? null;
+          totalCount = pageData.totalCount ?? null;
+        }
+        const batch = Array.isArray(pageData.contracts) ? pageData.contracts : [];
+        contracts.push(...batch);
+        if (!pageData.hasNext || !pageData.cursor) break;
+        cursor = pageData.cursor;
+      }
+
+      if (totalCount != null && contracts.length < totalCount) {
+        this.logger.warn(
+          `Siteline paginatedAgingDashboard truncated: got ${contracts.length}/${totalCount} contracts (pageLimit=${pageLimit}, maxPages=${maxPages}).`,
+        );
+      }
+
+      return { payAppAgingSummary, contracts };
     } catch (e: any) {
       return { error: e?.message ?? String(e) };
     }

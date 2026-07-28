@@ -73,9 +73,9 @@ export class SitelineSyncService implements OnModuleInit {
   }
 
   /**
-   * Cron job: **only** Siteline `agingDashboard` → `Siteline_AgingSummary` / `Siteline_AgingContracts`.
+   * Cron job: Siteline `paginatedAgingDashboard` (reporting API) → `Siteline_AgingSummary` / `Siteline_AgingContracts`.
    * No data is copied from `Siteline_PayApps` or computed locally here.
-   * If `agingDashboard` fails (wrong URL, schema, 429, etc.), aging tables are left unchanged.
+   * If the reporting aging query fails (wrong URL, schema, 429, etc.), aging tables are left unchanged.
    *
    * GET /siteline/aging-report reads these tables (unless `useSitelineDashboard=false`, which uses pay apps in-process only).
    *
