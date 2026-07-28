@@ -6,7 +6,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   Bid,
   BidContent,
@@ -18,6 +18,7 @@ import { CalculateBidDto, CreateBidDto, PatchBidDto } from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingActivityService } from './bidding-activity.service';
+import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
 
 /** Soft cap for the client `computed` snapshot (matches frontend handoff §3.1). */
 const MAX_COMPUTED_BYTES = 256 * 1024;
@@ -75,6 +76,7 @@ const assertFiniteNumbers = (value: unknown, label: string): void => {
 @Injectable()
 export class BiddingService {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Bid) private readonly bidRepo: Repository<Bid>,
     @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
     @InjectRepository(BidCalcSnapshot) private readonly snapshotRepo: Repository<BidCalcSnapshot>,
@@ -83,6 +85,18 @@ export class BiddingService {
     private readonly attachments: BiddingAttachmentsService,
     private readonly activity: BiddingActivityService,
   ) {}
+
+  /** Auto-fill Trimble project from bid.job → JobNumber match (unless client set trimble explicitly). */
+  private async applyTrimbleFromJob(
+    bid: Bid,
+    opts: { jobId?: number | null; trimbleExplicit?: boolean },
+  ): Promise<void> {
+    if (opts.trimbleExplicit) return;
+    const jobId = opts.jobId !== undefined ? opts.jobId : bid.jobId;
+    if (jobId == null) return;
+    const resolved = await resolveTrimbleProjectIdForJob(this.dataSource, jobId);
+    if (resolved != null) bid.trimbleProjectId = resolved;
+  }
 
   async list(params: { status?: string; entityId?: number; search?: string }) {
     const qb = this.bidRepo
@@ -130,6 +144,7 @@ export class BiddingService {
     const bid = this.bidRepo.create({
       ourEntityId: dto.ourEntityId,
       jobId: dto.jobId ?? null,
+      trimbleProjectId: dto.trimbleProjectId ?? null,
       estimateNumber: dto.estimateNumber,
       bidName: dto.bidName ?? null,
       bidDate: dto.bidDate ? new Date(dto.bidDate) : null,
@@ -138,6 +153,10 @@ export class BiddingService {
       status: 'draft',
       createdByUserId: userId ?? null,
       updatedByUserId: userId ?? null,
+    });
+    await this.applyTrimbleFromJob(bid, {
+      jobId: dto.jobId ?? null,
+      trimbleExplicit: dto.trimbleProjectId != null,
     });
     const saved = await this.bidRepo.save(bid);
 
@@ -203,6 +222,7 @@ export class BiddingService {
     return {
       ...this.toSummary(bid, content),
       jobId: bid.jobId,
+      trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
       systems: parseJson<unknown[]>(content?.systemsJson ?? null, []),
       companyInfo: parseCompanyInfo(content?.companyInfoJson ?? null),
@@ -237,7 +257,17 @@ export class BiddingService {
 
     if (dto.ourEntityId != null) bid.ourEntityId = dto.ourEntityId;
     if (dto.jobId !== undefined) bid.jobId = dto.jobId ?? null;
+    if (dto.trimbleProjectId !== undefined) bid.trimbleProjectId = dto.trimbleProjectId ?? null;
     if (dto.estimateNumber != null) bid.estimateNumber = dto.estimateNumber;
+
+    // Job changed (and trimble not explicitly patched) → re-resolve from JobNumber
+    if (dto.jobId !== undefined && dto.trimbleProjectId === undefined) {
+      await this.applyTrimbleFromJob(bid, { jobId: bid.jobId, trimbleExplicit: false });
+    }
+    // New job on create-like patch where trimble still empty
+    if (dto.trimbleProjectId === undefined && bid.trimbleProjectId == null && bid.jobId != null) {
+      await this.applyTrimbleFromJob(bid, { jobId: bid.jobId, trimbleExplicit: false });
+    }
     if (dto.bidName !== undefined) bid.bidName = dto.bidName ?? null;
     if (dto.bidDate !== undefined) bid.bidDate = dto.bidDate ? new Date(dto.bidDate) : null;
     if (dto.submitDate !== undefined) bid.submitDate = dto.submitDate ? new Date(dto.submitDate) : null;
@@ -371,6 +401,7 @@ export class BiddingService {
       ourEntityId: bid.ourEntityId,
       companyName: bid.ourEntity?.name ?? null,
       clientCompanyName: clientCompanyNameFrom(companyInfo),
+      trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       bidDate: bid.bidDate instanceof Date ? bid.bidDate.toISOString().slice(0, 10) : bid.bidDate,
       submitDate:
         bid.submitDate instanceof Date ? bid.submitDate.toISOString().slice(0, 10) : bid.submitDate,

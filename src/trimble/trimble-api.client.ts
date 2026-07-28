@@ -298,7 +298,21 @@ export class TrimbleApiClient {
         const passwordLoc = page.locator('input[tcp-auto="input-password"]').first();
         await passwordLoc.waitFor({ state: 'visible', timeout: selectorTimeoutMs });
         await passwordLoc.click();
+        await passwordLoc.fill('');
+        // fill() alone can leave Sign-in disabled (Trimble listens for keystroke/
+        // input cascade). Dispatch events after setting value; keep fill for `#` etc.
         await passwordLoc.fill(password);
+        await passwordLoc.evaluate((el: HTMLInputElement) => {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: '0' }));
+        });
+        // If still disabled, nudge with one typed char + backspace
+        const stillDisabled = await page.locator('button[name="password-submit"]').first().isDisabled();
+        if (stillDisabled) {
+          await passwordLoc.type('x', { delay: 30 });
+          await passwordLoc.press('Backspace');
+        }
 
         // Read back what actually landed in the DOM and verify it matches what
         // we intended.  If Playwright dropped a character or the page ate one
@@ -329,33 +343,39 @@ export class TrimbleApiClient {
       }
 
       // --- Optional OTP / MFA step ----------------------------------------
-      // If Trimble redirects to a verification-code page, sit back and let the
-      // human type the code.  We don't try to auto-read SMS/email; we just
-      // give them plenty of wall-clock time.  The outer `loginResponsePromise`
-      // (timeoutMs, default 10 min) is the real budget.
-      //
-      // Common Trimble OTP inputs: #otp-input, input[name="otp"], input[name="code"],
-      // and the legacy `#enter_verification_code_submit` button.  We log when
-      // we see one so you know to look at the browser.
-      setTimeout(() => {
-        void (async () => {
+      // Prefer TRIMBLE_OTP env (one-shot code) so headless/CI can finish MFA.
+      // Otherwise wait for a human in the Chromium window (needs HEADLESS=false).
+      const otpCode = (this.config.get<string>('TRIMBLE_OTP', '') || '').trim();
+      const otpLoc = page.locator(
+        '#otp-input, input[name="otp"], input[name="code"], input[autocomplete="one-time-code"], input[tcp-auto="input-otp"]',
+      ).first();
+      try {
+        await otpLoc.waitFor({ state: 'visible', timeout: 20_000 });
+        this.logger.warn(
+          otpCode
+            ? `Trimble OTP form visible — filling TRIMBLE_OTP (${otpCode.length} digits)…`
+            : `Trimble is asking for an OTP. Open the Chromium window (TRIMBLE_HEADLESS=false) — ~${Math.round(timeoutMs / 1000)}s.`,
+        );
+        if (otpCode) {
+          await otpLoc.click();
+          await otpLoc.fill('');
+          await otpLoc.type(otpCode, { delay: 40 });
+          const submit = page
+            .locator(
+              '#enter_verification_code_submit, button[name="otp-submit"], button[tcp-auto="submit-button"]',
+            )
+            .first();
           try {
-            const otpLoc = page!
-              .locator(
-                '#otp-input, input[name="otp"], input[name="code"], input[autocomplete="one-time-code"]',
-              )
-              .first();
-            if ((await otpLoc.count()) > 0 && (await otpLoc.isVisible())) {
-              this.logger.warn(
-                `Trimble is asking for an OTP / verification code.  Enter it in the ` +
-                  `Chromium window — you have ~${Math.round(timeoutMs / 1000)}s.`,
-              );
-            }
+            await this.clickWhenEnabled(page, '#enter_verification_code_submit', 30_000, {
+              allowNavigateAwayFromTrimbleIdentity: true,
+            });
           } catch {
-            /* ignore — this is advisory logging only */
+            if (await submit.count()) await submit.click({ timeout: 10_000 }).catch(() => undefined);
           }
-        })();
-      }, 3000);
+        }
+      } catch {
+        /* no OTP page — SSO / trusted device skipped MFA */
+      }
 
       const resp = await loginResponsePromise;
       if (!resp) {
