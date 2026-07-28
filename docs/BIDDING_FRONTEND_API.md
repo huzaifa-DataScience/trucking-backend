@@ -1,14 +1,14 @@
 # Bidding API — Frontend Handoff (single doc)
 
-**Give frontend this file only.** We append new bidding features here as they ship.
+**Primary handoff for Base Bid.** Specs Plumb has its own full guide: **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**.
 
-- **Last updated:** 2026-06-15
+- **Last updated:** 2026-07-21
 - **Base URL:** same API host as the rest of the dashboard (e.g. `https://<api-host>/bids`, `/lookups/bidding/...`).
 - **Auth:** every endpoint requires JWT (`Authorization: Bearer <token>`).
 - **JSON requests:** `Content-Type: application/json` (except attachment upload — `multipart/form-data`).
 - **Money/percent convention:** rates are decimals (`0.06` = 6%, `0.15` = 15%). Dollar amounts are plain numbers.
 
-**Also useful:** [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) (Excel cell map).
+**Also useful:** [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) (Excel cell map) · [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md) (Specs UI).
 
 ---
 
@@ -16,6 +16,7 @@
 
 | Date | Feature | Status |
 |------|---------|--------|
+| 2026-07-21 | **Specs Plumb** — Mike rows, Spec lines, Trimble received, item catalog / Structshare | **Live** — see **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** |
 | 2026-06-15 | **Activity log** — who changed what, when (`GET /bids/:id/activity`) | **Live** — §3.6 |
 | 2026-06-04 | **Company info** — client/GC section (`companyInfo`, prefill from job) | **Live** — §3.5 |
 | 2026-06-04 | **Cover sheet** — `timeEstimate`, `submitDate` on bid header | **Live** — §3.4 |
@@ -28,6 +29,7 @@
 
 | Area | Change |
 |------|--------|
+| **Specs Plumb (new)** | Per-bid Mike takeoff + Spec costing grid. Full UI/API contract: **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**. |
 | **Client-calc model** | The **browser Excel engine is the source of truth** for Base Bid math. The backend stores the client's `computed` snapshot and never recalculates over it. |
 | **`PATCH /bids/:id` accepts `computed`** | Send your engine output; it is stored verbatim and returned by `GET`. Extra keys are **not stripped**. |
 | **`baseBid` is passthrough** | Any input field you send is stored as-is — no need to wait on a backend deploy to add new Excel fields. |
@@ -81,6 +83,11 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 | GET | `/lookups/bidding/project-types` | `{ id, name }[]` |
 | GET | `/lookups/bidding/building-types` | `{ id, name }[]` |
 | GET | `/lookups/bidding/preferences` | `{ id, name }[]` |
+| GET | `/lookups/bidding/spec-systems` | Specs — system → code/unit (**[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**) |
+| GET | `/lookups/bidding/spec-materials` | Specs — insulation → material code |
+| GET | `/lookups/bidding/spec-areas` | Specs — area → area code |
+| GET | `/lookups/bidding/helper-map` | Specs — phrase → keyword/base (backend; rarely shown in UI) |
+| GET / PATCH | `/lookups/bidding/item-catalog` | Specs — Structshare catalog + price edit |
 
 ### Teams
 ```jsonc

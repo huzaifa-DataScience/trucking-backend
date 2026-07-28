@@ -58,6 +58,8 @@ export class BidSystemInputDto {
 export class CreateBidDto {
   @IsInt() ourEntityId!: number;
   @IsOptional() @IsInt() jobId?: number;
+  /** StructShare project id → Trimble_ProjectLineItems for Specs Qty Received. */
+  @IsOptional() @IsInt() trimbleProjectId?: number;
   @IsString() @MaxLength(64) estimateNumber!: string;
   @IsOptional() @IsString() @MaxLength(500) bidName?: string;
   @IsOptional() @IsString() bidDate?: string;
@@ -80,6 +82,7 @@ export class CreateBidDto {
 export class PatchBidDto {
   @IsOptional() @IsInt() ourEntityId?: number;
   @IsOptional() @IsInt() jobId?: number;
+  @IsOptional() @IsInt() trimbleProjectId?: number | null;
   @IsOptional() @IsString() @MaxLength(64) estimateNumber?: string;
   @IsOptional() @IsString() @MaxLength(500) bidName?: string;
   @IsOptional() @IsString() bidDate?: string;
