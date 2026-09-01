@@ -45,6 +45,9 @@ export type ComputedSnapshot = Record<string, unknown>;
  */
 export type CompanyInfoInput = Record<string, unknown>;
 
+/** Invite → award lifecycle. Validated in bidding/process/bid-process.ts. */
+export type ProcessInput = Record<string, unknown>;
+
 export class BidSystemInputDto {
   @IsIn(SYSTEM_KEYS) key!: BidSystemKey;
   @IsOptional() @IsBoolean() used?: boolean;
@@ -70,6 +73,8 @@ export class CreateBidDto {
 
   @IsOptional() @IsObject() companyInfo?: CompanyInfoInput;
 
+  @IsOptional() @IsObject() process?: ProcessInput;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -94,6 +99,8 @@ export class PatchBidDto {
 
   @IsOptional() @IsObject() companyInfo?: CompanyInfoInput;
 
+  @IsOptional() @IsObject() process?: ProcessInput;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -101,6 +108,21 @@ export class PatchBidDto {
   systems?: BidSystemInputDto[];
 
   @IsOptional() @IsObject() computed?: ComputedSnapshot;
+}
+
+export class HandoffBidDto {
+  @IsIn(['complete', 'return']) action!: 'complete' | 'return';
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+}
+
+export class LinkDuplicateDto {
+  @IsInt() keepBidId!: number;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+}
+
+export class SetOutcomeDto {
+  @IsIn(['open', 'awarded', 'lost', 'no_bid', 'cancelled', 'postponed'])
+  outcome!: 'open' | 'awarded' | 'lost' | 'no_bid' | 'cancelled' | 'postponed';
 }
 
 export class CalculateBidDto {

@@ -150,6 +150,72 @@ export class BiddingActivityService {
     });
   }
 
+  async recordHandoff(
+    bidId: number,
+    userId: number | undefined,
+    action: 'complete' | 'return',
+    fromStage: string,
+    toStage: string,
+    outcome: string,
+  ): Promise<void> {
+    await this.append({
+      bidId,
+      userId,
+      action: action === 'return' ? 'returned' : 'handed_off',
+      area: 'process',
+      summary:
+        action === 'return'
+          ? `Returned ${fromStage} → ${toStage}`
+          : outcome !== 'open' && fromStage === toStage
+            ? `Handed off (${fromStage}); outcome ${outcome}`
+            : `Handed off ${fromStage} → ${toStage}`,
+      changedFields: ['process.stage', 'process.outcome'],
+    });
+  }
+
+  async recordLinkDuplicate(
+    bidId: number,
+    otherBidId: number,
+    userId: number | undefined,
+    role: 'keep' | 'closed',
+  ): Promise<void> {
+    if (role === 'closed') {
+      await this.append({
+        bidId,
+        userId,
+        action: 'archived',
+        area: 'process',
+        summary: `Closed as duplicate of bid ${otherBidId}`,
+        changedFields: ['relatedBidId', 'process.outcome', 'status'],
+      });
+      return;
+    }
+    await this.append({
+      bidId,
+      userId,
+      action: 'updated',
+      area: 'process',
+      summary: `Absorbed invitation from duplicate bid ${otherBidId}`,
+      changedFields: ['invitations', 'documentLinks'],
+    });
+  }
+
+  async recordOutcome(
+    bidId: number,
+    userId: number | undefined,
+    from: string,
+    to: string,
+  ): Promise<void> {
+    await this.append({
+      bidId,
+      userId,
+      action: 'outcome_set',
+      area: 'status',
+      summary: `Outcome ${from} → ${to}`,
+      changedFields: ['process.outcome'],
+    });
+  }
+
   async recordPatch(
     bidId: number,
     userId: number | undefined,
@@ -211,6 +277,16 @@ export class BiddingActivityService {
         area: 'header',
         summary: `Cover sheet updated (${headerChanged.join(', ')})`,
         changedFields: headerChanged,
+      });
+    }
+
+    if (dto.process !== undefined) {
+      const keys = Object.keys(dto.process);
+      entries.push({
+        action: 'updated',
+        area: 'process',
+        summary: `Process updated (${keys.slice(0, 12).join(', ')}${keys.length > 12 ? '…' : ''})`,
+        changedFields: keys.length ? keys.map((k) => `process.${k}`) : ['process'],
       });
     }
 

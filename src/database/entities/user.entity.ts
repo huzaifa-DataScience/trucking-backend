@@ -1,8 +1,19 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export enum Role {
-  User = 'user',
+  SuperAdmin = 'super_admin',
   Admin = 'admin',
+  BidClerk = 'bid_clerk',
+  Captain = 'captain',
+  AssistantEstimator = 'assistant_estimator',
+  ProjectManager = 'project_manager',
+  OperationsManager = 'operations_manager',
+  /** Legacy App_Users value — same seed as assistant estimator + trucking dashboards. */
+  User = 'user',
+}
+
+export function isAdminPanelRole(role: string): boolean {
+  return role === Role.SuperAdmin || role === Role.Admin;
 }
 
 export enum UserStatus {

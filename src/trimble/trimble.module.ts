@@ -4,6 +4,7 @@ import {
   TrimbleLineItemRawExport,
   TrimbleProject,
   TrimbleProjectLineItem,
+  TrimbleCompanyItem,
   TrimbleSyncState,
 } from '../database/entities';
 import { TrimbleApiClient } from './trimble-api.client';
@@ -18,6 +19,7 @@ import { TrimbleSyncService } from './trimble-sync.service';
       TrimbleProject,
       TrimbleLineItemRawExport,
       TrimbleProjectLineItem,
+      TrimbleCompanyItem,
       TrimbleSyncState,
     ]),
   ],

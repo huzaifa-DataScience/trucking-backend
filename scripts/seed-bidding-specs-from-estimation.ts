@@ -17,6 +17,7 @@ import {
   BidSpecSystem,
 } from '../src/database/entities';
 import { parseLineItemName } from '../src/bidding/specs/specs-engine';
+import { implyMaterialFields } from '../src/bidding/process/spec-sheet';
 
 function cell(c: ExcelJS.Cell): unknown {
   const v = c.value;
@@ -42,6 +43,15 @@ function n(v: unknown): number | null {
   return Number.isFinite(x) ? x : null;
 }
 
+/** List tab Category (AM) → spec sheet kind. */
+function kindFromCategory(cat: string): 'hydronic' | 'plumbing' | 'duct' | null {
+  const c = cat.toLowerCase();
+  if (c.includes('duct')) return 'duct';
+  if (c.includes('plumb')) return 'plumbing';
+  if (c.includes('hvac') || c.includes('pipe')) return 'hydronic';
+  return null;
+}
+
 async function runSqlFile(ds: DataSource, relPath: string): Promise<void> {
   const sql = readFileSync(join(__dirname, relPath), 'utf8');
   const batches = sql
@@ -65,7 +75,9 @@ async function main(): Promise<void> {
     const ds = app.get(DataSource);
     await runSqlFile(ds, 'sql/add-bidding-specs-tables.sql');
     await runSqlFile(ds, 'sql/add-bidding-specs-phase2.sql');
-    console.log('✓ Specs tables ensured (phase 1+2)');
+    await runSqlFile(ds, 'sql/add-bid-spec-systems-kind.sql');
+    await runSqlFile(ds, 'sql/add-bid-spec-materials-kind.sql');
+    console.log('✓ Specs tables ensured (phase 1+2 + system/material kind)');
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(xlsxPath);
@@ -75,36 +87,83 @@ async function main(): Promise<void> {
     if (!list || !hm) throw new Error('Missing List or helpermap sheet');
     if (!items) throw new Error('Missing item Database sheet');
 
-    // List: AL=38 system, AN=40 code, AO=41 unit (dedupe — List repeats HVAC/Plumb names)
+    // List: AL=38 name, AM=39 category, AN=40 code (HVAC+Plumb+Duct), AO=41 unit.
+    // Same name can exist on HVAC and Plumbing (e.g. AC Condensate) — key is kind+name.
     const systemsByKey = new Map<
       string,
-      { systemName: string; code: string; unit: string; sortOrder: number }
+      {
+        systemName: string;
+        code: string;
+        unit: string;
+        kind: 'hydronic' | 'plumbing' | 'duct';
+        sortOrder: number;
+      }
     >();
     for (let r = 2; r <= 120; r++) {
       const systemName = s(cell(list.getRow(r).getCell(38)));
-      const code = s(cell(list.getRow(r).getCell(40)));
-      const unit = s(cell(list.getRow(r).getCell(41))) || 'LF';
+      const kind = kindFromCategory(s(cell(list.getRow(r).getCell(39))));
+      const codeRaw = s(cell(list.getRow(r).getCell(40)));
+      const code = !codeRaw || codeRaw === '---' ? '' : codeRaw;
+      let unit = s(cell(list.getRow(r).getCell(41)));
       if (!systemName || systemName === '---' || systemName === 'System') continue;
-      if (!code || code === '---') continue;
-      const key = systemName.toLowerCase();
+      if (!kind) continue;
+      if (!unit || unit === '---') unit = kind === 'duct' ? 'SF' : 'LF';
+      const key = `${kind}|${systemName.toLowerCase()}`;
       if (systemsByKey.has(key)) continue;
-      systemsByKey.set(key, { systemName, code, unit, sortOrder: systemsByKey.size });
+      systemsByKey.set(key, { systemName, code, unit, kind, sortOrder: systemsByKey.size });
     }
     const systems = [...systemsByKey.values()];
 
-    // Materials: AZ=52 desc, AT=46 code
-    const materialsByKey = new Map<
-      string,
-      { description: string; code: string; sortOrder: number }
-    >();
+    // Materials: HVAC AT+AZ (+AV jacket), Plumbing BP+BO, Duct BQ+BR.
+    type MatRow = {
+      description: string;
+      code: string;
+      kind: 'hydronic' | 'plumbing' | 'duct';
+      facing: string | null;
+      jacket: string | null;
+      thicknessIn: number | null;
+      weight: number | null;
+      sortOrder: number;
+    };
+    const materialsByKey = new Map<string, MatRow>();
+    const addMaterial = (
+      kind: MatRow['kind'],
+      description: string,
+      code: string,
+      fieldJacket: string,
+    ) => {
+      if (!description || description === '---' || description === 'System') return;
+      if (!code || code === '---') return;
+      const key = `${kind}|${description.toLowerCase()}`;
+      if (materialsByKey.has(key)) return;
+      const implied = implyMaterialFields(description, fieldJacket || null);
+      materialsByKey.set(key, {
+        description,
+        code,
+        kind,
+        facing: implied.facing,
+        jacket: implied.jacket,
+        thicknessIn: implied.thicknessIn,
+        weight: implied.weight,
+        sortOrder: materialsByKey.size,
+      });
+    };
     for (let r = 2; r <= 80; r++) {
-      const description = s(cell(list.getRow(r).getCell(52)));
-      const code = s(cell(list.getRow(r).getCell(46)));
-      if (!description || description === '---') continue;
-      if (!code || code === '---') continue;
-      const key = description.toLowerCase();
-      if (materialsByKey.has(key)) continue;
-      materialsByKey.set(key, { description, code, sortOrder: materialsByKey.size });
+      const row = list.getRow(r);
+      addMaterial(
+        'hydronic',
+        s(cell(row.getCell(52))),
+        s(cell(row.getCell(46))),
+        s(cell(row.getCell(48))),
+      );
+    }
+    for (let r = 2; r <= 80; r++) {
+      const row = list.getRow(r);
+      addMaterial('plumbing', s(cell(row.getCell(67))), s(cell(row.getCell(68))), '');
+    }
+    for (let r = 2; r <= 80; r++) {
+      const row = list.getRow(r);
+      addMaterial('duct', s(cell(row.getCell(70))), s(cell(row.getCell(69))), '');
     }
     const materials = [...materialsByKey.values()];
 
@@ -246,7 +305,7 @@ async function main(): Promise<void> {
     });
 
     console.log(
-      `✓ Seeded systems=${systems.length} materials=${materials.length} areas=${areas.length} helperMap=${helpers.length} catalog=${catalog.length}`,
+      `✓ Seeded systems=${systems.length} (${systems.filter((x) => x.kind === 'hydronic').length} HVAC / ${systems.filter((x) => x.kind === 'plumbing').length} plumbing / ${systems.filter((x) => x.kind === 'duct').length} duct) materials=${materials.length} (${materials.filter((x) => x.kind === 'hydronic').length} HVAC / ${materials.filter((x) => x.kind === 'plumbing').length} plumbing / ${materials.filter((x) => x.kind === 'duct').length} duct) areas=${areas.length} helperMap=${helpers.length} catalog=${catalog.length}`,
     );
   } finally {
     await app.close();

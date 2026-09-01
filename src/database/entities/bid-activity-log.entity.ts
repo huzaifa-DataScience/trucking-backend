@@ -15,12 +15,16 @@ export type BidActivityAction =
   | 'archived'
   | 'deleted'
   | 'attachment_added'
-  | 'attachment_removed';
+  | 'attachment_removed'
+  | 'handed_off'
+  | 'returned'
+  | 'outcome_set';
 
 export type BidActivityArea =
   | 'bid'
   | 'header'
   | 'companyInfo'
+  | 'process'
   | 'baseBid'
   | 'systems'
   | 'computed'

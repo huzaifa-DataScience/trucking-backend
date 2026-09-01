@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { RbacService } from '../auth/rbac.service';
+import { isAppRoleId } from '../auth/rbac-catalog';
 import { User, UserStatus, Role } from '../database/entities';
 
 export interface AdminUsersQuery {
@@ -22,6 +24,7 @@ export class AdminService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly rbac: RbacService,
   ) {}
 
   async getUsers(query: AdminUsersQuery, currentAdminId: number) {
@@ -54,16 +57,10 @@ export class AdminService {
     qb.orderBy('u.createdAt', 'DESC').skip(skip).take(pageSize);
 
     const [items, total] = await qb.getManyAndCount();
+    const byRole = await this.rbac.permissionsByRole();
 
     return {
-      items: items.map((u) => ({
-        id: u.id,
-        email: u.email,
-        role: u.role,
-        status: u.status,
-        createdAt: u.createdAt.toISOString(),
-        lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
-      })),
+      items: items.map((u) => this.toAdminUser(u, byRole[u.role] ?? [])),
       page,
       pageSize,
       total,
@@ -92,9 +89,14 @@ export class AdminService {
 
   async updateUser(
     userId: number,
-    updates: { role?: Role; status?: UserStatus },
+    updates: { role?: Role; status?: UserStatus; permissions?: string[] },
     currentAdminId: number,
   ): Promise<User> {
+    if (updates.permissions) {
+      throw new BadRequestException(
+        'Per-user permissions are not supported. Change the user role, or PATCH /admin/rbac/roles/:name',
+      );
+    }
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     if (
@@ -104,7 +106,12 @@ export class AdminService {
     ) {
       throw new BadRequestException('Cannot deactivate or reject yourself');
     }
-    if (updates.role !== undefined) user.role = updates.role;
+    if (updates.role !== undefined) {
+      if (!isAppRoleId(updates.role)) {
+        throw new BadRequestException(`Unknown role: ${updates.role}`);
+      }
+      user.role = updates.role;
+    }
     if (updates.status !== undefined) {
       if (
         updates.status === UserStatus.Pending &&
@@ -178,5 +185,22 @@ export class AdminService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  async toAdminUserDto(user: User) {
+    const permissions = await this.rbac.getPermissionNamesForRole(user.role);
+    return this.toAdminUser(user, permissions);
+  }
+
+  private toAdminUser(user: User, permissions: string[]) {
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      permissions,
+      createdAt: user.createdAt.toISOString(),
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+    };
   }
 }

@@ -1,15 +1,16 @@
 # Trimble Materials / StructShare — frontend API guide
 
-The Nest app syncs StructShare **project line-items** (Excel/XLSX) into SQL (`dbo.Trimble_ProjectLineItems`). The UI reads that data via **`/trimble/*`** routes using the **same JWT** as the rest of the dashboard (`Authorization: Bearer <token>`).
+The Nest app syncs StructShare **project line-items** and the **company item catalog** (Excel/XLSX) into SQL (`dbo.Trimble_ProjectLineItems`, `dbo.Trimble_CompanyItems`). The UI reads that data via **`/trimble/*`** routes using the **same JWT** as the rest of the dashboard (`Authorization: Bearer <token>`).
 
 **Flow at a glance**
 
-1. Backend cron or **`POST /trimble/sync`** downloads/parses XLSX per project.
+1. Backend cron or **`POST /trimble/sync`** downloads/parses XLSX per project, plus **one** company catalog workbook.
 2. **`GET /trimble/projects`** lists mirrored projects (pick a `projectId`).
 3. **`GET /trimble/line-items/columns`** → dynamic grid headers (SQL column names match Excel headers).
 4. **`GET /trimble/line-items`** or **`GET /trimble/projects/:projectId/line-items`** → paginated rows for that project.
+5. Company catalog (all materials, not per-project): **`GET /trimble/company-items/columns`** + **`GET /trimble/company-items`**.
 
-Optional diagnostics: **`GET /trimble/status`**, **`GET /trimble/exports`**, **`GET /trimble/exports/:projectId/download`** (stream stored XLSX).
+Optional diagnostics: **`GET /trimble/status`**, **`GET /trimble/exports`**, **`GET /trimble/exports/:projectId/download`** (stream stored project XLSX), **`GET /trimble/company-items/export/download`**.
 
 ---
 
@@ -178,6 +179,62 @@ Invalid or missing **`projectId`** (not a finite number) → **400** `BadRequest
 
 ---
 
+## Company items (catalog)
+
+Same Excel-ingest pattern as line-items, but **one workbook per StructShare company** (`POST /api/next/company/{companyId}/items/excel`), not per project. Sample sheet name: **`Company_Items`**. Columns include `Record ID`, `Item Name`, `Description`, `Units`, `Categories`, `Cost Code`, `Budget Category`, `Price`, notes, etc.
+
+### `GET /trimble/company-items/columns`
+
+Ordered SQL column names for `dbo.Trimble_CompanyItems`.
+
+```json
+{
+  "columns": ["Id", "CompanyId", "ExcelRowNumber", "Record ID", "Item Name", "..."]
+}
+```
+
+### `GET /trimble/company-items`
+
+Paginated catalog rows.
+
+**Query**
+
+| Param        | Required | Default | Max |
+|-------------|----------|---------|-----|
+| `companyId` | No       | —       | —   |
+| `page`      | No       | 1       | —   |
+| `pageSize`  | No       | 50      | 500 |
+
+If **`companyId`** is omitted, all catalog rows are returned (typically one company).
+
+```json
+{
+  "page": 1,
+  "pageSize": 50,
+  "total": 1111,
+  "companyId": 1318,
+  "rows": [
+    {
+      "Id": "1",
+      "CompanyId": "1318",
+      "ExcelRowNumber": 2,
+      "Record ID": "4950905",
+      "Item Name": "...",
+      "Units": "Roll",
+      "Categories": "Fiberglass>Duct>Tank Wrap"
+    }
+  ]
+}
+```
+
+Ordering: **`ExcelRowNumber`** ascending.
+
+### `GET /trimble/company-items/export/download`
+
+Streams the most recent stored Company Items XLSX (**404** if none).
+
+---
+
 ## Ops & diagnostics
 
 ### `GET /trimble/status`
@@ -194,7 +251,7 @@ Triggers a full sync if none is running. If sync already active → `{ "ok": fal
 
 ### `GET /trimble/exports`
 
-Latest downloaded exports (diagnostics). Optional **`projectId`** filter.
+Latest downloaded exports (diagnostics). Optional **`projectId`** filter (for company-items rows this is the StructShare **companyId**). Optional **`reportType`**: `line-items` or `company-items`.
 
 Optional pagination: **`page`**, **`pageSize`** (max **200**). Same pattern as projects: omit both for full list without `total`.
 
@@ -238,5 +295,6 @@ Useful if the UI needs “download original Excel” without calling StructShare
 1. **Project picker**: `GET /trimble/projects` (with `search` + pagination if the list is large).
 2. **Grid bootstrap**: `GET /trimble/line-items/columns` once (or cache until next deploy/sync if columns rarely change).
 3. **Grid data**: `GET /trimble/projects/:projectId/line-items?page=&pageSize=` with virtual scrolling or page controls (`total` drives page count).
+4. **Company catalog**: `GET /trimble/company-items/columns` + `GET /trimble/company-items?page=&pageSize=`.
 
-**Not implemented yet** (ask backend if product needs them): server-side **filter/search/sort** query params on line-items — today sorting is fixed (`ExcelRowNumber`), filtering must be client-side or added server-side later.
+**Not implemented yet** (ask backend if product needs them): server-side **filter/search/sort** query params on line-items / company-items — today sorting is fixed (`ExcelRowNumber`), filtering must be client-side or added server-side later.

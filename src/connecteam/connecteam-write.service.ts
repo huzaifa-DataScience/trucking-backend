@@ -92,7 +92,7 @@ export class ConnecteamWriteService {
   }
 
   private isAdmin(actor: RequestUser): boolean {
-    return actor.role === Role.Admin;
+    return actor.role === Role.Admin || actor.role === Role.SuperAdmin;
   }
 
   async resolveConnecteamUser(actor: RequestUser): Promise<ConnecteamUser | null> {

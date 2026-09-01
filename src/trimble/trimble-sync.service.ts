@@ -7,6 +7,7 @@ import {
   TrimbleLineItemRawExport,
   TrimbleProject,
   TrimbleProjectLineItem,
+  TrimbleCompanyItem,
   TrimbleSyncState,
 } from '../database/entities';
 import { TrimbleApiClient, TrimbleProjectRow } from './trimble-api.client';
@@ -35,11 +36,14 @@ const STATE_KEYS = {
   exportsDownloaded: 'exportsDownloaded',
   exportsEmptyLineItems: 'exportsEmptyLineItems',
   exportsFailed: 'exportsFailed',
+  companyItemsRows: 'companyItemsRows',
+  companyItemsError: 'companyItemsError',
 } as const;
 
 /**
- * Scheduled sync that mirrors all StructShare / Trimble Materials projects and
- * pulls each project's Line Items workbook (XLSX) into our DB.
+ * Scheduled sync that mirrors all StructShare / Trimble Materials projects,
+ * pulls each project's Line Items workbook, and once per run the company
+ * item catalog (`/company-items` Excel).
  *
  * Cron defaults to every 6 hours; override with TRIMBLE_SYNC_CRON in .env.
  * Disable entirely with TRIMBLE_SYNC_ENABLED=false.
@@ -92,6 +96,37 @@ export class TrimbleSyncService implements OnModuleInit {
   }
 
   /**
+   * Company catalog only (`search: ""` — all items). Does not pull per-project line-items.
+   */
+  async syncCompanyCatalogNow(): Promise<{
+    ok: boolean;
+    companyId: number | null;
+    companyItemsRows: number;
+    error?: string;
+  }> {
+    try {
+      await this.ensureTables();
+      await this.api.ensureSession();
+      const companyId = this.api.getSessionInfo().companyId;
+      const n = await this.syncCompanyItems(companyId);
+      if (n <= 0) {
+        const s = await this.loadAllState();
+        return {
+          ok: false,
+          companyId,
+          companyItemsRows: n,
+          error: s[STATE_KEYS.companyItemsError] || '0 rows ingested',
+        };
+      }
+      return { ok: true, companyId, companyItemsRows: n };
+    } catch (e: any) {
+      const error = e?.message ?? String(e);
+      this.logger.error(`Trimble company-catalog sync failed: ${error}`);
+      return { ok: false, companyId: this.api.getSessionInfo().companyId, companyItemsRows: 0, error };
+    }
+  }
+
+  /**
    * Cron schedule — spec is taken from TRIMBLE_SYNC_CRON env at module load.
    * Default: every 6 hours (see TRIMBLE_CRON_EXPR above).
    * Runtime kill-switch: TRIMBLE_SYNC_ENABLED=false.
@@ -120,6 +155,7 @@ export class TrimbleSyncService implements OnModuleInit {
     exportsDownloaded: number;
     exportsEmptyLineItems: number;
     exportsFailed: number;
+    companyItemsRows?: number;
     error?: string;
   }> {
     if (this.syncRunning) {
@@ -138,6 +174,7 @@ export class TrimbleSyncService implements OnModuleInit {
     let exportsDownloaded = 0;
     let exportsEmptyLineItems = 0;
     let exportsFailed = 0;
+    let companyItemsRows = 0;
 
     try {
       await this.setState(STATE_KEYS.lastRunStartedAt, startedAt.toISOString());
@@ -157,6 +194,12 @@ export class TrimbleSyncService implements OnModuleInit {
       this.logger.log(`Trimble sync: ${projectsSeen} active projects found.`);
       await this.upsertProjects(allProjects);
       await this.setState(STATE_KEYS.projectsSeen, String(projectsSeen));
+
+      const sessionCompanyId = this.api.getSessionInfo().companyId;
+      const projectCompanyId = allProjects.find((p) => p.companyId != null)?.companyId ?? null;
+      const companyId = sessionCompanyId ?? projectCompanyId;
+      await this.setState(STATE_KEYS.lastPhase, 'download-company-items');
+      companyItemsRows = await this.syncCompanyItems(companyId);
 
       await this.setState(STATE_KEYS.lastPhase, 'download-line-items');
       const concurrency = Math.max(
@@ -267,9 +310,17 @@ export class TrimbleSyncService implements OnModuleInit {
       const withFile = exportsDownloaded - exportsEmptyLineItems;
       this.logger.log(
         `Trimble sync: complete. projects=${projectsSeen} lineItemExports=${exportsDownloaded} ` +
-          `(workbooks=${withFile} emptyNoLineItems=${exportsEmptyLineItems}) failed=${exportsFailed}`,
+          `(workbooks=${withFile} emptyNoLineItems=${exportsEmptyLineItems}) failed=${exportsFailed} ` +
+          `companyItems=${companyItemsRows}`,
       );
-      return { ok: true, projectsSeen, exportsDownloaded, exportsEmptyLineItems, exportsFailed };
+      return {
+        ok: true,
+        projectsSeen,
+        exportsDownloaded,
+        exportsEmptyLineItems,
+        exportsFailed,
+        companyItemsRows,
+      };
     } catch (err: any) {
       const message = err?.message ?? String(err);
       this.logger.error(`Trimble sync error: ${message}`);
@@ -281,6 +332,7 @@ export class TrimbleSyncService implements OnModuleInit {
         exportsDownloaded,
         exportsEmptyLineItems,
         exportsFailed,
+        companyItemsRows,
         error: message,
       };
     } finally {
@@ -304,14 +356,17 @@ export class TrimbleSyncService implements OnModuleInit {
     projectRowCount: number;
     rawExportRowCount: number;
     lineItemRowCount: number;
+    companyItemRowCount: number;
     session: ReturnType<TrimbleApiClient['getSessionInfo']>;
   }> {
-    const [s, projectRowCount, rawExportRowCount, lineItemRowCount] = await Promise.all([
-      this.loadAllState(),
-      this.projects.count().catch(() => 0),
-      this.rawExports.count().catch(() => 0),
-      this.dataSource.getRepository(TrimbleProjectLineItem).count().catch(() => 0),
-    ]);
+    const [s, projectRowCount, rawExportRowCount, lineItemRowCount, companyItemRowCount] =
+      await Promise.all([
+        this.loadAllState(),
+        this.projects.count().catch(() => 0),
+        this.rawExports.count().catch(() => 0),
+        this.dataSource.getRepository(TrimbleProjectLineItem).count().catch(() => 0),
+        this.dataSource.getRepository(TrimbleCompanyItem).count().catch(() => 0),
+      ]);
     return {
       syncRunning: this.syncRunning,
       lastRunStartedAt: s[STATE_KEYS.lastRunStartedAt] ?? null,
@@ -328,8 +383,78 @@ export class TrimbleSyncService implements OnModuleInit {
       projectRowCount,
       rawExportRowCount,
       lineItemRowCount,
+      companyItemRowCount,
       session: this.api.getSessionInfo(),
     };
+  }
+
+  /**
+   * One StructShare company catalog per sync run. Failures are logged, not fatal.
+   * `ProjectId` on the raw-export row stores `companyId` (same table as line-items).
+   */
+  private async syncCompanyItems(companyId: number | null): Promise<number> {
+    await this.setState(STATE_KEYS.companyItemsError, null);
+    if (companyId == null) {
+      const msg = 'no companyId on session or projects — skipped company-items';
+      this.logger.warn(`Trimble sync: ${msg}`);
+      await this.setState(STATE_KEYS.companyItemsError, msg);
+      await this.setState(STATE_KEYS.companyItemsRows, '0');
+      return 0;
+    }
+    try {
+      this.logger.log(`Trimble sync: downloading company-items Excel (companyId=${companyId})…`);
+      const dl = await this.api.downloadCompanyItemsExcel(companyId);
+      const hasWorkbook = dl.buffer.length > 0;
+      const saved = await this.rawExports.save(
+        this.rawExports.create({
+          projectId: companyId,
+          projectName: 'company-items',
+          reportType: 'company-items',
+          fileName: dl.fileName,
+          contentType: dl.contentType,
+          byteLength: dl.buffer.length,
+          payload: hasWorkbook ? dl.buffer : null,
+          httpStatus: dl.httpStatus,
+          error: hasWorkbook ? null : 'empty export',
+          fetchedAt: new Date(),
+        }),
+      );
+      if (!hasWorkbook) {
+        await this.lineItemIngest.clearForCompany(companyId);
+        await this.setState(STATE_KEYS.companyItemsRows, '0');
+        this.logger.warn(`Trimble sync: company-items export empty (companyId=${companyId}).`);
+        return 0;
+      }
+      const n = await this.lineItemIngest.ingestCompanyItemsFromXlsx(
+        companyId,
+        Number(saved.id),
+        dl.buffer,
+      );
+      await this.setState(STATE_KEYS.companyItemsRows, String(n));
+      this.logger.log(`Trimble sync: company-items ingested rows=${n} companyId=${companyId}`);
+      return n;
+    } catch (e: any) {
+      const message = e?.message ?? String(e);
+      this.logger.warn(`Trimble company-items download/ingest failed: ${message}`);
+      await this.setState(STATE_KEYS.companyItemsError, message.slice(0, 4000));
+      await this.rawExports
+        .save(
+          this.rawExports.create({
+            projectId: companyId,
+            projectName: 'company-items',
+            reportType: 'company-items',
+            fileName: null,
+            contentType: null,
+            byteLength: 0,
+            payload: null,
+            httpStatus: null,
+            error: message.slice(0, 4000),
+            fetchedAt: new Date(),
+          }),
+        )
+        .catch(() => undefined);
+      return 0;
+    }
   }
 
   private async upsertProjects(rows: TrimbleProjectRow[]): Promise<void> {
@@ -455,6 +580,17 @@ export class TrimbleSyncService implements OnModuleInit {
         );
         CREATE INDEX IX_Trimble_ProjectLineItems_ProjectId
           ON dbo.Trimble_ProjectLineItems(ProjectId);
+      END
+
+      IF OBJECT_ID('dbo.Trimble_CompanyItems', 'U') IS NULL
+      BEGIN
+        CREATE TABLE dbo.Trimble_CompanyItems(
+          Id bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+          CompanyId bigint NOT NULL,
+          ExcelRowNumber int NOT NULL
+        );
+        CREATE INDEX IX_Trimble_CompanyItems_CompanyId
+          ON dbo.Trimble_CompanyItems(CompanyId);
       END
     `);
   }

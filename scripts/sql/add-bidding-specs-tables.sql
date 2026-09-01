@@ -13,10 +13,11 @@ BEGIN
     SystemName nvarchar(200) NOT NULL,
     Code nvarchar(20) NOT NULL,
     Unit nvarchar(20) NOT NULL CONSTRAINT DF_Bid_SpecSystems_Unit DEFAULT N'LF',
+    Kind nvarchar(20) NOT NULL CONSTRAINT DF_Bid_SpecSystems_Kind DEFAULT N'hydronic',
     SortOrder int NOT NULL CONSTRAINT DF_Bid_SpecSystems_Sort DEFAULT 0,
     IsActive bit NOT NULL CONSTRAINT DF_Bid_SpecSystems_Active DEFAULT 1
   );
-  CREATE UNIQUE INDEX UX_Bid_SpecSystems_Name ON dbo.Bid_SpecSystems(SystemName);
+  CREATE UNIQUE INDEX UX_Bid_SpecSystems_Kind_Name ON dbo.Bid_SpecSystems(Kind, SystemName);
 END
 
 IF OBJECT_ID('dbo.Bid_SpecMaterials', 'U') IS NULL
@@ -25,10 +26,15 @@ BEGIN
     SpecMaterialId int IDENTITY(1,1) NOT NULL PRIMARY KEY,
     Description nvarchar(200) NOT NULL,
     Code nvarchar(20) NOT NULL,
+    Kind nvarchar(20) NOT NULL CONSTRAINT DF_Bid_SpecMaterials_Kind DEFAULT N'hydronic',
+    Facing nvarchar(40) NULL,
+    Jacket nvarchar(40) NULL,
+    ThicknessIn decimal(18,6) NULL,
+    Weight decimal(18,6) NULL,
     SortOrder int NOT NULL CONSTRAINT DF_Bid_SpecMaterials_Sort DEFAULT 0,
     IsActive bit NOT NULL CONSTRAINT DF_Bid_SpecMaterials_Active DEFAULT 1
   );
-  CREATE UNIQUE INDEX UX_Bid_SpecMaterials_Desc ON dbo.Bid_SpecMaterials(Description);
+  CREATE UNIQUE INDEX UX_Bid_SpecMaterials_Kind_Desc ON dbo.Bid_SpecMaterials(Kind, Description);
 END
 
 IF OBJECT_ID('dbo.Bid_SpecAreas', 'U') IS NULL

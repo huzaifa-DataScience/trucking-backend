@@ -78,14 +78,7 @@ export class AdminController {
   @Get(':id')
   async getUserById(@Param('id', ParseIntPipe) id: number) {
     const user = await this.adminService.getUserById(id);
-    return {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      createdAt: user.createdAt.toISOString(),
-      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
-    };
+    return this.adminService.toAdminUserDto(user);
   }
 
   @Post(':id/approve')
@@ -115,13 +108,13 @@ export class AdminController {
   @Patch(':id')
   async updateUser(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updates: { role?: Role; status?: UserStatus },
+    @Body() updates: { role?: Role; status?: UserStatus; permissions?: string[] },
     @CurrentUser() admin?: User,
   ) {
     const user = await this.adminService.updateUser(id, updates, admin?.id ?? 0);
     return {
       message: 'User updated successfully',
-      user: { id: user.id, email: user.email, role: user.role, status: user.status },
+      user: await this.adminService.toAdminUserDto(user),
     };
   }
 

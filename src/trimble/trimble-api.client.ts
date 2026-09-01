@@ -522,10 +522,12 @@ export class TrimbleApiClient {
       method?: string;
       body?: string;
       headers?: Record<string, string>;
+      timeoutMs?: number;
     },
   ): Promise<FetchResponse> {
     const timeoutMs =
-      Number(this.config.get<string>('TRIMBLE_FETCH_TIMEOUT_MS', '120000')) || 120_000;
+      init?.timeoutMs ??
+      (Number(this.config.get<string>('TRIMBLE_FETCH_TIMEOUT_MS', '120000')) || 120_000);
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -739,6 +741,126 @@ export class TrimbleApiClient {
       contentType,
       fileName: this.parseFileNameFromDisposition(disposition),
       httpStatus: resp.status,
+    };
+  }
+
+  /**
+   * Same shape StructShare sends when you click Export on `/company-items`.
+   * `hiddenColumns` is `taxCodes` once (the UI dump sometimes repeats it).
+   */
+  private buildCompanyItemsExcelRequestBody(): Record<string, unknown> {
+    return {
+      fileName: 'Company_Items',
+      search: '',
+      hiddenColumns: ['taxCodes'],
+      filters: {
+        costCodes: [],
+        costType: null,
+        budgetCategories: [],
+        showLessThanInvMin: false,
+        category: { id: null, name: null },
+        id: null,
+        name: null,
+        manufacturers: [],
+        sources: [],
+      },
+    };
+  }
+
+  /**
+   * Download the company item catalog workbook (all materials, not per-project).
+   *
+   * UI: POST `/api/next/company/{companyId}/items/excel` from `/company-items`.
+   */
+  async downloadCompanyItemsExcel(companyIdArg?: number | null): Promise<{
+    buffer: Buffer;
+    contentType: string | null;
+    fileName: string | null;
+    httpStatus: number;
+    companyId: number;
+    isEmptyExport?: boolean;
+  }> {
+    const session = await this.ensureSession();
+    const companyId = companyIdArg ?? session.companyId;
+    if (companyId == null) {
+      throw new Error(
+        'Cannot export company-items Excel: missing companyId (session has none).',
+      );
+    }
+
+    const path = `/api/next/company/${companyId}/items/excel`;
+    const body = this.buildCompanyItemsExcelRequestBody();
+    this.logger.log(`Trimble company-items: POST ${path} search="" (full catalog)`);
+    let resp: FetchResponse;
+    try {
+      resp = await this.authedFetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Referer: `${this.appBase}/company-items`,
+        },
+        body: JSON.stringify(body),
+        // Full catalog (~15k rows) is a large XLSX — 2 min default is too short.
+        timeoutMs: Number(this.config.get<string>('TRIMBLE_COMPANY_ITEMS_TIMEOUT_MS', '600000')) || 600_000,
+      });
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        throw new Error(
+          `POST ${path} aborted (timeout — raise TRIMBLE_COMPANY_ITEMS_TIMEOUT_MS).`,
+        );
+      }
+      throw e;
+    }
+    const contentType = resp.headers.get('content-type');
+    const disposition = resp.headers.get('content-disposition');
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (!resp.ok) {
+      const snippet = buffer.toString('utf8').slice(0, 500);
+      throw new Error(
+        `POST ${path} → HTTP ${resp.status} (${buffer.length} bytes) ${snippet}`,
+      );
+    }
+
+    const looksLikeXlsxZip =
+      buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+
+    if (buffer.length === 0) {
+      return {
+        buffer: Buffer.alloc(0),
+        contentType,
+        fileName: null,
+        httpStatus: resp.status,
+        companyId,
+        isEmptyExport: true,
+      };
+    }
+
+    if (!looksLikeXlsxZip) {
+      const start = buffer.toString('utf8', 0, Math.min(400, buffer.length)).trimStart();
+      if (start.startsWith('{') || start.startsWith('[')) {
+        this.logger.debug(
+          `Trimble company-items: returned JSON instead of XLSX (${buffer.length} b): ${start.slice(0, 200)}`,
+        );
+        return {
+          buffer: Buffer.alloc(0),
+          contentType,
+          fileName: null,
+          httpStatus: resp.status,
+          companyId,
+          isEmptyExport: true,
+        };
+      }
+      throw new Error(
+        `POST ${path} → OK but body is not an XLSX (${buffer.length} bytes, content-type=${contentType})`,
+      );
+    }
+
+    return {
+      buffer,
+      contentType,
+      fileName: this.parseFileNameFromDisposition(disposition),
+      httpStatus: resp.status,
+      companyId,
     };
   }
 

@@ -1,14 +1,19 @@
 # Bidding API — Frontend Handoff (single doc)
 
-**Primary handoff for Base Bid.** Specs Plumb has its own full guide: **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**.
+**Start here if you are an FE agent:** **[FRONTEND_BIDDING_CONTEXT.md](./FRONTEND_BIDDING_CONTEXT.md)** (product + anti-patterns). This file is the **shell + Base Bid API**. Do **not** follow a second “app IA” doc.
 
-- **Last updated:** 2026-07-21
+- Specs grid / Mike: **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** (same bid, **Takeoff** stage)
+- Spec **sheet** (dropdown rules, before takeoff) — **give to FE:** **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**
+- **Intake + Assignment (Stage 1):** **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**
+- Production hours: **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)** (same bid, **Production tab**)
+- `process` field dictionary: **[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**
+- Excel cell map: **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)**
+
+- **Last updated:** 2026-08-25
 - **Base URL:** same API host as the rest of the dashboard (e.g. `https://<api-host>/bids`, `/lookups/bidding/...`).
 - **Auth:** every endpoint requires JWT (`Authorization: Bearer <token>`).
 - **JSON requests:** `Content-Type: application/json` (except attachment upload — `multipart/form-data`).
 - **Money/percent convention:** rates are decimals (`0.06` = 6%, `0.15` = 15%). Dollar amounts are plain numbers.
-
-**Also useful:** [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) (Excel cell map) · [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md) (Specs UI).
 
 ---
 
@@ -16,6 +21,19 @@
 
 | Date | Feature | Status |
 |------|---------|--------|
+| 2026-08-25 | **Spec sheet cascade** — family → layer 1 → layer 2; equipment kind; duct circumference; manufacturer; Buy American. | **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** |
+| 2026-08-25 | **Intake parties directory** — `GET /lookups/bidding/parties?role=&q=`. PATCH upserts; no POST. | **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** |
+| 2026-08-23 | **Stage 1 gates** — bid type + drawings (build-to-print/design-assist) + single-invite research to hand off; bid name locked; `#` stripped on project #s; per-invite addenda; `POST /bids/:id/link-duplicate`. | **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** |
+| 2026-08-19 | Spec sheet cascade: type filters systems **and** materials; **codes auto** (system/area/material). Area is one shared list. | **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** |
+| 2026-08-18 | **Spec sheet = dropdown rules** (not FortuneSheet). Setup, before takeoff. Reuse spec-systems/areas/materials/facings. | **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** |
+| 2026-08-16 | **Spec sheet** — Setup stage, before takeoff. Template (Duct/Plumbing) + FortuneSheet. Images via attachments. | superseded 2026-08-18 |
+| 2026-08-14 | **Outcome tab** — last Pre tab; win/lose changeable. Post Awarded/Lost follow current outcome. Not a one-shot button. | **This doc §0** |
+| 2026-08-14 | **Award UI is gated** — post-award/startup is a **separate** phase. Change outcome to Awarded first; only then show that screen. Lost ≠ award form. | **This doc §0** |
+| 2026-08-10 | **Mike upload auto-regenerates Specs** — `POST .../mike-files` rebuilds Spec lines; fixes stale Foamglas/FSK zeros | **Live** — **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** |
+| 2026-08-10 | **Mike Rules panel copy** — Specs Rules button/sub-tab (Mike stacking only) | **Doc** — **[FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)** |
+| 2026-08-09 | **Structshare = item search list** — no cheapest/vendor pick; Recv + Hrs@Recv share attr search; `itemName` vendor-stripped | **Live** — **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** |
+| 2026-08-08 | **Multi-Mike = one takeoff** — Specs/Production merge all files on a bid; Production list = **1 row per bid** | **Live** — see MUST READ in **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)** |
+| 2026-08-05 | **Production report** — commodity earned hours (Mike/Trimble) vs Connecteam actual → green/red | **Live** — **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)** |
 | 2026-07-21 | **Specs Plumb** — Mike rows, Spec lines, Trimble received, item catalog / Structshare | **Live** — see **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** |
 | 2026-06-15 | **Activity log** — who changed what, when (`GET /bids/:id/activity`) | **Live** — §3.6 |
 | 2026-06-04 | **Company info** — client/GC section (`companyInfo`, prefill from job) | **Live** — §3.5 |
@@ -25,11 +43,105 @@
 
 ---
 
+## 0. What FE must change (read this first)
+
+**Source:** *Proposed Bid-to-Project Startup Workflow* PDF. One bid record. Do **not** rebuild Estimate / Specs / Production — wrap them. Incomplete save.
+
+**Two zones — do not mix:**
+
+1. **Pre** (always): Intake → Assignment → Setup → Takeoff → Proposal → Post-Bid → **Outcome**
+2. **Post** (only after Outcome has a pick, and it can change): Awarded/startup **or** Lost
+
+Outcome is a **tab at the end of Pre**, not a one-shot button. Win → Lost → Win again is allowed. Changing it switches which Post screen shows; it does not delete saved fields.
+
+### Keep (wrap)
+
+| Already shipped | Lives in stage |
+|-----------------|----------------|
+| Bid list + create (est #, our company, name) | Hub. Add `processStage`, `outcomeStatus`, `workType` columns/filters. |
+| Base Bid calculator | **Proposal** (also usable during takeoff) |
+| Specs + Mike upload | **Takeoff** — versions never overwritten |
+| Production report | After **outcome = awarded** |
+
+### Chrome
+
+```text
+/bidding                              list  [ New bid ]
+/bidding/new                          3 fields → POST → intake
+/bidding/[id]?stage=intake|assignment|estimating_setup|takeoff|proposal|post_bid|result
+/bidding/[id]?stage=award             only when workflow.showAward   ← POST
+/bidding/[id]?stage=lost              only when workflow.showLost    ← POST
+```
+
+```
+PRE  1 Intake ▸ 2 Assignment ▸ 3 Setup ▸ 4 Takeoff ▸ 5 Proposal ▸ 6 Post-Bid ▸ 7 Outcome
+                                                                              (win / lose — changeable)
+POST (separate, not in that strip until a pick)
+     Awarded / startup     if outcome = awarded
+     Lost form             if lost / no_bid / cancelled / postponed
+```
+
+Read `workflow` on `GET /bids/:id` — do not invent the gate.
+
+| `workflow` | Meaning |
+|------------|---------|
+| `canComplete` / `completeBlockedReason` | Enable **Complete & Hand Off** |
+| `canReturn` | Enable **Return** |
+| `showOutcomeTab` | Always `true`. Last **Pre** tab. Put win/lose **here**, not a header button. |
+| `outcomeEditable` | Always `true` until archived. `POST /bids/:id/outcome` again to change. |
+| `showAward` | Show **Post** Awarded/startup. Follows **current** outcome. |
+| `showLost` | Show **Post** Lost form. Follows **current** outcome. |
+| `takeoffComparisons` | Duct1 vs Duct2 (etc.) — computed, not stored |
+
+### Actions
+
+| User does | Call |
+|-----------|------|
+| Save draft (any stage, incomplete OK) | `PATCH /bids/:id` `{ process }` — objects merge, **arrays replace** |
+| Complete my step & hand off | `POST /bids/:id/handoff` `{ "action": "complete", "notes"? }` — Intake blocked until bid type + (drawings if build-to-print/design-assist) + who-else research if fewer than two invites |
+| Close a mistaken duplicate | `POST /bids/:id/link-duplicate` `{ "keepBidId" }` — merges invites onto keep, archives this bid |
+| Return to previous step | `POST /bids/:id/handoff` `{ "action": "return" }` |
+| **Win / lose / no-bid / cancel / postpone** (and change later) | `POST /bids/:id/outcome` `{ "outcome": "awarded" }` — same call to switch |
+| Submit price (locks Estimate math) | `PATCH { "status": "submitted" }` — not the same as outcome |
+
+`status` (draft / submitted / archived) locks calculator math. `outcome` is the Pre **Outcome tab** and is **not sticky**. Do not mix them.
+
+Assignment **No bid** jumps to the Outcome tab with `no_bid` pre-selected — user can still change it.
+
+Estimating Setup → Takeoff is blocked until `process.technicalReview.approvedForTakeoff === true`.
+
+Outcome tab: **Complete & Hand Off** is off (`canComplete: false`). Change `outcome` on that tab instead.
+
+### Stage → screen
+
+| Stage | Bind | Notes |
+|-------|------|--------|
+| Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. Two project #s. `bidKind` (budget is a kind). `invitations[]` + `documentLinks[]`. Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
+| Assignment | `process.assignment`, `takeoffAssignments` | Nick + PJ. `assignment.teamId` from `GET /lookups/bidding/teams`. Bid/no-bid, captain/AE/clerk, 1 or 2 people per scope. |
+| Estimating Setup | wage **decision**, PLA, OCIP, lifts, parking, `insulationSpecs`, **`specSheets`**, `technicalReview` | Wage **decision** ≠ wage **rate**. Spec **sheet** = dropdown **rules** (not a spreadsheet, not the qty grid) — **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**. |
+| Takeoff | existing Specs/Mike + `takeoffAssignments.versions` | Never overwrite a takeoff file. New version each revision. Show `workflow.takeoffComparisons`. |
+| Proposal | existing Estimate + `estimateReview`, `proposalVersions`, `amendments`, `submission` | `+ Add` amendment (not a fixed 30 boxes). |
+| Post-Bid | `process.intelligence`, GC/mechanical `stillBidding` | Follow-up, competitors. Still **Pre**. |
+| **Outcome** | `process.outcome` / `POST .../outcome` | Last Pre tab. Awarded / Lost / No bid / Cancelled / Postponed. **Change anytime.** |
+| Awarded / startup (**Post**) | `process.award`, `startup`, `contractTiers`, `jobId` | **Only if `workflow.showAward`.** Hidden if they switch away from awarded. Data stays. |
+| Lost (**Post**) | `process.lost` | **Only if `workflow.showLost`.** Same rule. |
+| Production | existing production APIs | After awarded. |
+
+**New bid** stays tiny: `estimateNumber`, `ourEntityId`, optional `bidName` + `process.workType`. Then intake. Half-empty OK.
+
+Enums / who-owns-what: `GET /lookups/bidding/process-meta`. Full shape: [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md).
+
+Ship order: list + intake + assignment + handoff + **Outcome tab**. Post Awarded/Lost screens follow the current outcome and must not replace Pre.
+
+---
+
 ## 1. What's in production
 
 | Area | Change |
 |------|--------|
-| **Specs Plumb (new)** | Per-bid Mike takeoff + Spec costing grid. Full UI/API contract: **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**. |
+| **App shell** | Bid list → New or open → **PDF stages** + handoff. Wrap Estimate/Specs/Production. Awarded/Lost **after outcome**. **§0**. |
+| **`process` on the bid** | Lifecycle JSON (pre-win + award). `GET`/`PATCH` `/bids/:id`. Filters `processStage`, `workType` on list. |
+| **Production report** | Commodity earned hours vs Connecteam actual (green/red). **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)**. |
 | **Client-calc model** | The **browser Excel engine is the source of truth** for Base Bid math. The backend stores the client's `computed` snapshot and never recalculates over it. |
 | **`PATCH /bids/:id` accepts `computed`** | Send your engine output; it is stored verbatim and returned by `GET`. Extra keys are **not stripped**. |
 | **`baseBid` is passthrough** | Any input field you send is stored as-is — no need to wait on a backend deploy to add new Excel fields. |
@@ -47,11 +159,11 @@
 
 | Topic | Backend behavior |
 |-------|------------------|
-| **Save** | `PATCH /bids/:id` with `baseBid`, `systems`, `companyInfo`, `computed` — stored **verbatim**; **no** server recalc on PATCH. |
-| **Load** | `GET /bids/:id` returns stored `baseBid`, `systems`, `companyInfo`, `computed` unchanged (latest `source: client` snapshot). |
+| **Save** | `PATCH /bids/:id` with `baseBid`, `systems`, `companyInfo`, `computed`, **`process`** — stored **verbatim**; **no** server recalc on PATCH. |
+| **Load** | `GET /bids/:id` returns stored `baseBid`, `systems`, `companyInfo`, **`process`**, `computed` unchanged (latest `source: client` snapshot). |
 | **PATCH response** | Same shape as GET — includes stored `computed` after save. |
 | **PATCH without `computed`** | Previous `computed` snapshot **unchanged**. |
-| **Submitted lock** | `baseBid` / `systems` / `companyInfo` / `computed` on a non-`draft` bid → **409 Conflict** (`reopen to draft` message). Status-only PATCH (`{ "status": "draft" }`) still allowed. |
+| **Submitted lock** | `baseBid` / `systems` / `companyInfo` / `computed` on a non-`draft` bid → **409**. **`process` is still PATCH-able** after submit (handoff, intel, outcome). Archived → process locked too. Status-only PATCH (`{ "status": "draft" }`) still allowed. |
 | **`/calculate`** | Deprecated no-op unless `{ "forceServerCalc": true }` (verify only). |
 
 ### D10 crew composite vs burdened wage (important)
@@ -76,16 +188,22 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 | Method | Path | Returns |
 |--------|------|---------|
 | GET | `/lookups/our-entities` | **Reuse existing** — company list `{ id, name }[]` (GOEL / GOEL DC / DCB). Do **not** build a new one. |
+| GET | `/lookups/bidding/process-meta` | Lifecycle enums, field entry-phase, HQ tier example (**[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**) |
+| GET / POST / PATCH / DELETE | `/lookups/bidding/wage-decisions` | Prevailing-wage **decision #** lookup (not calculator wage rates) |
 | GET | `/lookups/bidding/teams` | Teams with crew roles |
+| GET | `/lookups/bidding/parties` | Intake directory `?role=owner\|architect\|mechanical\|invite_contact&q=` |
 | GET | `/lookups/bidding/wage-rates` | Wage/fringe options |
 | GET | `/lookups/bidding/payroll-burden` | Burden constants |
 | GET | `/lookups/bidding/states` | `{ stateCode, salesTaxRate }[]` |
 | GET | `/lookups/bidding/project-types` | `{ id, name }[]` |
 | GET | `/lookups/bidding/building-types` | `{ id, name }[]` |
 | GET | `/lookups/bidding/preferences` | `{ id, name }[]` |
-| GET | `/lookups/bidding/spec-systems` | Specs — system → code/unit (**[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)**) |
-| GET | `/lookups/bidding/spec-materials` | Specs — insulation → material code |
-| GET | `/lookups/bidding/spec-areas` | Specs — area → area code |
+| GET | `/lookups/bidding/spec-systems` | Specs — system → `code`/`unit`/`kind` (`?kind=duct\|hydronic\|plumbing\|equipment`) |
+| GET | `/lookups/bidding/spec-materials` | Insulation types. **`family` required** (or `code` / `q`). Bare GET → `[]`. `layer` / `?kind=` ignored. Each row has `family` + `layer`. |
+| GET | `/lookups/bidding/spec-areas` | Specs — area → `code` (shared list, not per system) |
+| GET | `/lookups/bidding/spec-sizes` | `?code=` Trimble NPS; `[]` = leave size blank. Do not omit `code` after pick. |
+| GET | `/lookups/bidding/spec-thicknesses` | `?code=` Trimble thick; `[]` = leave thick blank |
+| GET | `/lookups/bidding/spec-facings` | Specs / spec sheet — `{ value, label, sortOrder }` (ASJ, FSK, …) override |
 | GET | `/lookups/bidding/helper-map` | Specs — phrase → keyword/base (backend; rarely shown in UI) |
 | GET / PATCH | `/lookups/bidding/item-catalog` | Specs — Structshare catalog + price edit |
 
@@ -105,6 +223,15 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 Team admin:
 - `POST /lookups/bidding/teams` body `{ "teamName": "New Team" }`
 - `DELETE /lookups/bidding/teams/:id` (soft remove)
+
+### Parties (intake directory)
+```jsonc
+// GET /lookups/bidding/parties?role=mechanical&q=wsp
+[
+  { "id": 12, "name": "WSP", "company": "WSP", "contactName": null, "email": "a@wsp.com", "phone": null, "role": "mechanical" }
+]
+```
+Filter `role` + optional `q` (name / company / email). Seeded from past bids; `PATCH /bids/:id { process }` upserts owner / architect / mechanicalEngineer / invitations[].contact. No POST.
 
 ### Wage rates (CRUD)
 ```jsonc
@@ -175,15 +302,17 @@ Use when the user picks a wage rate to show **single-tier** burden + breakdown (
 |--------|------|---------|
 | GET | `/bids/prefill/company-from-job/:jobId` | Suggested `companyInfo` from `Ref_Jobs` |
 | GET | `/bids/:id/activity` | Full change history + summary stats |
-| GET | `/bids?status=&entityId=&search=` | List (`search` matches estimate, bid name, **client company name**) |
-| POST | `/bids` | Create a draft |
-| GET | `/bids/:id` | Full detail (inputs + last stored `computed`) |
-| PATCH | `/bids/:id` | Update header + Base Bid inputs + systems + **client `computed`** |
+| GET | `/bids?status=&entityId=&search=&processStage=&workType=&outcome=&ownerProjectNumber=&mechanicalEngineerProjectNumber=` | List. `search` also matches drawing name + both project #s. Exact # params for duplicate typeahead. Rows include `drawingName`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `relatedBidId`, `bidKind`, `dueDate`. |
+| POST | `/bids` | Create a draft (optional `process`) |
+| GET | `/bids/:id` | Full detail (inputs + `process` + `workflow` + last stored `computed`) |
+| PATCH | `/bids/:id` | Header + Base Bid + systems + `computed` + **`process`** |
+| POST | `/bids/:id/handoff` | Complete or return a workflow stage |
+| POST | `/bids/:id/outcome` | Set awarded / lost / no_bid / cancelled / postponed |
 | DELETE | `/bids/:id` | Soft delete |
 | POST | `/bids/:id/calculate` | **Deprecated** — no-op echo of stored snapshot (see §5) |
 | POST | `/bids/:id/attachments` | Upload image/PDF (`multipart`, field `file`) |
 | GET | `/bids/:id/attachments/:attachmentId/download` | Download / inline view |
-| DELETE | `/bids/:id/attachments/:attachmentId` | Remove attachment (**draft** only) |
+| DELETE | `/bids/:id/attachments/:attachmentId` | Remove attachment (until **archived**) |
 
 ---
 
@@ -196,7 +325,7 @@ Site photos, screenshots, PDFs. Metadata in SQL; files on disk. `GET /bids/:id` 
 | Types | JPEG, PNG, WebP, PDF |
 | Max size | 10 MB per file |
 | Max count | 20 per bid |
-| Upload / delete | `status === "draft"` only |
+| Upload / delete | until `status === "archived"` (submit does **not** block — PLA/spec PDFs after win) |
 | View / download | Any status |
 
 **Upload** — `POST /bids/:id/attachments`, `multipart/form-data`, field name **`file`**; optional `label`.
@@ -224,12 +353,12 @@ const res = await fetch(`${API_BASE}${attachment.downloadPath}`, {
 const previewUrl = URL.createObjectURL(await res.blob());
 ```
 
-**Delete** — `DELETE /bids/:id/attachments/:attachmentId` → `{ "ok": true }` (draft only).
+**Delete** — `DELETE /bids/:id/attachments/:attachmentId` → `{ "ok": true }` (blocked only if **archived**).
 
 | HTTP | When |
 |------|------|
 | `400` | Missing file, bad type, or 20-file limit |
-| `409` | Upload/delete on non-draft bid |
+| `409` | Upload/delete on **archived** bid |
 | `413` | File > 10 MB |
 
 ---
@@ -361,14 +490,19 @@ Changing `jobId` alone does **not** overwrite saved `companyInfo` — call prefi
     "estimateNumber": "IDC6098",
     "companyName": "GOEL",
     "clientCompanyName": "ABC Mechanical",
-    "status": "draft"
+    "status": "draft",
+    "processStage": "intake",
+    "outcomeStatus": "open",
+    "workType": "insulation"
   }
 ]
 ```
 
 - `companyName` — **your** entity (GOEL / GOEL DC / DCB)
 - `clientCompanyName` — from `companyInfo.companyName` (null if empty)
-- `GET /bids?search=abc` — matches estimate #, bid name, or **client company name**
+- `GET /bids?search=abc` — estimate #, bid name, client company, **drawing name**, **both project #s**
+- `GET /bids?ownerProjectNumber=` / `mechanicalEngineerProjectNumber=` — exact duplicate keys (intake typeahead)
+- `GET /bids?processStage=intake&workType=insulation&outcome=open` — list filters for §0
 
 #### Detail example
 
@@ -380,6 +514,11 @@ Changing `jobId` alone does **not** overwrite saved `companyInfo` — call prefi
   "companyName": "GOEL",
   "clientCompanyName": "ABC Mechanical",
   "jobId": 42,
+  "processStage": "intake",
+  "outcomeStatus": "open",
+  "workType": "insulation",
+  "process": { "stage": "intake", "outcome": "open", "workType": "insulation" },
+  "workflow": { "stage": "intake", "outcome": "open", "canComplete": true, "showAward": false, "showLost": false },
   "companyInfo": {
     "companyName": "ABC Mechanical",
     "address": "123 Main St",
@@ -470,8 +609,9 @@ Newest first.
 | `reopened` | Status back to `draft` |
 | `archived` | Status → `archived` |
 | `deleted` | Soft delete |
-| `attachment_added` | File upload |
-| `attachment_removed` | File delete |
+| `handed_off` | `POST /bids/:id/handoff` complete |
+| `returned` | `POST /bids/:id/handoff` return |
+| `outcome_set` | `POST /bids/:id/outcome` |
 
 | `area` | What changed |
 |--------|----------------|
@@ -496,6 +636,32 @@ Newest first.
 
 ---
 
+### 3.7 `process` (lifecycle) — **live**
+
+Same bid row. Bind stages from **§0**. Full shape: **[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**.
+
+```http
+PATCH /bids/:id
+{ "process": { "stage": "intake", "workType": "insulation", "owner": { "name": "DIA" } } }
+
+POST /bids/:id/handoff
+{ "action": "complete", "notes": "Ready for assignment" }
+
+POST /bids/:id/outcome
+{ "outcome": "awarded" }
+```
+
+- Objects merge; **arrays replace**.
+- Editable after **submit**. Locked if **archived**.
+- `GET /bids/:id` always returns full `process` + **`workflow`** (gates, comparisons).
+- List exposes `processStage` + `outcomeStatus` + `workType`.
+- Outcome is **changeable** (`POST /bids/:id/outcome` again). Post Awarded/Lost follow `workflow.showAward` / `showLost`. Saved award/lost fields are kept when switching.
+
+`GET /lookups/bidding/process-meta` — stages, outcomes, who, field phase.  
+`GET /lookups/bidding/wage-decisions` — **not** `/wage-rates`.
+
+---
+
 ### List item
 ```jsonc
 // GET /bids
@@ -504,6 +670,7 @@ Newest first.
     "id": "12", "estimateNumber": "IDC6098", "bidName": "Some Project",
     "status": "draft", "ourEntityId": 1, "companyName": "GOEL",
     "clientCompanyName": "ABC Mechanical",
+    "processStage": "intake", "outcomeStatus": "open", "workType": "insulation",
     "bidDate": "2026-03-01", "submitDate": null, "timeEstimate": 120,
     "updatedAt": "2026-05-29T10:00:00.000Z"
   }
@@ -517,6 +684,7 @@ Newest first.
 { "ourEntityId": 1, "jobId": 42, "estimateNumber": "IDC6098", "bidName": "Optional",
   "bidDate": "2026-03-01", "submitDate": "2026-06-15", "timeEstimate": 80,
   "companyInfo": { "companyName": "ABC Mechanical", "contactName": "Jane Doe" },
+  "process": { "stage": "intake", "workType": "insulation" },
   "baseBid": { "marginPercent": 0.15 }, "systems": [], "computed": {} }
 ```
 Omit `companyInfo` on create with `jobId` → backend auto-prefills from job.
@@ -581,7 +749,7 @@ Returns the full detail object (same shape as `GET /bids/:id`).
 ```
 
 **Rules / limits**
-- **Draft-lock:** content (`baseBid` / `systems` / `companyInfo` / `computed`) can only be changed while `status: "draft"`. On a `submitted`/`archived` bid these return **409 Conflict** — first reopen with a status-only PATCH `{ "status": "draft" }`, then edit.
+- **Draft-lock:** `baseBid` / `systems` / `companyInfo` / `computed` only while `status: "draft"` (else **409** — reopen `{ "status": "draft" }`). **`process` is not draft-locked** (locked only when archived).
 - **Size:** `computed` is capped at **256 KB** (→ `413`); whole request body limit is 1 MB.
 - **Validation:** non-finite numbers (`NaN`/`Infinity`) are rejected (`400`). `engineVersion` (≤20 chars) is stored as the snapshot's version tag; it defaults to the server version if omitted.
 
@@ -651,20 +819,23 @@ The client Excel engine is the source of truth, so you **do not need to call thi
 
 ## 6. Suggested UI wiring
 
-1. **On bid open:** `GET /bids/:id` → hydrate `baseBid`, `systems`, `computed`, `companyInfo`, `attachments`, cover sheet fields.
-2. **Company info:** separate form section (§3.5). On job pick → `GET /bids/prefill/company-from-job/:jobId`, let user edit, save via `PATCH { companyInfo }`.
-3. **Activity log:** show `activitySummary` on detail; full timeline via `GET /bids/:id/activity` (§3.6).
-4. **Cover sheet:** bind `timeEstimate` + `submitDate` to header PATCH (§3.4). On submit, send `status: "submitted"`; `submitDate` auto-fills if empty.
-5. **On dropdown focus:** load `/lookups/bidding/*` once and cache.
-6. **On wage-rate select:** `GET /lookups/bidding/wage-rates/:id/burdened-rate` → burden breakdown.
-7. **On input change:** client Excel engine live; debounced `PATCH` with `{ baseBid, systems, computed }` — no `/calculate`.
-8. **Attachments (draft only):** §3.3 — upload/preview/delete; read-only gallery when submitted.
-9. **Admin:** wage-rate and payroll-burden CRUD (§2).
+**App chrome and tabs: §0.** Then:
+
+1. **On bid open:** `GET /bids/:id` → hydrate `process`, **`workflow`**, `baseBid`, Specs if takeoff, attachments.
+2. **Company info:** Proposal/Estimate (§3.5). Job pick → prefill, PATCH `companyInfo`.
+3. **Activity log:** `activitySummary` on chrome; timeline `GET /bids/:id/activity` (§3.6). Handoff/outcome are their own actions.
+4. **Cover / due date:** `submitDate` + `timeEstimate` on header (§3.4). Submit → `{ "status": "submitted" }` (locks math, not outcome).
+5. **Lookups:** cache `/lookups/bidding/*` including **`process-meta`** and **`wage-decisions`**.
+6. **Wage-rate select (Estimate):** `GET .../wage-rates/:id/burdened-rate`. Wage-**decision** (Setup stage) is a different dropdown.
+7. **Estimate input change:** client engine live; debounced `PATCH { baseBid, systems, computed }` — no `/calculate`.
+8. **Stage fields:** debounced `PATCH { process }`. Incomplete OK. **Complete & Hand Off** is `POST .../handoff`, not a tab click. Spec sheet = dropdown rules `process.specSheets` — [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md).
+9. **Outcome tab** (always, end of Pre): `POST /bids/:id/outcome` — changeable. **Post** Awarded/Lost only if `workflow.showAward` / `showLost`.
+10. **Attachments:** §3.3 — upload until archived. Use `label` from `process-meta.attachmentLabels`.
+11. **Admin:** wage-rate, payroll-burden, **wage-decision** CRUD.
 
 ---
 
 ## 7. DB migration (backend/devops)
 
-`npm run bidding-migrate` — idempotent `scripts/sql/add-bidding-tables.sql`.
-
-Recent alters: `Bid_ActivityLog`, `Bids.UpdatedByUserId`, `Bid_Content.CompanyInfoJson`, `Bids.SubmitDate`, `Bids.TimeEstimate`, `App_Files` / `Bid_Attachments`. Re-run safe after each backend deploy.
+`npm run bidding-migrate` — idempotent `scripts/sql/add-bidding-tables.sql`.  
+`npm run bidding-migrate-process` — `ProcessStage`, `OutcomeStatus`, `WorkType`, `ProcessJson`, `Bid_WageDecisions` (remaps old stage names).

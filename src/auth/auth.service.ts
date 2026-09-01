@@ -30,10 +30,11 @@ export class AuthService {
     // When REQUIRE_SIGNUP_APPROVAL=false, new users can log in immediately (status=active).
     // When true (default), new users need admin approval (status=pending).
     const requireApproval = this.config.get<string>('REQUIRE_SIGNUP_APPROVAL', 'true') === 'true';
+    const defaults = await this.rbacService.getUserDefaults();
     const user = await this.usersService.create({
       email,
       password,
-      role: undefined, // defaults to Role.User
+      role: defaults.role as User['role'],
       status: requireApproval ? UserStatus.Pending : UserStatus.Active,
     });
 

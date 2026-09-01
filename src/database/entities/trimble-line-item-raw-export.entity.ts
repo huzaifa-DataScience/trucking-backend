@@ -24,7 +24,7 @@ export class TrimbleLineItemRawExport {
   @Column({ name: 'ProjectName', type: 'nvarchar', nullable: true })
   projectName!: string | null;
 
-  /** "line-items" — kept for forward compatibility if we add other report types later. */
+  /** "line-items" or "company-items" (catalog). For company-items, `ProjectId` is the StructShare companyId. */
   @Column({ name: 'ReportType', type: 'nvarchar', length: 60, default: 'line-items' })
   reportType!: string;
 

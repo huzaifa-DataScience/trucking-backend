@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Bid,
   BidContent,
+  BidWageDecision,
   BidCalcSnapshot,
   BidTeam,
   BidWageRate,
@@ -16,6 +17,8 @@ import {
   BidSpecArea,
   BidHelperMap,
   BidMikeCsvRow,
+  BidMikeFile,
+  BidParty,
   BidSpecLine,
   BidItemCatalog,
   AppFile,
@@ -23,6 +26,7 @@ import {
   BidActivityLog,
   Job,
 } from '../database/entities';
+import { ConnecteamModule } from '../connecteam/connecteam.module';
 import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
 import { BiddingService } from './bidding.service';
@@ -36,14 +40,16 @@ import { SpecsService } from './specs/specs.service';
 /**
  * Bidding estimator module (Base Bid tab → API).
  * CRUD on `/bids`, dropdown data on `/lookups/bidding/*`, server-side calc engine.
- * Specs Plumb phase 1: Mike CSV rows + Spec lines rollup.
+ * Specs Plumb: Mike + Spec lines. Production: earned hours vs Connecteam actuals.
  * See docs/BIDDING_DATABASE_DESIGN.md and BIDDING_BACKEND_STRUCTURE.md.
  */
 @Module({
   imports: [
+    ConnecteamModule,
     TypeOrmModule.forFeature([
       Bid,
       BidContent,
+      BidWageDecision,
       BidCalcSnapshot,
       BidTeam,
       BidWageRate,
@@ -57,6 +63,8 @@ import { SpecsService } from './specs/specs.service';
       BidSpecArea,
       BidHelperMap,
       BidMikeCsvRow,
+      BidMikeFile,
+      BidParty,
       BidSpecLine,
       BidItemCatalog,
       AppFile,

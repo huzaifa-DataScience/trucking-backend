@@ -1,6 +1,7 @@
 /**
  * One-off Trimble / StructShare sync.
  *
+ *   npm run run-trimble-sync -- --company-items   # catalog only (empty search, all SKUs)
  *   npm run run-trimble-sync -- --project=49849   # one job (fast)
  *   npm run run-trimble-sync                       # full sync (all active projects)
  */
@@ -78,6 +79,14 @@ async function run() {
   });
 
   try {
+    if (process.argv.includes('--company-items')) {
+      console.log('Trimble company catalog only (search empty — all items)…');
+      const result = await app.get(TrimbleSyncService).syncCompanyCatalogNow();
+      console.log('Done (company-items).', result);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+
     if (projectId != null && Number.isFinite(projectId)) {
       const result = await syncOneProject(
         projectId,

@@ -9,18 +9,25 @@ export interface TrimbleLineItemsPage {
   rows: Record<string, unknown>[];
 }
 
+export interface TrimbleCompanyItemsPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  companyId: number | null;
+  rows: Record<string, unknown>[];
+}
+
 @Injectable()
 export class TrimbleLineItemsApiService {
   constructor(private readonly dataSource: DataSource) {}
 
   /** Ordered SQL column names (Excel headers + Id / ProjectId / ExcelRowNumber). */
   async listColumnNames(): Promise<string[]> {
-    const rows: { COLUMN_NAME: string }[] = await this.dataSource.query(
-      `SELECT COLUMN_NAME AS COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = N'dbo' AND TABLE_NAME = N'Trimble_ProjectLineItems'
-       ORDER BY ORDINAL_POSITION`,
-    );
-    return rows.map((r) => r.COLUMN_NAME);
+    return this.listTableColumnNames('Trimble_ProjectLineItems');
+  }
+
+  async listCompanyItemColumnNames(): Promise<string[]> {
+    return this.listTableColumnNames('Trimble_CompanyItems');
   }
 
   /** Paginated parsed line-item rows for one StructShare project. */
@@ -30,13 +37,70 @@ export class TrimbleLineItemsApiService {
     pageSize: number,
   ): Promise<TrimbleLineItemsPage> {
     const pid = Math.floor(Number(projectId));
+    const { pageNum, size, total, rows } = await this.listPaged(
+      'Trimble_ProjectLineItems',
+      'ProjectId',
+      pid,
+      page,
+      pageSize,
+    );
+    return { page: pageNum, pageSize: size, total, projectId: pid, rows };
+  }
+
+  /** Paginated company catalog rows. Omit companyId to list the whole table. */
+  async listCompanyItems(
+    companyId: number | null,
+    page: number,
+    pageSize: number,
+  ): Promise<TrimbleCompanyItemsPage> {
+    const cid =
+      companyId != null && Number.isFinite(Number(companyId))
+        ? Math.floor(Number(companyId))
+        : null;
+    const { pageNum, size, total, rows } = await this.listPaged(
+      'Trimble_CompanyItems',
+      'CompanyId',
+      cid,
+      page,
+      pageSize,
+    );
+    return { page: pageNum, pageSize: size, total, companyId: cid, rows };
+  }
+
+  private async listTableColumnNames(
+    table: 'Trimble_ProjectLineItems' | 'Trimble_CompanyItems',
+  ): Promise<string[]> {
+    const rows: { COLUMN_NAME: string }[] = await this.dataSource.query(
+      `SELECT COLUMN_NAME AS COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = N'dbo' AND TABLE_NAME = N'${table}'
+       ORDER BY ORDINAL_POSITION`,
+    );
+    return rows.map((r) => r.COLUMN_NAME);
+  }
+
+  private async listPaged(
+    table: 'Trimble_ProjectLineItems' | 'Trimble_CompanyItems',
+    keyCol: 'ProjectId' | 'CompanyId',
+    keyValue: number | null,
+    page: number,
+    pageSize: number,
+  ): Promise<{
+    pageNum: number;
+    size: number;
+    total: number;
+    rows: Record<string, unknown>[];
+  }> {
     const pageNum = Math.max(1, Math.floor(page) || 1);
     const size = Math.max(1, Math.min(500, Math.floor(pageSize) || 50));
     const offset = (pageNum - 1) * size;
+    const where =
+      keyValue != null && Number.isFinite(keyValue)
+        ? `WHERE ${keyCol} = ${keyValue}`
+        : '';
 
     const cntRows: Array<{ cnt: number | string } | Record<string, unknown>> =
       await this.dataSource.query(
-        `SELECT COUNT_BIG(*) AS cnt FROM dbo.Trimble_ProjectLineItems WHERE ProjectId = ${pid}`,
+        `SELECT COUNT_BIG(*) AS cnt FROM dbo.${table} ${where}`,
       );
     const rawCnt = cntRows[0];
     const total = Number(
@@ -44,8 +108,8 @@ export class TrimbleLineItemsApiService {
     );
 
     const dataRows = await this.dataSource.query(
-      `SELECT * FROM dbo.Trimble_ProjectLineItems
-       WHERE ProjectId = ${pid}
+      `SELECT * FROM dbo.${table}
+       ${where}
        ORDER BY ExcelRowNumber ASC
        OFFSET ${offset} ROWS FETCH NEXT ${size} ROWS ONLY`,
     );
@@ -58,12 +122,6 @@ export class TrimbleLineItemsApiService {
       return out;
     });
 
-    return {
-      page: pageNum,
-      pageSize: size,
-      total,
-      projectId: pid,
-      rows,
-    };
+    return { pageNum, size, total, rows };
   }
 }

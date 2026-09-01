@@ -89,11 +89,17 @@ export class ConnecteamController {
   async hoursByJob(
     @Query('jobId') jobId?: string,
     @Query('normalizedJobNumber') normalizedJobNumber?: string,
+    @Query('refJobId') refJobIdRaw?: string,
     @Query('limit') limit?: string,
   ) {
+    const refJobId =
+      refJobIdRaw != null && String(refJobIdRaw).trim() !== ''
+        ? Number(refJobIdRaw)
+        : undefined;
     const rows = await this.reports.hoursByJob({
       jobId,
       normalizedJobNumber,
+      refJobId: refJobId != null && Number.isFinite(refJobId) ? refJobId : undefined,
       limit: limit ? Number(limit) : undefined,
     });
     return { rows: await this.reports.enrichHoursByJob(rows) };

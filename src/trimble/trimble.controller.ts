@@ -58,6 +58,53 @@ export class TrimbleController {
     return { columns };
   }
 
+  /** Column names on `Trimble_CompanyItems` (company catalog grid headers). */
+  @Get('company-items/columns')
+  async companyItemColumns() {
+    const columns = await this.lineItemsApi.listCompanyItemColumnNames();
+    return { columns };
+  }
+
+  /**
+   * Stream the most recent successful Company Items XLSX (catalog, not per-project).
+   */
+  @Get('company-items/export/download')
+  async downloadLatestCompanyItems(@Res() res: Response): Promise<void> {
+    const row = await this.rawExports
+      .createQueryBuilder('e')
+      .where(`e.ReportType = :rt AND e.Payload IS NOT NULL`, { rt: 'company-items' })
+      .orderBy('e.FetchedAt', 'DESC')
+      .getOne();
+    if (!row || !row.payload) {
+      throw new NotFoundException('No stored Company Items XLSX export found.');
+    }
+    const filename = row.fileName ?? 'Company_Items.xlsx';
+    res.setHeader(
+      'Content-Type',
+      row.contentType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    res.setHeader('Content-Length', String(row.payload.length));
+    res.end(row.payload);
+  }
+
+  /**
+   * Parsed company catalog rows (paginated). Optional `companyId` filter.
+   * Query: `page` (default 1), `pageSize` (default 50, max 500), `companyId`.
+   */
+  @Get('company-items')
+  async companyItems(
+    @Query('companyId') companyIdRaw?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const cidRaw = companyIdRaw != null && companyIdRaw !== '' ? Number(companyIdRaw) : null;
+    const companyId = cidRaw != null && Number.isFinite(cidRaw) ? cidRaw : null;
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1));
+    const pageSizeNum = Math.max(1, Math.min(500, Math.floor(Number(pageSize) || 50)));
+    return this.lineItemsApi.listCompanyItems(companyId, pageNum, pageSizeNum);
+  }
+
   /**
    * Parsed Excel line-item rows for one project (paginated). Requires JWT.
    * Query: `projectId` (required), `page` (default 1), `pageSize` (default 50, max 500).
@@ -135,6 +182,7 @@ export class TrimbleController {
   @Get('exports')
   async listExports(
     @Query('projectId') projectIdRaw?: string,
+    @Query('reportType') reportTypeRaw?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
@@ -146,8 +194,10 @@ export class TrimbleController {
     const qb = this.rawExports.createQueryBuilder('e');
     if (projectIdRaw) {
       const pid = Number(projectIdRaw);
-      if (Number.isFinite(pid)) qb.where('e.ProjectId = :pid', { pid });
+      if (Number.isFinite(pid)) qb.andWhere('e.ProjectId = :pid', { pid });
     }
+    const reportType = (reportTypeRaw ?? '').trim();
+    if (reportType) qb.andWhere('e.ReportType = :rt', { rt: reportType });
     qb.orderBy('e.FetchedAt', 'DESC').addOrderBy('e.Id', 'DESC');
     if (wantPaginated) qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = wantPaginated ? await qb.getManyAndCount() : [await qb.getMany(), 0];

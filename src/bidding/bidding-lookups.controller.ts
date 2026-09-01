@@ -45,6 +45,26 @@ class UpdateWageRateDto {
   @IsOptional() @IsISO8601() wageAsOf?: string;
 }
 
+class CreateWageDecisionDto {
+  @IsString() @MinLength(1) @MaxLength(80) decisionNumber!: string;
+  @IsOptional() @IsISO8601() decisionDate?: string;
+  @IsOptional() @IsString() @MaxLength(100) county?: string;
+  @IsOptional() @IsString() @MaxLength(40) jurisdiction?: string;
+  @IsOptional() @IsString() @MaxLength(100) category?: string;
+  @IsOptional() @IsNumber() @Min(0) wage?: number;
+  @IsOptional() @IsNumber() @Min(0) fringe?: number;
+}
+
+class UpdateWageDecisionDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(80) decisionNumber?: string;
+  @IsOptional() @IsISO8601() decisionDate?: string;
+  @IsOptional() @IsString() @MaxLength(100) county?: string;
+  @IsOptional() @IsString() @MaxLength(40) jurisdiction?: string;
+  @IsOptional() @IsString() @MaxLength(100) category?: string;
+  @IsOptional() @IsNumber() @Min(0) wage?: number;
+  @IsOptional() @IsNumber() @Min(0) fringe?: number;
+}
+
 class PatchItemCatalogPriceDto {
   @IsNumber() @Min(0) price!: number;
 }
@@ -83,6 +103,36 @@ export class BiddingLookupsController {
   @Get('teams')
   getTeams() {
     return this.lookups.getTeams();
+  }
+
+  @Get('parties')
+  getParties(@Query('role') role?: string, @Query('q') q?: string) {
+    return this.lookups.getParties(role, q);
+  }
+
+  @Get('process-meta')
+  getProcessMeta() {
+    return this.lookups.getProcessMeta();
+  }
+
+  @Get('wage-decisions')
+  getWageDecisions() {
+    return this.lookups.getWageDecisions();
+  }
+
+  @Post('wage-decisions')
+  createWageDecision(@Body() dto: CreateWageDecisionDto) {
+    return this.lookups.createWageDecision(dto);
+  }
+
+  @Patch('wage-decisions/:id')
+  updateWageDecision(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateWageDecisionDto) {
+    return this.lookups.updateWageDecision(id, dto);
+  }
+
+  @Delete('wage-decisions/:id')
+  deleteWageDecision(@Param('id', ParseIntPipe) id: number) {
+    return this.lookups.deleteWageDecision(id);
   }
 
   @Post('teams')
@@ -161,20 +211,37 @@ export class BiddingLookupsController {
     return this.lookups.getPreferences();
   }
 
-  /** Specs Plumb masters (EstimationFile List + helpermap). */
+  /** Specs Plumb Insulation (H). Family required (or `code` / `q`). Bare GET → []. `?kind=` ignored. */
   @Get('spec-systems')
-  getSpecSystems() {
-    return this.specs.getSpecSystems();
+  getSpecSystems(@Query('kind') kind?: string) {
+    return this.specs.getSpecSystems(kind);
   }
 
   @Get('spec-materials')
-  getSpecMaterials() {
-    return this.specs.getSpecMaterials();
+  getSpecMaterials(
+    @Query('kind') kind?: string,
+    @Query('family') family?: string,
+    @Query('insulationFamily') insulationFamily?: string,
+    @Query('layer') layer?: string,
+    @Query('code') code?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.specs.getSpecMaterials(kind, { family, insulationFamily, layer, code, q });
   }
 
   @Get('spec-areas')
   getSpecAreas() {
     return this.specs.getSpecAreas();
+  }
+
+  @Get('spec-sizes')
+  getSpecSizes(@Query('kind') kind?: string, @Query('code') code?: string) {
+    return this.specs.getSpecSizes(kind, code);
+  }
+
+  @Get('spec-thicknesses')
+  getSpecThicknesses(@Query('kind') kind?: string, @Query('code') code?: string) {
+    return this.specs.getSpecThicknesses(kind, code);
   }
 
   @Get('spec-facings')
