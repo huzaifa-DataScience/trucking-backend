@@ -57,8 +57,8 @@ export class BiddingAttachmentsService {
     opts: { label?: string; userId?: number },
   ): Promise<BidAttachmentDto> {
     const bid = await this.requireBid(bidId);
-    if (bid.status !== 'draft') {
-      throw new ConflictException(`Bid ${bidId} is ${bid.status}; reopen to draft before uploading attachments`);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${bidId} is archived; cannot upload attachments`);
     }
     if (!file?.buffer?.length) {
       throw new BadRequestException('No file uploaded (field name: file)');
@@ -131,8 +131,8 @@ export class BiddingAttachmentsService {
 
   async remove(bidId: number, attachmentId: number, userId?: number): Promise<{ ok: true }> {
     const bid = await this.requireBid(bidId);
-    if (bid.status !== 'draft') {
-      throw new ConflictException(`Bid ${bidId} is ${bid.status}; reopen to draft before deleting attachments`);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${bidId} is archived; cannot delete attachments`);
     }
 
     const attachment = await this.attachmentRepo.findOne({

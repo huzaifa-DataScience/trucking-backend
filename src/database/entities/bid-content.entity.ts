@@ -26,6 +26,10 @@ export class BidContent {
   @Column({ name: 'CompanyInfoJson', type: 'nvarchar', length: 'MAX', nullable: true })
   companyInfoJson!: string | null;
 
+  /** Invite → award lifecycle (not Base Bid math). See bidding/process/bid-process.ts. */
+  @Column({ name: 'ProcessJson', type: 'nvarchar', length: 'MAX', nullable: true })
+  processJson!: string | null;
+
   @Column({ name: 'InputsSchemaVer', type: 'int', default: 1 })
   inputsSchemaVer!: number;
 

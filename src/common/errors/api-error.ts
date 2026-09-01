@@ -17,10 +17,14 @@ export const ApiErrorCode = {
   SPECS_LINE_NOT_FOUND: 'SPECS_LINE_NOT_FOUND',
   SPECS_NO_MIKE_ROWS: 'SPECS_NO_MIKE_ROWS',
   SPECS_MIKE_ROWS_INVALID: 'SPECS_MIKE_ROWS_INVALID',
+  SPECS_MIKE_FILE_NOT_FOUND: 'SPECS_MIKE_FILE_NOT_FOUND',
+  SPECS_MIKE_FILE_NAME_INVALID: 'SPECS_MIKE_FILE_NAME_INVALID',
+  SPECS_JOB_NOT_FOUND: 'SPECS_JOB_NOT_FOUND',
   SPECS_LINE_INVALID: 'SPECS_LINE_INVALID',
   SPECS_CATALOG_NOT_FOUND: 'SPECS_CATALOG_NOT_FOUND',
   SPECS_CATALOG_PRICE_INVALID: 'SPECS_CATALOG_PRICE_INVALID',
   SPECS_TRIMBLE_NOT_LINKED: 'SPECS_TRIMBLE_NOT_LINKED',
+  BID_DUPLICATE: 'BID_DUPLICATE',
 } as const;
 
 export type ApiErrorCodeName = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
@@ -55,6 +59,14 @@ export function apiBadRequest(
   details?: unknown,
 ): ApiException {
   return new ApiException(code, message, HttpStatus.BAD_REQUEST, details);
+}
+
+export function apiConflict(
+  code: ApiErrorCodeName | string,
+  message: string,
+  details?: unknown,
+): ApiException {
+  return new ApiException(code, message, HttpStatus.CONFLICT, details);
 }
 
 export function apiNotFound(

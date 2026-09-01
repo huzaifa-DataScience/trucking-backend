@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from '../../database/entities';
+import { isAdminPanelRole } from '../../database/entities/user.entity';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
 @Injectable()
@@ -25,8 +26,9 @@ export class RolesGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException('Not authenticated');
     }
+    if (user.role === Role.SuperAdmin) return true;
     const hasRole = requiredRoles.some((role) => user.role === role);
-    if (!hasRole) {
+    if (!hasRole && !(requiredRoles.includes(Role.Admin) && isAdminPanelRole(user.role))) {
       throw new ForbiddenException('Insufficient permissions');
     }
     return true;

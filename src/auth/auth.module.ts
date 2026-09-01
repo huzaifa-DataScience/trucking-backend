@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AppRole } from '../database/entities';
+import { AppRole, Permission, AppSetting } from '../database/entities';
 import { UsersModule } from '../users/users.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
@@ -13,7 +13,7 @@ import { RbacService } from './rbac.service';
 @Module({
   imports: [
     UsersModule,
-    TypeOrmModule.forFeature([AppRole]),
+    TypeOrmModule.forFeature([AppRole, Permission, AppSetting]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -28,6 +28,6 @@ import { RbacService } from './rbac.service';
   ],
   providers: [AuthService, JwtStrategy, RbacService],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, RbacService],
 })
 export class AuthModule {}

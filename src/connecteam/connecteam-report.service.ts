@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ConnecteamJob, ConnecteamTimeActivity, ConnecteamUser } from '../database/entities';
 import { ConnecteamDisplayService } from './connecteam-display.service';
+import { normalizeConnecteamJobNumber } from './connecteam.util';
 
 export type HoursByJobRow = {
   jobId: string | null;
@@ -11,6 +12,8 @@ export type HoursByJobRow = {
   refJobId: number | null;
   totalMinutes: number;
   shiftCount: number;
+  /** Distinct Connecteam users who clocked on this job. */
+  workerCount: number;
 };
 
 export type HoursByUserRow = {
@@ -35,6 +38,8 @@ export class ConnecteamReportService {
   async hoursByJob(opts?: {
     jobId?: string;
     normalizedJobNumber?: string;
+    /** Prefer this when caller has Bid.jobId → Ref_Jobs.id */
+    refJobId?: number;
     limit?: number;
   }): Promise<HoursByJobRow[]> {
     const limit = Math.max(1, Math.min(500, opts?.limit ?? 100));
@@ -47,6 +52,7 @@ export class ConnecteamReportService {
       .addSelect('j.refJobId', 'refJobId')
       .addSelect('SUM(COALESCE(a.durationMinutes, 0))', 'totalMinutes')
       .addSelect('COUNT(*)', 'shiftCount')
+      .addSelect('COUNT(DISTINCT a.userId)', 'workerCount')
       .where('a.durationMinutes IS NOT NULL')
       .groupBy('a.jobId')
       .addGroupBy('j.normalizedJobNumber')
@@ -57,7 +63,14 @@ export class ConnecteamReportService {
 
     if (opts?.jobId?.trim()) qb.andWhere('a.jobId = :jobId', { jobId: opts.jobId.trim() });
     if (opts?.normalizedJobNumber?.trim()) {
-      qb.andWhere('j.normalizedJobNumber = :jn', { jn: opts.normalizedJobNumber.trim() });
+      // Connecteam codes are often unpadded (2726); we store/match 5-digit (02726).
+      const jn =
+        normalizeConnecteamJobNumber(opts.normalizedJobNumber) ||
+        opts.normalizedJobNumber.trim();
+      qb.andWhere('j.normalizedJobNumber = :jn', { jn });
+    }
+    if (opts?.refJobId != null && Number.isFinite(opts.refJobId)) {
+      qb.andWhere('j.refJobId = :refJobId', { refJobId: opts.refJobId });
     }
 
     const rows = await qb.getRawMany<{
@@ -67,16 +80,51 @@ export class ConnecteamReportService {
       refJobId: number | null;
       totalMinutes: string;
       shiftCount: string;
+      workerCount: string;
     }>();
 
-    return rows.map((r) => ({
-      jobId: r.jobId,
-      normalizedJobNumber: r.normalizedJobNumber,
-      jobTitle: r.jobTitle,
-      refJobId: r.refJobId != null ? Number(r.refJobId) : null,
-      totalMinutes: Number(r.totalMinutes ?? 0),
-      shiftCount: Number(r.shiftCount ?? 0),
-    }));
+    return rows.map((r) => {
+      const raw = r as Record<string, unknown>;
+      // MSSQL/TypeORM sometimes returns odd alias casing
+      const workerRaw =
+        r.workerCount ?? raw.WorkerCount ?? raw.worker_count ?? raw.WORKERCOUNT;
+      return {
+        jobId: r.jobId,
+        normalizedJobNumber: r.normalizedJobNumber,
+        jobTitle: r.jobTitle,
+        refJobId: r.refJobId != null ? Number(r.refJobId) : null,
+        totalMinutes: Number(r.totalMinutes ?? 0),
+        shiftCount: Number(r.shiftCount ?? 0),
+        workerCount: Number(workerRaw ?? 0) || 0,
+      };
+    });
+  }
+
+  /** Distinct users who clocked on a job (same filters as hoursByJob). */
+  async countWorkersForJob(opts?: {
+    jobId?: string;
+    normalizedJobNumber?: string;
+    refJobId?: number;
+  }): Promise<number> {
+    const qb = this.timeActivities
+      .createQueryBuilder('a')
+      .leftJoin(ConnecteamJob, 'j', 'j.jobId = a.jobId')
+      .select('COUNT(DISTINCT a.userId)', 'n')
+      .where('a.durationMinutes IS NOT NULL');
+
+    if (opts?.jobId?.trim()) qb.andWhere('a.jobId = :jobId', { jobId: opts.jobId.trim() });
+    if (opts?.normalizedJobNumber?.trim()) {
+      const jn =
+        normalizeConnecteamJobNumber(opts.normalizedJobNumber) ||
+        opts.normalizedJobNumber.trim();
+      qb.andWhere('j.normalizedJobNumber = :jn', { jn });
+    }
+    if (opts?.refJobId != null && Number.isFinite(opts.refJobId)) {
+      qb.andWhere('j.refJobId = :refJobId', { refJobId: opts.refJobId });
+    }
+
+    const row = await qb.getRawOne<{ n: string }>();
+    return Number(row?.n ?? 0) || 0;
   }
 
   async enrichHoursByJob(rows: HoursByJobRow[]) {

@@ -59,52 +59,92 @@ interface ParsedSheet {
   rows: { excelRowNumber: number; values: (string | null)[] }[];
 }
 
+/** Tables we ALTER / INSERT into — never interpolating caller strings. */
+const EXCEL_TABLES = {
+  lineItems: {
+    name: 'Trimble_ProjectLineItems',
+    keyColumn: 'ProjectId',
+    preferredSheets: ['Project_Items'],
+  },
+  companyItems: {
+    name: 'Trimble_CompanyItems',
+    keyColumn: 'CompanyId',
+    preferredSheets: ['Company_Items'],
+  },
+} as const;
+
+type ExcelTableKey = keyof typeof EXCEL_TABLES;
+
 @Injectable()
 export class TrimbleLineItemIngestService {
   constructor(private readonly dataSource: DataSource) {}
 
   async clearForProject(projectId: number): Promise<void> {
-    const pid = Number(projectId);
-    if (!Number.isFinite(pid)) return;
-    await this.dataSource.query(
-      `DELETE FROM dbo.Trimble_ProjectLineItems WHERE ProjectId = ${pid}`,
-    );
+    await this.clearKey('lineItems', projectId);
+  }
+
+  async clearForCompany(companyId: number): Promise<void> {
+    await this.clearKey('companyItems', companyId);
   }
 
   /**
    * Parse workbook, ensure one SQL column per Excel header (exact name), replace rows for project.
    */
   async ingestFromXlsx(projectId: number, _rawExportId: number, buffer: Buffer): Promise<number> {
-    const sheet = await this.parseWorkbook(buffer);
-    const pid = Number(projectId);
-    if (!Number.isFinite(pid)) return 0;
+    return this.ingestExcelTable('lineItems', projectId, buffer);
+  }
+
+  async ingestCompanyItemsFromXlsx(
+    companyId: number,
+    _rawExportId: number,
+    buffer: Buffer,
+  ): Promise<number> {
+    return this.ingestExcelTable('companyItems', companyId, buffer);
+  }
+
+  private async clearKey(tableKey: ExcelTableKey, keyValue: number): Promise<void> {
+    const spec = EXCEL_TABLES[tableKey];
+    const id = Number(keyValue);
+    if (!Number.isFinite(id)) return;
+    await this.dataSource.query(
+      `DELETE FROM dbo.${spec.name} WHERE ${spec.keyColumn} = ${id}`,
+    );
+  }
+
+  private async ingestExcelTable(
+    tableKey: ExcelTableKey,
+    keyValue: number,
+    buffer: Buffer,
+  ): Promise<number> {
+    const spec = EXCEL_TABLES[tableKey];
+    const sheet = await this.parseWorkbook(buffer, spec.preferredSheets);
+    const id = Number(keyValue);
+    if (!Number.isFinite(id)) return 0;
     if (sheet.headers.length === 0) {
-      await this.clearForProject(pid);
+      await this.clearKey(tableKey, id);
       return 0;
     }
 
-    const physicalByNorm = await this.ensureExcelColumns(sheet.headers);
+    const physicalByNorm = await this.ensureExcelColumns(spec.name, sheet.headers);
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.query(
-        `DELETE FROM dbo.Trimble_ProjectLineItems WHERE ProjectId = ${pid}`,
-      );
+      await manager.query(`DELETE FROM dbo.${spec.name} WHERE ${spec.keyColumn} = ${id}`);
       const chunk = 25;
       const headerSql = sheet.headers
         .map((h) => sqlBracketIdent(physicalByNorm.get(normKey(h))!))
         .join(', ');
-      const fixedCols = '[ProjectId], [ExcelRowNumber]';
+      const fixedCols = `[${spec.keyColumn}], [ExcelRowNumber]`;
 
       for (let i = 0; i < sheet.rows.length; i += chunk) {
         const part = sheet.rows.slice(i, i + chunk);
         const valueTuples = part
           .map((r) => {
             const cells = r.values.map((v) => sqlNString(v)).join(', ');
-            return `(${pid}, ${r.excelRowNumber}, ${cells})`;
+            return `(${id}, ${r.excelRowNumber}, ${cells})`;
           })
           .join(',\n');
         await manager.query(
-          `INSERT INTO dbo.Trimble_ProjectLineItems (${fixedCols}, ${headerSql})\nVALUES\n${valueTuples}`,
+          `INSERT INTO dbo.${spec.name} (${fixedCols}, ${headerSql})\nVALUES\n${valueTuples}`,
         );
       }
     });
@@ -116,10 +156,13 @@ export class TrimbleLineItemIngestService {
    * Add missing columns (case-insensitive vs existing DB columns — SQL Server CI collation).
    * Returns map normalizedKey -> physical column name to use in INSERT.
    */
-  private async ensureExcelColumns(headers: string[]): Promise<Map<string, string>> {
+  private async ensureExcelColumns(
+    tableName: (typeof EXCEL_TABLES)[ExcelTableKey]['name'],
+    headers: string[],
+  ): Promise<Map<string, string>> {
     const rows: { COLUMN_NAME: string }[] = await this.dataSource.query(
       `SELECT COLUMN_NAME AS COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = N'dbo' AND TABLE_NAME = N'Trimble_ProjectLineItems'`,
+       WHERE TABLE_SCHEMA = N'dbo' AND TABLE_NAME = N'${tableName}'`,
     );
     const physicalByNorm = new Map<string, string>();
     for (const r of rows) {
@@ -132,18 +175,22 @@ export class TrimbleLineItemIngestService {
       if (physicalByNorm.has(n)) continue;
       const physical = (h.trim() || '__empty').slice(0, 128);
       await this.dataSource.query(
-        `ALTER TABLE dbo.Trimble_ProjectLineItems ADD ${sqlBracketIdent(h)} nvarchar(max) NULL`,
+        `ALTER TABLE dbo.${tableName} ADD ${sqlBracketIdent(h)} nvarchar(max) NULL`,
       );
       physicalByNorm.set(n, physical);
     }
     return physicalByNorm;
   }
 
-  private async parseWorkbook(buffer: Buffer): Promise<ParsedSheet> {
+  private async parseWorkbook(buffer: Buffer, preferredSheets: readonly string[]): Promise<ParsedSheet> {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
-    let ws = wb.getWorksheet('Project_Items');
+    let ws: ExcelJS.Worksheet | undefined;
+    for (const name of preferredSheets) {
+      ws = wb.getWorksheet(name);
+      if (ws) break;
+    }
     if (!ws) ws = wb.worksheets[0];
     if (!ws) return { headers: [], rows: [] };
 

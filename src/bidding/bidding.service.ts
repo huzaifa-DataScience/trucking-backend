@@ -14,11 +14,29 @@ import {
   BidState,
   Job,
 } from '../database/entities';
-import { CalculateBidDto, CreateBidDto, PatchBidDto } from './dto/bidding.dto';
+import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
+import { CalculateBidDto, CreateBidDto, HandoffBidDto, PatchBidDto, SetOutcomeDto } from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingActivityService } from './bidding-activity.service';
+import { BiddingLookupsService } from './bidding-lookups.service';
+import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
+import {
+  BidProcessError,
+  absorbIntake,
+  applyHandoff,
+  applyOutcome,
+  emptyProcess,
+  mergeProcess,
+  normalizeProjectNumber,
+  parseProcess,
+  workflowChrome,
+  type BidProcess,
+  type HandoffAction,
+  type HandoffCtx,
+  type OutcomeStatus,
+} from './process/bid-process';
 
 /** Soft cap for the client `computed` snapshot (matches frontend handoff §3.1). */
 const MAX_COMPUTED_BYTES = 256 * 1024;
@@ -84,6 +102,8 @@ export class BiddingService {
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
     private readonly attachments: BiddingAttachmentsService,
     private readonly activity: BiddingActivityService,
+    private readonly specs: SpecsService,
+    private readonly lookups: BiddingLookupsService,
   ) {}
 
   /** Auto-fill Trimble project from bid.job → JobNumber match (unless client set trimble explicitly). */
@@ -98,7 +118,16 @@ export class BiddingService {
     if (resolved != null) bid.trimbleProjectId = resolved;
   }
 
-  async list(params: { status?: string; entityId?: number; search?: string }) {
+  async list(params: {
+    status?: string;
+    entityId?: number;
+    search?: string;
+    processStage?: string;
+    workType?: string;
+    outcome?: string;
+    ownerProjectNumber?: string;
+    mechanicalEngineerProjectNumber?: string;
+  }) {
     const qb = this.bidRepo
       .createQueryBuilder('b')
       .leftJoinAndSelect('b.ourEntity', 'e')
@@ -106,11 +135,34 @@ export class BiddingService {
 
     if (params.status) qb.andWhere('b.status = :status', { status: params.status });
     if (params.entityId != null) qb.andWhere('b.ourEntityId = :eid', { eid: params.entityId });
+    if (params.processStage) qb.andWhere('b.processStage = :ps', { ps: params.processStage });
+    if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
+    if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
+    const opn = normalizeProjectNumber(params.ownerProjectNumber);
+    const mepn = normalizeProjectNumber(params.mechanicalEngineerProjectNumber);
+    const needProcess = !!(params.search || opn || mepn);
+    if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
     if (params.search) {
-      qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
+      const q = params.search.replace(/#/g, '').trim();
       qb.andWhere(
-        '(b.estimateNumber LIKE :q OR b.bidName LIKE :q OR JSON_VALUE(cnt.CompanyInfoJson, \'$.companyName\') LIKE :q)',
-        { q: `%${params.search}%` },
+        `(b.estimateNumber LIKE :q OR b.bidName LIKE :q
+          OR JSON_VALUE(cnt.CompanyInfoJson, '$.companyName') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.drawingName') LIKE :q
+          OR REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.ownerProjectNumber'), ''), '#', ''), ' ', '') LIKE :q
+          OR REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineerProjectNumber'), ''), '#', ''), ' ', '') LIKE :q)`,
+        { q: `%${q}%` },
+      );
+    }
+    if (opn) {
+      qb.andWhere(
+        `REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.ownerProjectNumber'), ''), '#', ''), ' ', '') = :opn`,
+        { opn },
+      );
+    }
+    if (mepn) {
+      qb.andWhere(
+        `REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineerProjectNumber'), ''), '#', ''), ' ', '') = :mepn`,
+        { mepn },
       );
     }
     qb.orderBy('b.updatedAt', 'DESC');
@@ -141,16 +193,29 @@ export class BiddingService {
   }
 
   async create(dto: CreateBidDto, userId?: number) {
+    const process = dto.process
+      ? this.mergeProcessSafe(emptyProcess(), dto.process)
+      : null;
+    if (process) await this.specs.applySpecSheetCodes(process);
+    await this.assertUniqueOpportunity({
+      estimateNumber: dto.estimateNumber,
+      bidName: process?.drawingName || dto.bidName,
+      ownerProjectNumber: process?.ownerProjectNumber,
+      mechanicalEngineerProjectNumber: process?.mechanicalEngineerProjectNumber,
+    });
     const bid = this.bidRepo.create({
       ourEntityId: dto.ourEntityId,
       jobId: dto.jobId ?? null,
       trimbleProjectId: dto.trimbleProjectId ?? null,
       estimateNumber: dto.estimateNumber,
-      bidName: dto.bidName ?? null,
+      bidName: process?.drawingName || dto.bidName?.trim() || null,
       bidDate: dto.bidDate ? new Date(dto.bidDate) : null,
       submitDate: dto.submitDate ? new Date(dto.submitDate) : null,
       timeEstimate: dto.timeEstimate ?? null,
       status: 'draft',
+      processStage: process?.stage ?? 'intake',
+      outcomeStatus: process?.outcome ?? 'open',
+      workType: process?.workType ?? null,
       createdByUserId: userId ?? null,
       updatedByUserId: userId ?? null,
     });
@@ -169,11 +234,15 @@ export class BiddingService {
         : dto.jobId
           ? JSON.stringify(await this.getCompanyInfoPrefillFromJob(dto.jobId))
           : null,
+      processJson: process ? JSON.stringify(process) : null,
+      inputsSchemaVer: process ? 2 : 1,
     });
     if (dto.baseBid) assertFiniteNumbers(dto.baseBid, 'baseBid');
     if (dto.companyInfo) assertCompanyInfo(dto.companyInfo);
     if (dto.systems) assertFiniteNumbers(dto.systems, 'systems');
     await this.contentRepo.save(content);
+
+    if (process) await this.lookups.upsertFromProcess(process);
 
     if (dto.computed) await this.storeClientSnapshot(saved.id, dto.computed);
 
@@ -219,6 +288,9 @@ export class BiddingService {
       })) ??
       (await this.snapshotRepo.findOne({ where: { bidId: id }, order: { id: 'DESC' } }));
 
+    const process = parseProcess(parseJson(content?.processJson ?? null, null));
+    await this.specs.applySpecSheetCodes(process);
+    const attachments = await this.attachments.listForBid(id);
     return {
       ...this.toSummary(bid, content),
       jobId: bid.jobId,
@@ -226,8 +298,10 @@ export class BiddingService {
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
       systems: parseJson<unknown[]>(content?.systemsJson ?? null, []),
       companyInfo: parseCompanyInfo(content?.companyInfoJson ?? null),
+      process,
+      workflow: workflowChrome(process, { hasDrawings: this.hasDrawingsLabel(attachments) }),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
-      attachments: await this.attachments.listForBid(id),
+      attachments,
       activitySummary: await this.activity.getSummary(id),
     };
   }
@@ -254,6 +328,9 @@ export class BiddingService {
         `Bid ${id} is ${bid.status}; reopen to draft before editing inputs, company info, or computed`,
       );
     }
+    if (dto.process !== undefined && bid.status === 'archived') {
+      throw new ConflictException(`Bid ${id} is archived; cannot edit process`);
+    }
 
     if (dto.ourEntityId != null) bid.ourEntityId = dto.ourEntityId;
     if (dto.jobId !== undefined) bid.jobId = dto.jobId ?? null;
@@ -268,7 +345,22 @@ export class BiddingService {
     if (dto.trimbleProjectId === undefined && bid.trimbleProjectId == null && bid.jobId != null) {
       await this.applyTrimbleFromJob(bid, { jobId: bid.jobId, trimbleExplicit: false });
     }
-    if (dto.bidName !== undefined) bid.bidName = dto.bidName ?? null;
+    let content = await this.contentRepo.findOne({ where: { bidId: id } });
+    const contentBefore = content ? { ...content } : null;
+    if (!content) content = this.contentRepo.create({ bidId: id });
+    const processNow =
+      dto.process !== undefined
+        ? this.mergeProcessSafe(parseProcess(parseJson(content.processJson ?? null, null)), dto.process)
+        : parseProcess(parseJson(content.processJson ?? null, null));
+    if (processNow.drawingName) bid.bidName = processNow.drawingName;
+    else if (dto.bidName !== undefined) bid.bidName = dto.bidName ?? null;
+    await this.assertUniqueOpportunity({
+      excludeId: id,
+      estimateNumber: dto.estimateNumber ?? bid.estimateNumber,
+      bidName: bid.bidName,
+      ownerProjectNumber: processNow.ownerProjectNumber,
+      mechanicalEngineerProjectNumber: processNow.mechanicalEngineerProjectNumber,
+    });
     if (dto.bidDate !== undefined) bid.bidDate = dto.bidDate ? new Date(dto.bidDate) : null;
     if (dto.submitDate !== undefined) bid.submitDate = dto.submitDate ? new Date(dto.submitDate) : null;
     if (dto.timeEstimate !== undefined) {
@@ -286,10 +378,6 @@ export class BiddingService {
     bid.updatedByUserId = userId ?? null;
     await this.bidRepo.save(bid);
 
-    let content = await this.contentRepo.findOne({ where: { bidId: id } });
-    const contentBefore = content ? { ...content } : null;
-    if (!content) content = this.contentRepo.create({ bidId: id });
-
     if (dto.baseBid !== undefined) {
       assertFiniteNumbers(dto.baseBid, 'baseBid');
       const existing = parseJson<Record<string, unknown>>(content.baseBidJson ?? null, {});
@@ -304,8 +392,20 @@ export class BiddingService {
       const existing = parseCompanyInfo(content.companyInfoJson ?? null);
       content.companyInfoJson = JSON.stringify({ ...existing, ...dto.companyInfo });
     }
+    if (dto.process !== undefined) {
+      const merged = processNow;
+      await this.specs.applySpecSheetCodes(merged);
+      content.processJson = JSON.stringify(merged);
+      content.inputsSchemaVer = Math.max(Number(content.inputsSchemaVer) || 1, 2);
+      bid.processStage = merged.stage;
+      bid.outcomeStatus = merged.outcome;
+      bid.workType = merged.workType;
+      await this.bidRepo.save(bid);
+    }
     content.updatedAt = new Date();
     await this.contentRepo.save(content);
+
+    if (dto.process !== undefined) await this.lookups.upsertFromProcess(processNow);
 
     // Client is the source of truth: store its snapshot verbatim, never run the
     // server engine here. A PATCH without `computed` leaves the snapshot as-is.
@@ -324,6 +424,111 @@ export class BiddingService {
     );
 
     return this.getDetail(id);
+  }
+
+  async handoff(id: number, dto: HandoffBidDto, userId?: number) {
+    const { bid, content } = await this.loadProcessRow(id);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${id} is archived; cannot hand off`);
+    }
+    const current = parseProcess(parseJson(content.processJson ?? null, null));
+    const attachments = await this.attachments.listForBid(id);
+    const next = this.handoffSafe(current, dto.action, dto.notes, {
+      hasDrawings: this.hasDrawingsLabel(attachments),
+    });
+    return this.persistProcess(bid, content, next, userId, async () => {
+      await this.activity.recordHandoff(id, userId, dto.action, current.stage, next.stage, next.outcome);
+    });
+  }
+
+  async setOutcome(id: number, dto: SetOutcomeDto, userId?: number) {
+    const { bid, content } = await this.loadProcessRow(id);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${id} is archived; cannot set outcome`);
+    }
+    const current = parseProcess(parseJson(content.processJson ?? null, null));
+    let next: BidProcess;
+    try {
+      next = applyOutcome(current, dto.outcome as OutcomeStatus);
+    } catch (e) {
+      if (e instanceof BidProcessError) throw new BadRequestException(e.message);
+      throw e;
+    }
+    return this.persistProcess(bid, content, next, userId, async () => {
+      await this.activity.recordOutcome(id, userId, current.outcome, next.outcome);
+    });
+  }
+
+  private async loadProcessRow(id: number) {
+    const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false } });
+    if (!bid) throw new NotFoundException(`Bid ${id} not found`);
+    let content = await this.contentRepo.findOne({ where: { bidId: id } });
+    if (!content) content = this.contentRepo.create({ bidId: id });
+    return { bid, content };
+  }
+
+  private async persistProcess(
+    bid: Bid,
+    content: BidContent,
+    next: BidProcess,
+    userId: number | undefined,
+    afterSave: () => Promise<void>,
+  ) {
+    await this.specs.applySpecSheetCodes(next);
+    content.processJson = JSON.stringify(next);
+    content.inputsSchemaVer = Math.max(Number(content.inputsSchemaVer) || 1, 2);
+    content.updatedAt = new Date();
+    bid.processStage = next.stage;
+    bid.outcomeStatus = next.outcome;
+    bid.workType = next.workType;
+    bid.updatedAt = new Date();
+    bid.updatedByUserId = userId ?? null;
+    await this.bidRepo.save(bid);
+    await this.contentRepo.save(content);
+    await this.lookups.upsertFromProcess(next);
+    await afterSave();
+    return this.getDetail(bid.id);
+  }
+
+  private handoffSafe(current: BidProcess, action: HandoffAction, notes?: string, ctx?: HandoffCtx) {
+    try {
+      return applyHandoff(current, action, notes, ctx);
+    } catch (e) {
+      if (e instanceof BidProcessError) throw new ConflictException(e.message);
+      throw e;
+    }
+  }
+
+  private hasDrawingsLabel(attachments: Array<{ label: string | null }>): boolean {
+    return attachments.some((a) => a.label === 'drawings');
+  }
+
+  async linkDuplicate(id: number, keepBidId: number, notes: string | undefined, userId?: number) {
+    if (id === keepBidId) throw new BadRequestException('Cannot link a bid to itself');
+    const closed = await this.loadProcessRow(id);
+    const keep = await this.loadProcessRow(keepBidId);
+    if (closed.bid.status === 'archived') {
+      throw new ConflictException(`Bid ${id} is already closed`);
+    }
+    const from = parseProcess(parseJson(closed.content.processJson ?? null, null));
+    const keepProc = parseProcess(parseJson(keep.content.processJson ?? null, null));
+    const absorbed = absorbIntake(keepProc, from);
+    if (absorbed.drawingName) keep.bid.bidName = absorbed.drawingName;
+    const closedNext = applyOutcome(
+      mergeProcess(from, {
+        relatedBidId: keepBidId,
+        relatedBidNote: notes || `Duplicate of ${keep.bid.estimateNumber}`,
+      }),
+      'cancelled',
+    );
+    closed.bid.status = 'archived';
+    await this.persistProcess(keep.bid, keep.content, absorbed, userId, async () => {
+      await this.activity.recordLinkDuplicate(keepBidId, id, userId, 'keep');
+    });
+    await this.persistProcess(closed.bid, closed.content, closedNext, userId, async () => {
+      await this.activity.recordLinkDuplicate(id, keepBidId, userId, 'closed');
+    });
+    return { keep: await this.getDetail(keepBidId), closed: await this.getDetail(id) };
   }
 
   async remove(id: number, userId?: number) {
@@ -393,6 +598,7 @@ export class BiddingService {
 
   private toSummary(bid: Bid, content?: BidContent | null) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
+    const process = parseProcess(parseJson(content?.processJson ?? null, null));
     return {
       id: String(bid.id),
       estimateNumber: bid.estimateNumber,
@@ -406,7 +612,113 @@ export class BiddingService {
       submitDate:
         bid.submitDate instanceof Date ? bid.submitDate.toISOString().slice(0, 10) : bid.submitDate,
       timeEstimate: bid.timeEstimate != null ? Number(bid.timeEstimate) : null,
+      processStage: bid.processStage ?? 'intake',
+      outcomeStatus: bid.outcomeStatus ?? 'open',
+      workType: bid.workType ?? null,
+      drawingName: process.drawingName,
+      ownerProjectNumber: process.ownerProjectNumber,
+      mechanicalEngineerProjectNumber: process.mechanicalEngineerProjectNumber,
+      relatedBidId: process.relatedBidId,
+      bidKind: process.bidKind,
+      dueDate: process.dueDate,
       updatedAt: bid.updatedAt instanceof Date ? bid.updatedAt.toISOString() : bid.updatedAt,
     };
+  }
+
+  private mergeProcessSafe(existing: BidProcess, patch: Record<string, unknown>): BidProcess {
+    try {
+      return mergeProcess(existing, patch);
+    } catch (e) {
+      if (e instanceof BidProcessError) throw new BadRequestException(e.message);
+      throw e;
+    }
+  }
+
+  /** Same estimate #, name, or title-block # → one opportunity. Case-insensitive. */
+  private async assertUniqueOpportunity(opts: {
+    excludeId?: number;
+    estimateNumber?: string | null;
+    bidName?: string | null;
+    ownerProjectNumber?: string | null;
+    mechanicalEngineerProjectNumber?: string | null;
+  }) {
+    const hit = await this.findDuplicateOpportunity(opts);
+    if (!hit) return;
+    throw apiConflict(
+      ApiErrorCode.BID_DUPLICATE,
+      `A bid already exists (${hit.bid.estimateNumber}). Open that record or close this as a duplicate.`,
+      {
+        existingBidId: String(hit.bid.id),
+        existingEstimateNumber: hit.bid.estimateNumber,
+        existingBidName: hit.bid.bidName,
+        match: hit.match,
+      },
+    );
+  }
+
+  private async findDuplicateOpportunity(opts: {
+    excludeId?: number;
+    estimateNumber?: string | null;
+    bidName?: string | null;
+    ownerProjectNumber?: string | null;
+    mechanicalEngineerProjectNumber?: string | null;
+  }): Promise<{ bid: Bid; match: string } | null> {
+    const notSelf = opts.excludeId != null ? 'b.id != :xid' : '1=1';
+    const xid = opts.excludeId ?? 0;
+
+    const byEstimate = opts.estimateNumber?.trim();
+    if (byEstimate) {
+      const bid = await this.bidRepo
+        .createQueryBuilder('b')
+        .where('b.isDeleted = :del', { del: false })
+        .andWhere('LOWER(LTRIM(RTRIM(b.estimateNumber))) = :en', { en: byEstimate.toLowerCase() })
+        .andWhere(notSelf, { xid })
+        .getOne();
+      if (bid) return { bid, match: 'estimateNumber' };
+    }
+
+    const byName = opts.bidName?.trim();
+    if (byName) {
+      const bid = await this.bidRepo
+        .createQueryBuilder('b')
+        .where('b.isDeleted = :del', { del: false })
+        .andWhere('b.status != :arch', { arch: 'archived' })
+        .andWhere('LOWER(LTRIM(RTRIM(b.bidName))) = :n', { n: byName.toLowerCase() })
+        .andWhere(notSelf, { xid })
+        .getOne();
+      if (bid) return { bid, match: 'bidName' };
+    }
+
+    const opn = normalizeProjectNumber(opts.ownerProjectNumber);
+    if (opn) {
+      const bid = await this.bidRepo
+        .createQueryBuilder('b')
+        .leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id')
+        .where('b.isDeleted = :del', { del: false })
+        .andWhere('b.status != :arch', { arch: 'archived' })
+        .andWhere(
+          `REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.ownerProjectNumber'), ''), '#', ''), ' ', '') = :opn`,
+          { opn },
+        )
+        .andWhere(notSelf, { xid })
+        .getOne();
+      if (bid) return { bid, match: 'ownerProjectNumber' };
+    }
+    const mepn = normalizeProjectNumber(opts.mechanicalEngineerProjectNumber);
+    if (mepn) {
+      const bid = await this.bidRepo
+        .createQueryBuilder('b')
+        .leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id')
+        .where('b.isDeleted = :del', { del: false })
+        .andWhere('b.status != :arch', { arch: 'archived' })
+        .andWhere(
+          `REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineerProjectNumber'), ''), '#', ''), ' ', '') = :mepn`,
+          { mepn },
+        )
+        .andWhere(notSelf, { xid })
+        .getOne();
+      if (bid) return { bid, match: 'mechanicalEngineerProjectNumber' };
+    }
+    return null;
   }
 }

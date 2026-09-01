@@ -2,6 +2,8 @@
 
 This document describes how the frontend should implement **login**, **signup (register)**, and use the API with JWT authentication and **admin access**.
 
+**This file stays.** Login, register, profile, token storage, 401, and `user.status` did not change. Access-control roles/matrix live in **[FRONTEND_RBAC.md](./FRONTEND_RBAC.md)** — additive, do not rip this flow.
+
 ---
 
 ## Overview
@@ -13,7 +15,7 @@ This document describes how the frontend should implement **login**, **signup (r
 | 3 | On every other API request, frontend sends `Authorization: Bearer <access_token>`. |
 | 4 | On 401, frontend clears token/user and redirects to login. |
 | 5 | Optional: call `GET /auth/profile` to refresh current user or check role (e.g. admin). |
-| 6 | Use `user.role === 'admin'` to show admin-only UI and call admin-only endpoints. |
+| 6 | Admin chrome: `user.role === 'admin' \|\| user.role === 'super_admin'`. Tabs/buttons: `user.permissions` — **[FRONTEND_RBAC.md](./FRONTEND_RBAC.md)**. |
 
 ---
 
@@ -84,7 +86,7 @@ Content-Type: application/json
 **Endpoint:** `POST /auth/register`  
 **Public:** no token required.
 
-Signup currently collects only email/password. New users get role `user`. Whether they can log in immediately depends on backend config:
+Signup currently collects only email/password. New users get whatever **default role** is set in Admin → Access control (backend default is still `user` until someone changes it). Read `user.role` from the register response — do not hardcode `'user'`. Whether they can log in immediately depends on backend config:
 
 - **With admin approval (default):** `user.status` is `pending`; they must wait until an admin approves. Login will return 401 with “Your account is pending admin approval” until then.
 - **Without approval:** Backend can set `REQUIRE_SIGNUP_APPROVAL=false`; then new users get `status: 'active'` and can log in right after signup.
@@ -175,10 +177,21 @@ After a successful register, use the same flow as login: store `access_token` an
 
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected';
 
+/** Widen this union — login still returns the same object. Old `'user' | 'admin'` is a subset. */
+export type AppRoleId =
+  | 'super_admin'
+  | 'admin'
+  | 'bid_clerk'
+  | 'captain'
+  | 'assistant_estimator'
+  | 'project_manager'
+  | 'operations_manager'
+  | 'user';
+
 export interface AuthUser {
   id: number;
   email: string;
-  role: 'user' | 'admin';
+  role: AppRoleId;
   status: UserStatus;
   permissions: string[];
 }
@@ -333,10 +346,19 @@ async function getCurrentUser(): Promise<AuthUser | null> {
 
 ## 8. Role-based UI and admin access
 
-- **Admin:** `user.role === 'admin'`. Show admin-only menus and call admin-only endpoints (e.g. `GET /auth/admin`). Only users created as admin (e.g. default seed admin or by backend) have this role; signup always creates `user`.
-- **User:** `user.role === 'user'`. Hide admin-only UI; calling admin endpoints will return **403 Forbidden**.
+**Do not rip existing `role === 'admin'` checks.** Extend them:
 
-Get the role from the stored `user` object (from login, register, or `GET /auth/profile`). There is no public way to become an admin; admins are created on the backend (e.g. seed or future admin-only user management).
+```ts
+function isAdminPanel(user: AuthUser | null): boolean {
+  return user?.role === 'admin' || user?.role === 'super_admin';
+}
+```
+
+- **Admin panel** (`/admin/*`, user approve, settings): `isAdminPanel(user)`. `admin` = IT. `super_admin` = Nick / PJ (same panel, plus they can assign `super_admin`). Calling `/admin/*` as any other role → **403**.
+- **Everyone else** (`user`, `bid_clerk`, `captain`, …): hide admin menus. Use `user.permissions` for tabs (tickets, Siteline, bidding) — [FRONTEND_RBAC.md](./FRONTEND_RBAC.md).
+- Signup does not pick a role. Default is `user` until Access control changes it. Admins assign roles on **Admin → Users** (`PATCH /admin/users/:id`).
+
+Get `role` / `permissions` from the stored `user` (login, register, or `GET /auth/profile`). After an admin changes the **matrix**, that role’s users must log in again (permissions are in the JWT). After they change a **person’s role**, `GET /auth/profile` picks up the new role; permissions in the token still need a fresh login.
 
 ---
 
@@ -371,7 +393,8 @@ Build the register form with:
 - [ ] Send `Authorization: Bearer <access_token>` on all non-public API requests.
 - [ ] On 401, clear token/user and redirect to login.
 - [ ] Optional: on app load, call `GET /auth/profile` to restore user (and handle 401).
-- [ ] Use `user.role === 'admin'` to show/hide admin-only UI.
+- [ ] Show admin-only UI when `user.role === 'admin' || user.role === 'super_admin'`.
+- [ ] Widen `AuthUser.role` to the 8 ids in [FRONTEND_RBAC.md](./FRONTEND_RBAC.md). Login/register/profile shape is unchanged.
  
 ### Note on user profile fields
 

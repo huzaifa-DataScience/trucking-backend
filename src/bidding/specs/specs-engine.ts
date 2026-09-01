@@ -1,7 +1,9 @@
 /**
  * Pure Specs Plumb matching (Excel-parity).
- * Qty Estimated / Prod/Hr: size + thickness + material base (system NOT filtered).
- * Qty Received: Trimble line-item name parse + keyword.
+ * Qty Estimated / Prod/Hr:
+ *   pipe → size + thickness + material base (system NOT filtered)
+ *   roll → thickness + insulation base + wt/facing (size/system/area ignored); PPH = Σqty/Σhours
+ * Qty Received: Trimble name parse + keyword (pipe: size×thick; roll: thick only).
  * Structshare: catalog MIN positive price.
  */
 
@@ -37,6 +39,8 @@ export type SpecLineInput = {
 export type LineItemRow = {
   itemName: string;
   received: number;
+  /** Trimble / StructShare UoM (e.g. Roll, LF, SF) — from line-items export. */
+  unit?: string | null;
 };
 
 export type CatalogItem = {
@@ -83,6 +87,9 @@ const MATCH_MODE_BY_BASE: Record<string, CatalogMatchMode> = {
 /** When Mike only names the family (e.g. "2 .75# Ductwrap"), pick this Spec list phrase. */
 const DEFAULT_SPEC_BY_BASE: Record<string, string> = {
   'duct wrap': 'FIBERGLASS DUCT WRAP',
+  // helpermap seeds BaseName on faced rows first (Aluminum before ASJ) — pin the usual pipe Spec
+  fiberglass: 'Fiberglass with ASJ',
+  foamglas: 'Foamglas',
 };
 
 const FACING_TOKENS = [
@@ -136,8 +143,14 @@ function defaultSpecForBase(helpers: HelperMapEntry[], base: string): string | n
     const hit = findHelperBySpec(helpers, prefer);
     if (hit) return hit.specPhrase;
   }
-  const withBase = helpers.find((h) => (helperBase(h) || '').toLowerCase() === base.toLowerCase());
-  return withBase?.specPhrase ?? null;
+  const bl = base.toLowerCase();
+  const withBase = helpers.filter((h) => (helperBase(h) || '').toLowerCase() === bl);
+  // Prefer plain / no-facing Spec over first faced row (seed order is not canonical)
+  const plain = withBase.find((h) => {
+    const f = (h.keyword2 || '').trim().toLowerCase();
+    return !f || f === 'plain';
+  });
+  return (plain || withBase[0])?.specPhrase ?? null;
 }
 
 export function parseFacingHint(phrase: string | null | undefined): string | null {
@@ -147,6 +160,13 @@ export function parseFacingHint(phrase: string | null | undefined): string | nul
     if (n.includes(f)) return f;
   }
   return null;
+}
+
+/** Map raw facing token → Spec dropdown value (FSK, ASJ, …). */
+export function normalizeFacingOption(facing: string | null | undefined): string | null {
+  if (!facing) return null;
+  const hit = SPEC_FACING_OPTIONS.find((o) => o.value.toLowerCase() === facing.toLowerCase());
+  return hit ? hit.value : null;
 }
 
 /**
@@ -175,6 +195,8 @@ export function parseDensityWeight(phrase: string | null | undefined): string | 
 function inferBaseFromText(text: string): string | null {
   const n = normKey(text);
   if (n.includes('ductwrap') || n.includes('greaseduct')) return 'Duct Wrap';
+  // Mike duct board: "2 3# FSK" (thick + density + facing, no "ductwrap" token)
+  if (isMikeDuctBoardFsk(n)) return 'Duct Wrap';
   if (n.includes('pipeandtankwrap') || n.includes('tankwrap')) return 'Pipe and Tank Wrap';
   for (const token of BASE_SEARCH_ORDER) {
     if (n.includes(normKey(token))) return token;
@@ -182,15 +204,35 @@ function inferBaseFromText(text: string): string | null {
   return null;
 }
 
+/** Density+# FSK / bare FSK board — not pipe covering / ASJ / Armaflex. */
+function isMikeDuctBoardFsk(n: string): boolean {
+  if (!n.includes('fsk')) return false;
+  if (n.includes('asj') || n.includes('arma') || n.includes('pipecovering')) return false;
+  // "2 3# FSK", "3#FSK", or FSK with duct token
+  return /#fsk|\dfsk/.test(n) || n.includes('duct');
+}
+
 /** Map common Mike material phrases onto List / helpermap Spec phrases. */
 function mikePhraseToListSpec(phrase: string): string | null {
   const n = normKey(phrase);
   if (!n) return null;
-  if (n.includes('ductwrap')) return null;
+  // Foamglas before ASJ→Fiberglass — Mike "FoamGlas w/ ASJ" is NOT fiberglass
+  if (n.includes('foamglas') || n.includes('foamglass')) {
+    if (n.includes('pvc') && n.includes('vic')) return 'Foamglas  w/VIC/ PVC';
+    if (n.includes('pvc')) return 'Foamglas  w/ PVC';
+    if (n.includes('alum') || n.includes('aluminum')) return 'Foamglas w/ Aluminum';
+    if (n.includes('canvas')) return 'Foamglas w/ Canvas';
+    if (n.includes('stainless')) return 'Foamglas w/ Stainless';
+    if (n.includes('vic')) return 'Foamglas w/VIC';
+    // ASJ / bare FoamGlas — List has no Foamglas+ASJ row; keep family via keyword/infer
+    return null;
+  }
   if (n.includes('pipeandtankwrap') || n.includes('tankwrap')) return 'Pipe and Tank Wrap';
   if (n.includes('firemaster') || n.includes('fyrewrap') || n.includes('greaseduct')) {
     return 'Grease Duct Wrap';
   }
+  // Prefer canonical roll Spec (not "DUCT WRAP ON FTGS" via fuzzy keyword)
+  if (n.includes('ductwrap')) return 'FIBERGLASS DUCT WRAP';
   if (n.includes('polyiso') || n.includes('urethane') || n.includes('polyurethane')) {
     return null; // not in seeded List — leave unmapped
   }
@@ -198,7 +240,10 @@ function mikePhraseToListSpec(phrase: string): string | null {
     return 'Fiberglass w/ Aluminum';
   }
   if (n.includes('asj')) return 'Fiberglass with ASJ';
-  if (n.includes('fsk') && n.includes('duct')) return 'FIBERGLASS DUCT WRAP';
+  // Was: only when phrase also contains "duct" — Mike uses bare "2 3# FSK"
+  if (isMikeDuctBoardFsk(n)) return 'FIBERGLASS DUCT WRAP';
+  // Mike plumbing often exports bare "Fiberglass" (ASJ is implied / on Spec facing)
+  if (n === 'fiberglass') return 'Fiberglass with ASJ';
   return null;
 }
 
@@ -221,8 +266,10 @@ function resolveMaterialFromHelper(h: HelperMapEntry, rawPhrase: string): Materi
 export function resolveMaterial(
   text: string,
   helpers: HelperMapEntry[],
+  opts?: { facingHint?: string | null },
 ): MaterialResolution {
-  const raw = (text || '').trim();
+  // Mike CSV sometimes leaves a trailing quote on the Spec phrase cell
+  const raw = (text || '').trim().replace(/^["']+|["']+$/g, '').trim();
   const empty: MaterialResolution = {
     specPhrase: raw,
     keyword: null,
@@ -233,6 +280,11 @@ export function resolveMaterial(
   };
   if (!raw) return empty;
   const lower = raw.toLowerCase();
+  const hintFace = (() => {
+    const h = (opts?.facingHint || '').trim().toLowerCase();
+    if (!h || h === 'plain') return null;
+    return parseFacingHint(h) || h;
+  })();
 
   // Mike exports often use density+facing phrases instead of List Spec names
   const mikeHint = mikePhraseToListSpec(raw);
@@ -253,6 +305,7 @@ export function resolveMaterial(
   if (bestPrefix) return resolveMaterialFromHelper(bestPrefix, raw);
 
   const hay = normKey(raw);
+  const phraseFacing = parseFacingHint(raw) || hintFace;
   let bestKw: HelperMapEntry | null = null;
   let bestLen = 0;
   for (const h of helpers) {
@@ -261,8 +314,11 @@ export function resolveMaterial(
     const kn = normKey(kw);
     if (kn.length < 3 || !hay.includes(kn)) continue;
     const facing = (h.keyword2 || '').trim().toLowerCase();
-    const facingOk = !facing || hay.includes(normKey(facing));
-    const score = kn.length + (facingOk && facing ? 10 : 0);
+    const facingOk = !facing || hay.includes(normKey(facing)) || facing === phraseFacing;
+    // Bare family name: prefer helpers without a facing lock (don't crown Aluminum first)
+    const bareBonus = !phraseFacing && !facing ? 5 : 0;
+    const faceBonus = facingOk && facing && (hay.includes(normKey(facing)) || facing === phraseFacing) ? 10 : 0;
+    const score = kn.length + faceBonus + bareBonus;
     if (score > bestLen) {
       bestLen = score;
       bestKw = h;
@@ -272,7 +328,7 @@ export function resolveMaterial(
     let base = helperBase(bestKw);
     if (!base) base = inferBaseFromText(raw);
     // Prefer canonical Spec for the family when phrase is generic (no facing cue)
-    const facing = parseFacingHint(raw);
+    const facing = phraseFacing;
     let spec = bestKw.specPhrase;
     if (!facing && base) {
       const def = defaultSpecForBase(helpers, base);
@@ -286,13 +342,14 @@ export function resolveMaterial(
       if (faced) spec = faced.specPhrase;
     }
     const hit = findHelperBySpec(helpers, spec) || bestKw;
-    base = helperBase(hit) || base;
+    base = helperBase(hit) || base || inferBaseFromText(hit.specPhrase);
     return {
       specPhrase: hit.specPhrase,
       keyword: hit.keyword?.trim() || bestKw.keyword?.trim() || null,
       baseName: base,
       matchMode: matchModeForBase(base),
       weight: parseDensityWeight(raw),
+      // Prefer phrase/line facing; else the chosen Spec's keyword2 (e.g. ASJ default)
       facing: facing || (hit.keyword2?.trim().toLowerCase() || null),
     };
   }
@@ -332,13 +389,18 @@ export function normalizeMaterialBase(
   phrase?: string | null,
   helpers?: HelperMapEntry[],
 ): string | null {
-  const text = (phrase || base || '').trim();
+  const text = (phrase || base || '').trim().replace(/^["']+|["']+$/g, '').trim();
   if (!text) return null;
   if (helpers?.length) {
     const res = resolveMaterial(text, helpers);
     if (res.baseName) return res.baseName;
   }
-  return inferBaseFromText(text) || (base || '').trim() || null;
+  const inferred = inferBaseFromText(text);
+  if (inferred) return inferred;
+  const baseClean = (base || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  // Don't keep unresolved density+#FSK board phrases as a fake pipe base
+  if (baseClean && isMikeDuctBoardFsk(normKey(baseClean))) return 'Duct Wrap';
+  return baseClean || null;
 }
 
 export function resolveSpecInsulation(
@@ -506,6 +568,37 @@ export function parseLineItemName(name: string): {
   };
 }
 
+export type RollDims = {
+  thickIn: number | null;
+  widthIn: number | null;
+  lengthFt: number | null;
+  /** widthIn/12 × lengthFt — vendor (300SF/RL) ignored when dims parse. */
+  sfPerRoll: number | null;
+};
+
+/**
+ * Roll catalog/Trimble names: `01-1/2" X 48" X 100'` or `02" X 48" X75'`.
+ * SF = width(ft) × length(ft). Do not trust parenthetical SF/RL when dims exist.
+ */
+export function parseRollDims(name: string): RollDims {
+  const empty: RollDims = { thickIn: null, widthIn: null, lengthFt: null, sfPerRoll: null };
+  const s = String(name || '').trim();
+  if (!s) return empty;
+  // thick" X width" X length'
+  const m = s.match(
+    /(\d+(?:-\d+\/\d+|\.\d+|\/\d+)?)\s*"\s*X\s*(\d+(?:\.\d+)?)\s*"\s*X\s*(\d+(?:\.\d+)?)\s*'/i,
+  );
+  if (!m) return empty;
+  const thickIn = parseFraction(m[1]);
+  const widthIn = Number(m[2]);
+  const lengthFt = Number(m[3]);
+  if (!Number.isFinite(widthIn) || !Number.isFinite(lengthFt) || widthIn <= 0 || lengthFt <= 0) {
+    return { thickIn, widthIn: null, lengthFt: null, sfPerRoll: null };
+  }
+  const sfPerRoll = (widthIn / 12) * lengthFt;
+  return { thickIn, widthIn, lengthFt, sfPerRoll };
+}
+
 function keywordHit(nameLc: string, keyword: string | null): boolean {
   if (!keyword) return false;
   const kw = keyword.toLowerCase();
@@ -514,20 +607,170 @@ function keywordHit(nameLc: string, keyword: string | null): boolean {
   return false;
 }
 
+/**
+ * Strip manufacturer / vendor branding from a catalog/Trimble item name for Structshare display.
+ * Vendor is not a separate field — it rides inside the string (e.g. JOHNS MANVILLE (JM)).
+ */
+export function stripVendorFromItemName(name: string): string {
+  let s = String(name || '');
+  const patterns: RegExp[] = [
+    /\bjohns?\s*manville\b(\s*\(\s*jm\s*\))?/gi,
+    /\bowens\s*corning\b(\s*\(\s*oc\s*\))?/gi,
+    /\bknauf(\s+insulation)?\b/gi,
+    /\bcertainteed\b/gi,
+    /\barmacell\b/gi,
+    /\brockwool\b/gi,
+    /\bmanson\s*(insulation)?\b/gi,
+    /\bjohn\s*manville\b/gi,
+    /\(\s*jm\s*\)/gi,
+    /\(\s*oc\s*\)/gi,
+    /\brs\s*means\b/gi,
+  ];
+  for (const p of patterns) s = s.replace(p, ' ');
+  return s.replace(/\s{2,}/g, ' ').replace(/\s+([,)\]])/g, '$1').trim();
+}
+
+export type SearchAttrOpts = {
+  matchMode?: CatalogMatchMode;
+  weight?: string | null;
+  facing?: string | null;
+};
+
+/** Prefer wt+facing, then drop facing, then drop weight, then keyword+dims only. */
+function attrFallbackSteps(
+  weight?: string | null,
+  facing?: string | null,
+): Array<{ useWeight: boolean; useFacing: boolean }> {
+  const hasW = !!(weight && String(weight).trim());
+  const hasF = !!(facing && String(facing).trim());
+  const steps: Array<{ useWeight: boolean; useFacing: boolean }> = [];
+  const push = (useWeight: boolean, useFacing: boolean) => {
+    if (steps.some((s) => s.useWeight === useWeight && s.useFacing === useFacing)) return;
+    steps.push({ useWeight, useFacing });
+  };
+  if (hasW && hasF) push(true, true);
+  if (hasW) push(true, false);
+  if (hasF) push(false, true);
+  push(false, false);
+  return steps;
+}
+
+function attrsPass(
+  nameLc: string,
+  keyword: string,
+  opts: { weight?: string | null; facing?: string | null; useWeight: boolean; useFacing: boolean },
+): boolean {
+  if (!keywordHit(nameLc, keyword)) return false;
+  if (opts.useWeight && !weightMask(nameLc, opts.weight)) return false;
+  if (opts.useFacing) {
+    const f = (opts.facing || '').trim().toLowerCase();
+    if (f && !nameLc.includes(f)) return false;
+  }
+  return true;
+}
+
+function lineItemDimsOk(
+  itemName: string,
+  size: number,
+  thickness: number,
+  mode: CatalogMatchMode,
+): boolean {
+  if (mode === 'roll') {
+    const dims = parseRollDims(itemName);
+    const thick = dims.thickIn ?? parseLineItemName(itemName).sizeNum;
+    return numEq(thick, thickness);
+  }
+  const { sizeNum, thickNum } = parseLineItemName(itemName);
+  return numEq(sizeNum, size) && numEq(thickNum, thickness);
+}
+
+/** Trimble rows in the shared attribute search pool (with wt/facing fallback). */
+export function filterLineItemsForSearch(
+  lineItems: LineItemRow[],
+  size: number,
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts,
+): LineItemRow[] {
+  if (!keyword) return [];
+  const mode = opts?.matchMode || 'pipe';
+  for (const step of attrFallbackSteps(opts?.weight, opts?.facing)) {
+    const hits = lineItems.filter((li) => {
+      if (!lineItemDimsOk(li.itemName, size, thickness, mode)) return false;
+      return attrsPass(li.itemName.toLowerCase(), keyword, {
+        weight: opts?.weight,
+        facing: opts?.facing,
+        ...step,
+      });
+    });
+    if (hits.length) return hits;
+  }
+  return [];
+}
+
+/** Normalize density labels so 0.75 / .75 / 3/4# stack together. */
+export function normalizeWeightKey(weight: string | null | undefined): string {
+  const t = String(weight || '')
+    .trim()
+    .toLowerCase()
+    .replace(/#/g, '')
+    .replace(/\s+/g, '');
+  if (!t) return '';
+  if (t === '3/4' || t === '.75') return '0.75';
+  if (t.startsWith('.')) return `0${t}`;
+  return t;
+}
+
+function facingKey(facing: string | null | undefined): string {
+  return (normalizeFacingOption(facing) || parseFacingHint(facing) || '').toLowerCase();
+}
+
+/** Weight/facing keys from a Mike phrase (for roll stacking). */
+export function materialKeysFromPhrase(phrase: string | null | undefined): {
+  weightKey: string;
+  facingKey: string;
+} {
+  return {
+    weightKey: normalizeWeightKey(parseDensityWeight(phrase)),
+    facingKey: facingKey(parseFacingHint(phrase)),
+  };
+}
+
+/**
+ * Sum Mike qty/hours for a Spec line.
+ * - pipe: size × thickness × materialBase
+ * - roll: thickness × materialBase × wt/facing only (size ignored); PPH = Σqty/Σhours
+ */
 export function rollupMike(
   rows: MikeRollupRow[],
   size: number,
   thickness: number,
   materialBase: string | null,
+  opts?: {
+    matchMode?: CatalogMatchMode;
+    weight?: string | null;
+    facing?: string | null;
+  },
 ): { qtyEstimated: number; hours: number; productionPerHour: number | null } {
   if (!materialBase) {
     return { qtyEstimated: 0, hours: 0, productionPerHour: null };
   }
+  const mode = opts?.matchMode || 'pipe';
+  const wantWt = normalizeWeightKey(opts?.weight);
+  const wantFace = facingKey(opts?.facing);
   let qty = 0;
   let hours = 0;
   for (const r of rows) {
-    if (!numEq(r.size, size) || !numEq(r.thickness, thickness)) continue;
+    if (!numEq(r.thickness, thickness)) continue;
     if ((r.materialBase || '').trim() !== materialBase.trim()) continue;
+    if (mode === 'roll') {
+      const keys = materialKeysFromPhrase(r.materialPhrase);
+      if (wantWt && keys.weightKey && wantWt !== keys.weightKey) continue;
+      if (wantFace && keys.facingKey && wantFace !== keys.facingKey) continue;
+      // Empty Spec wt/facing still matches rows; differing size is ignored.
+    } else if (!numEq(r.size, size)) {
+      continue;
+    }
     qty += Number(r.quantity) || 0;
     hours += Number(r.hours) || 0;
   }
@@ -538,23 +781,285 @@ export function rollupMike(
   };
 }
 
-/** Excel Specs Qty Received (keyword col B only — keyword2 unused). */
+/**
+ * Excel Specs Qty Received — shared attribute search pool (not vendor/price).
+ * - pipe: Spec size + thickness vs parsed name dims
+ * - roll: Spec thickness only vs first name dim; all hits summed
+ * Optional weight/facing preferred; soft fallback if no hits.
+ */
 export function sumQtyReceived(
   lineItems: LineItemRow[],
   size: number,
   thickness: number,
   keyword: string | null,
+  opts?: SearchAttrOpts,
 ): number {
-  if (!keyword) return 0;
+  return filterLineItemsForSearch(lineItems, size, thickness, keyword, opts).reduce(
+    (s, li) => s + (Number(li.received) || 0),
+    0,
+  );
+}
+
+/**
+ * Roll Recv in SF: same search pool as sumQtyReceived(roll); each row × (width/12 × length).
+ */
+export function sumQtyReceivedSf(
+  lineItems: LineItemRow[],
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts,
+): number {
+  const pool = filterLineItemsForSearch(lineItems, 0, thickness, keyword, {
+    ...opts,
+    matchMode: 'roll',
+  });
   let sum = 0;
-  for (const li of lineItems) {
-    const nameLc = li.itemName.toLowerCase();
-    if (!keywordHit(nameLc, keyword)) continue;
-    const { sizeNum, thickNum } = parseLineItemName(li.itemName);
-    if (!numEq(sizeNum, size) || !numEq(thickNum, thickness)) continue;
-    sum += Number(li.received) || 0;
+  for (const li of pool) {
+    const dims = parseRollDims(li.itemName);
+    if (dims.sfPerRoll == null) continue;
+    sum += (Number(li.received) || 0) * dims.sfPerRoll;
   }
   return sum;
+}
+
+/**
+ * Human summary for roll Recv from the shared search pool.
+ * e.g. `3 rolls of 400 sq ft`. Mixed lengths: `2 rolls of 400 sq ft + 1 roll of 300 sq ft`.
+ */
+export function buildQtyReceivedSummary(
+  lineItems: LineItemRow[],
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts & { trimbleUnit?: string | null },
+): string | null {
+  const pool = filterLineItemsForSearch(lineItems, 0, thickness, keyword, {
+    ...opts,
+    matchMode: 'roll',
+  });
+  const bySf = new Map<number, number>();
+  let totalRolls = 0;
+  for (const li of pool) {
+    const dims = parseRollDims(li.itemName);
+    if (dims.sfPerRoll == null) continue;
+    const recv = Number(li.received) || 0;
+    if (recv <= 0) continue;
+    totalRolls += recv;
+    bySf.set(dims.sfPerRoll, (bySf.get(dims.sfPerRoll) || 0) + recv);
+  }
+  if (totalRolls <= 0 || !bySf.size) return null;
+
+  const unitRaw = (opts?.trimbleUnit || 'roll').trim() || 'roll';
+  const unitWord = unitRaw.toLowerCase();
+  const plural = (n: number) => (n === 1 ? unitWord.replace(/s$/i, '') || unitWord : unitWord.endsWith('s') ? unitWord : `${unitWord}s`);
+  const fmtSf = (sf: number) =>
+    Number.isInteger(sf) ? String(sf) : sf.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  const parts = [...bySf.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([sf, n]) => `${n} ${plural(n)} of ${fmtSf(sf)} sq ft`);
+  return parts.join(' + ');
+}
+
+/** Modal SF/roll from the search pool (most common among hits), not cheapest catalog pick. */
+export function sfPerRollFromSearchPool(
+  lineItems: LineItemRow[],
+  catalogNames: string[],
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts,
+): number | null {
+  const counts = new Map<number, number>();
+  const bump = (sf: number | null | undefined) => {
+    if (sf == null || !Number.isFinite(sf) || sf <= 0) return;
+    counts.set(sf, (counts.get(sf) || 0) + 1);
+  };
+  for (const li of filterLineItemsForSearch(lineItems, 0, thickness, keyword, {
+    ...opts,
+    matchMode: 'roll',
+  })) {
+    bump(parseRollDims(li.itemName).sfPerRoll);
+  }
+  for (const name of catalogNames) bump(parseRollDims(name).sfPerRoll);
+  let best: number | null = null;
+  let n = -1;
+  for (const [sf, c] of counts) {
+    if (c > n) {
+      n = c;
+      best = sf;
+    }
+  }
+  return best;
+}
+
+/** Earned / projected hours from quantity ÷ production per hour. */
+export function hoursFromQuantity(
+  qty: number,
+  productionPerHour: number | null | undefined,
+): number | null {
+  const pph = Number(productionPerHour);
+  if (!Number.isFinite(pph) || pph <= 0) return null;
+  const q = Number(qty) || 0;
+  return q / pph;
+}
+
+/** Commodity identity for production BOM (system/area ignored). */
+export function commodityKey(input: {
+  catalogMatchMode?: string | null;
+  materialBase?: string | null;
+  insulation?: string | null;
+  size: number;
+  thickness: number;
+  weight?: string | null;
+  facing?: string | null;
+}): string {
+  const mode = (input.catalogMatchMode || 'pipe').toLowerCase();
+  const base = String(input.materialBase || input.insulation || '')
+    .trim()
+    .toLowerCase();
+  const sizePart = mode === 'roll' ? '0' : String(Number(input.size) || 0);
+  const thick = String(Number(input.thickness) || 0);
+  const wt = String(input.weight ?? '')
+    .trim()
+    .toLowerCase();
+  const facing = String(input.facing ?? '')
+    .trim()
+    .toLowerCase();
+  return `${mode}|${base}|${sizePart}|${thick}|${wt}|${facing}`;
+}
+
+export type ProductionReportLineInput = {
+  id?: number;
+  type?: string | null;
+  insulation: string;
+  size: number;
+  thickness: number;
+  materialBase?: string | null;
+  catalogMatchMode?: string | null;
+  weight?: string | null;
+  facing?: string | null;
+  qtyEstimated: number;
+  hoursEstimated: number;
+  productionPerHour: number | null;
+  qtyReceived: number;
+  qtyReceivedSf?: number | null;
+  hoursEstimatedFromReceived: number | null;
+};
+
+export type ProductionReportLine = {
+  commodityKey: string;
+  type: string | null;
+  insulation: string;
+  materialBase: string | null;
+  catalogMatchMode: string;
+  size: number;
+  thickness: number;
+  weight: string | null;
+  facing: string | null;
+  qtyEstimated: number;
+  hoursEstimated: number;
+  productionPerHour: number | null;
+  qtyReceived: number;
+  qtyReceivedSf: number | null;
+  hoursEstimatedFromReceived: number | null;
+  qtyRemain: number;
+  specLineIds: number[];
+};
+
+/**
+ * Dedupe Spec lines into commodity BOM rows (same recv/qty must not be summed N times).
+ * One Spec commodity stack → one production line.
+ */
+export function buildProductionReportLines(
+  lines: ProductionReportLineInput[],
+): ProductionReportLine[] {
+  const byKey = new Map<string, ProductionReportLine>();
+  for (const line of lines) {
+    const key = commodityKey(line);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (line.id != null) existing.specLineIds.push(line.id);
+      if (!existing.type && line.type) existing.type = line.type;
+      continue;
+    }
+    const mode = (line.catalogMatchMode || 'pipe').toLowerCase();
+    byKey.set(key, {
+      commodityKey: key,
+      type: line.type ?? null,
+      insulation: line.insulation,
+      materialBase: line.materialBase ?? null,
+      catalogMatchMode: mode,
+      size: mode === 'roll' ? 0 : Number(line.size) || 0,
+      thickness: Number(line.thickness) || 0,
+      weight: line.weight ?? null,
+      facing: line.facing ?? null,
+      qtyEstimated: Number(line.qtyEstimated) || 0,
+      hoursEstimated: Number(line.hoursEstimated) || 0,
+      productionPerHour: line.productionPerHour,
+      qtyReceived: Number(line.qtyReceived) || 0,
+      qtyReceivedSf: line.qtyReceivedSf ?? null,
+      hoursEstimatedFromReceived: line.hoursEstimatedFromReceived,
+      qtyRemain: (Number(line.qtyEstimated) || 0) - (Number(line.qtyReceived) || 0),
+      specLineIds: line.id != null ? [line.id] : [],
+    });
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const t = compareBySpecType(a, b);
+    if (t) return t;
+    const ai = a.insulation.localeCompare(b.insulation);
+    if (ai) return ai;
+    if (a.thickness !== b.thickness) return a.thickness - b.thickness;
+    return a.size - b.size;
+  });
+}
+
+export function sumProductionHours(lines: ProductionReportLine[]): {
+  hoursEstimated: number;
+  hoursEstimatedFromReceived: number;
+} {
+  let hoursEstimated = 0;
+  let hoursEstimatedFromReceived = 0;
+  for (const l of lines) {
+    hoursEstimated += Number(l.hoursEstimated) || 0;
+    hoursEstimatedFromReceived += Number(l.hoursEstimatedFromReceived) || 0;
+  }
+  return { hoursEstimated, hoursEstimatedFromReceived };
+}
+
+/** green = actual labor ≤ earned hours from received material. */
+export function productionStatus(
+  hoursEstimatedFromReceived: number,
+  actualHours: number | null,
+): 'green' | 'red' | 'unknown' {
+  if (actualHours == null || !Number.isFinite(actualHours)) return 'unknown';
+  if (hoursEstimatedFromReceived <= 0 && actualHours <= 0) return 'unknown';
+  return actualHours <= hoursEstimatedFromReceived ? 'green' : 'red';
+}
+
+/**
+ * Dominant Trimble Unit among the shared search pool (same as Recv).
+ */
+export function resolveTrimbleUnit(
+  lineItems: LineItemRow[],
+  size: number,
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts,
+): string | null {
+  const counts = new Map<string, number>();
+  for (const li of filterLineItemsForSearch(lineItems, size, thickness, keyword, opts)) {
+    const u = String(li.unit || '').trim();
+    if (!u) continue;
+    counts.set(u, (counts.get(u) || 0) + 1);
+  }
+  let best: string | null = null;
+  let n = -1;
+  for (const [u, c] of counts) {
+    if (c > n) {
+      n = c;
+      best = u;
+    }
+  }
+  return best;
 }
 
 function weightMask(nameLc: string, weight: string | null | undefined): boolean {
@@ -572,46 +1077,80 @@ function weightMask(nameLc: string, weight: string | null | undefined): boolean 
   return nameLc.includes(` ${wt}#`) || nameLc.includes(` ${frac}#`);
 }
 
+/** Catalog match for Structshare list — `itemName` is vendor-stripped display text. */
+export type StructshareOption = { itemName: string; price: number | null };
+
 /**
- * Structshare: cheapest catalog row. Prefer price > 0; if none, allow 0/null (Excel).
- * Mode from material profile (pipe vs roll) — not hard-coded per product name.
- * Exclude elbow/radius.
+ * Collective catalog matches for a Spec (shared attr search). Not cheapest-vendor pick.
+ * Display names have vendor branding stripped. Sorted by item name.
  */
+export function listStructshareOptions(
+  catalog: CatalogItem[],
+  size: number,
+  thickness: number,
+  keyword: string | null,
+  opts?: SearchAttrOpts & {
+    /** Cap list size for API payload (default 100). */
+    limit?: number;
+  },
+): StructshareOption[] {
+  if (!keyword) return [];
+  const mode = opts?.matchMode || 'pipe';
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
+
+  const dimOk = (it: CatalogItem) =>
+    mode === 'roll'
+      ? numEq(it.size1, thickness)
+      : numEq(it.size1, size) && numEq(it.size2, thickness);
+
+  let rawHits: CatalogItem[] = [];
+  for (const step of attrFallbackSteps(opts?.weight, opts?.facing)) {
+    rawHits = catalog.filter((it) => {
+      if (!dimOk(it)) return false;
+      const lc = it.nameLc || it.itemName.toLowerCase();
+      if (lc.includes('elbow') || lc.includes('radius')) return false;
+      return attrsPass(lc, keyword, {
+        weight: opts?.weight,
+        facing: opts?.facing,
+        ...step,
+      });
+    });
+    if (rawHits.length) break;
+  }
+  if (!rawHits.length) return [];
+
+  const seen = new Set<string>();
+  const out: StructshareOption[] = [];
+  const prepared = rawHits
+    .map((it) => {
+      const display = stripVendorFromItemName(it.itemName);
+      const raw = it.price == null ? null : Number(it.price);
+      return {
+        itemName: display,
+        price: raw != null && Number.isFinite(raw) ? raw : null,
+      };
+    })
+    .filter((o) => o.itemName)
+    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+  for (const o of prepared) {
+    const key = o.itemName.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(o);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** @deprecated First list entry only — not a cheapest pick. Prefer {@link listStructshareOptions}. */
 export function pickStructshareItem(
   catalog: CatalogItem[],
   size: number,
   thickness: number,
   keyword: string | null,
-  opts?: {
-    weight?: string | null;
-    facing?: string | null;
-    matchMode?: CatalogMatchMode;
-  },
-): { itemName: string; price: number } | null {
-  if (!keyword) return null;
-  const facing = (opts?.facing || '').trim().toLowerCase();
-  const mode = opts?.matchMode || 'pipe';
-  type Cand = { item: CatalogItem; price: number; positive: boolean };
-  const cands: Cand[] = [];
-  for (const it of catalog) {
-    if (mode === 'roll') {
-      if (!numEq(it.size1, thickness)) continue;
-    } else if (!numEq(it.size1, size) || !numEq(it.size2, thickness)) {
-      continue;
-    }
-    const raw = it.price == null ? null : Number(it.price);
-    const price = raw != null && Number.isFinite(raw) ? raw : 0;
-    const lc = it.nameLc || it.itemName.toLowerCase();
-    if (lc.includes('elbow') || lc.includes('radius')) continue;
-    if (!keywordHit(lc, keyword)) continue;
-    if (!weightMask(lc, opts?.weight)) continue;
-    if (facing && !lc.includes(facing)) continue;
-    cands.push({ item: it, price, positive: price > 0 });
-  }
-  if (!cands.length) return null;
-  const pool = cands.some((c) => c.positive) ? cands.filter((c) => c.positive) : cands;
-  pool.sort((a, b) => a.price - b.price || a.item.itemName.localeCompare(b.item.itemName));
-  return { itemName: pool[0].item.itemName, price: pool[0].price };
+  opts?: SearchAttrOpts,
+): StructshareOption | null {
+  return listStructshareOptions(catalog, size, thickness, keyword, opts)[0] ?? null;
 }
 
 export function disciplineToType(d: string | null | undefined): string | null {
@@ -622,7 +1161,31 @@ export function disciplineToType(d: string | null | undefined): string | null {
   return null;
 }
 
-/** Group Mike rows into Spec line seeds (size×thick×base). */
+/** Specs / Production list order: Duct → HVAC → Plumbing → other → null. */
+const SPEC_TYPE_RANK: Record<string, number> = {
+  duct: 0,
+  hvac: 1,
+  plumbing: 2,
+};
+
+export function specTypeRank(type: string | null | undefined): number {
+  if (!type?.trim()) return 99;
+  const r = SPEC_TYPE_RANK[type.trim().toLowerCase()];
+  return r == null ? 50 : r;
+}
+
+export function compareBySpecType(
+  a: { type?: string | null },
+  b: { type?: string | null },
+): number {
+  return specTypeRank(a.type) - specTypeRank(b.type);
+}
+
+/**
+ * Group Mike rows into Spec line seeds.
+ * - pipe: size × thick × base
+ * - roll: thick × base × wt × facing (size/system ignored when stacking qty)
+ */
 export function suggestSpecLinesFromMike(
   rows: MikeRollupRow[],
   helpers: HelperMapEntry[],
@@ -633,37 +1196,60 @@ export function suggestSpecLinesFromMike(
   size: number;
   thickness: number;
   weight: string | null;
+  facing: string | null;
   qtyEstimated: number;
 }> {
   type Agg = {
+    mode: CatalogMatchMode;
     size: number;
     thickness: number;
     base: string;
+    weightKey: string;
+    facingKey: string;
     qty: number;
+    hours: number;
     systems: Map<string, number>;
     phrases: Map<string, number>;
     disciplines: Map<string, number>;
+    weights: Map<string, number>;
+    facings: Map<string, number>;
   };
   const groups = new Map<string, Agg>();
 
   for (const r of rows) {
-    if (r.size == null || r.thickness == null) continue;
+    if (r.thickness == null) continue;
     const base = normalizeMaterialBase(r.materialBase, r.materialPhrase, helpers);
     if (!base) continue;
-    const key = `${r.size}|${r.thickness}|${base}`;
+    const mode = matchModeForBase(base);
+    if (mode === 'pipe' && r.size == null) continue;
+
+    const keys = materialKeysFromPhrase(r.materialPhrase);
+    const key =
+      mode === 'roll'
+        ? `roll|${r.thickness}|${base}|${keys.weightKey}|${keys.facingKey}`
+        : `pipe|${r.size}|${r.thickness}|${base}`;
+
     if (!groups.has(key)) {
       groups.set(key, {
-        size: Number(r.size),
+        mode,
+        // Roll Spec size is not a stack key — store thickness so DB has a number.
+        size: mode === 'roll' ? Number(r.thickness) : Number(r.size),
         thickness: Number(r.thickness),
         base,
+        weightKey: keys.weightKey,
+        facingKey: keys.facingKey,
         qty: 0,
+        hours: 0,
         systems: new Map(),
         phrases: new Map(),
         disciplines: new Map(),
+        weights: new Map(),
+        facings: new Map(),
       });
     }
     const g = groups.get(key)!;
     g.qty += Number(r.quantity) || 0;
+    g.hours += Number(r.hours) || 0;
     if (r.systemName) g.systems.set(r.systemName, (g.systems.get(r.systemName) || 0) + 1);
     if (r.materialPhrase) {
       g.phrases.set(r.materialPhrase, (g.phrases.get(r.materialPhrase) || 0) + 1);
@@ -671,6 +1257,8 @@ export function suggestSpecLinesFromMike(
     if (r.discipline) {
       g.disciplines.set(r.discipline, (g.disciplines.get(r.discipline) || 0) + 1);
     }
+    if (keys.weightKey) g.weights.set(keys.weightKey, (g.weights.get(keys.weightKey) || 0) + 1);
+    if (keys.facingKey) g.facings.set(keys.facingKey, (g.facings.get(keys.facingKey) || 0) + 1);
   }
 
   const defaultPhrase = (base: string) =>
@@ -691,7 +1279,6 @@ export function suggestSpecLinesFromMike(
 
   return [...groups.values()]
     .filter((g) => g.qty > 0)
-    .sort((a, b) => b.qty - a.qty)
     .map((g) => {
       const phrase = topKey(g.phrases) || g.base;
       const resolved = resolveMaterial(phrase, helpers);
@@ -700,15 +1287,30 @@ export function suggestSpecLinesFromMike(
           ? resolved.specPhrase || defaultPhrase(g.base)
           : defaultPhrase(g.base);
       const finalRes = resolveMaterial(insulation, helpers);
+      const weight =
+        finalRes.weight ||
+        parseDensityWeight(phrase) ||
+        (topKey(g.weights) || null);
+      const facing = normalizeFacingOption(
+        finalRes.facing && finalRes.facing !== 'plain'
+          ? finalRes.facing
+          : topKey(g.facings) || parseFacingHint(phrase),
+      );
       return {
         type: disciplineToType(topKey(g.disciplines)),
         systemName: topKey(g.systems) || '—',
         insulation: finalRes.specPhrase || insulation,
         size: g.size,
         thickness: g.thickness,
-        weight: finalRes.weight || parseDensityWeight(phrase),
+        weight,
+        facing,
         qtyEstimated: g.qty,
       };
+    })
+    .sort((a, b) => {
+      const t = compareBySpecType(a, b);
+      if (t) return t;
+      return b.qtyEstimated - a.qtyEstimated;
     });
 }
 
@@ -725,39 +1327,134 @@ export function enrichSpecLine(
   lineItems: LineItemRow[],
   catalog: CatalogItem[],
 ) {
-  const resolved = resolveMaterial(line.insulation, helpers);
+  const resolved = resolveMaterial(line.insulation, helpers, {
+    facingHint: line.facing,
+  });
   const materialBase = resolved.baseName;
   const keyword = resolved.keyword;
   const insulation = resolved.specPhrase || line.insulation;
-  // Caller must pass Mike rows with materialBase already normalized (once).
-  // Remapping here was O(lines × mike × helpers) and hung Specs load.
-  const rollup = rollupMike(mikeRows, line.size, line.thickness, materialBase);
-  const qtyReceived = sumQtyReceived(lineItems, line.size, line.thickness, keyword);
   const weight =
     cleanWeightFacing(line.weight, ['wt', 'weight']) ||
     resolved.weight ||
     parseDensityWeight(line.insulation);
-  const facing =
+  let facing =
     cleanWeightFacing(line.facing, ['facing']) ||
     (resolved.facing && !['plain'].includes(resolved.facing) ? resolved.facing : null);
-  const struct = pickStructshareItem(catalog, line.size, line.thickness, keyword, {
+  // Caller must pass Mike rows with materialBase already normalized (once).
+  // Remapping here was O(lines × mike × helpers) and hung Specs load.
+  const rollup = rollupMike(mikeRows, line.size, line.thickness, materialBase, {
+    matchMode: resolved.matchMode,
+    weight,
+    facing,
+  });
+  const searchOpts: SearchAttrOpts = {
     weight,
     facing,
     matchMode: resolved.matchMode,
-  });
+  };
+  const qtyReceived = sumQtyReceived(
+    lineItems,
+    line.size,
+    line.thickness,
+    keyword,
+    searchOpts,
+  );
+  const structshareOptions = listStructshareOptions(
+    catalog,
+    line.size,
+    line.thickness,
+    keyword,
+    searchOpts,
+  );
+  // Facing hint from raw catalog/Trimble names in the pool (before vendor strip).
+  if (!facing) {
+    for (const li of filterLineItemsForSearch(
+      lineItems,
+      line.size,
+      line.thickness,
+      keyword,
+      searchOpts,
+    )) {
+      const hint = parseFacingHint(li.itemName);
+      if (hint) {
+        facing = hint;
+        break;
+      }
+    }
+    if (!facing) {
+      for (const it of catalog) {
+        const lc = it.nameLc || it.itemName.toLowerCase();
+        if (!keywordHit(lc, keyword || '')) continue;
+        const hint = parseFacingHint(it.itemName);
+        if (hint) {
+          facing = hint;
+          break;
+        }
+      }
+    }
+  }
+  const isRoll = resolved.matchMode === 'roll';
+  const qtyReceivedSf = isRoll
+    ? sumQtyReceivedSf(lineItems, line.thickness, keyword, searchOpts)
+    : null;
+  const trimbleUnit = resolveTrimbleUnit(
+    lineItems,
+    line.size,
+    line.thickness,
+    keyword,
+    searchOpts,
+  );
+  const qtyReceivedSummary = isRoll
+    ? buildQtyReceivedSummary(lineItems, line.thickness, keyword, {
+        ...searchOpts,
+        trimbleUnit,
+      })
+    : null;
+  const structshareSfPerRoll = isRoll
+    ? sfPerRollFromSearchPool(
+        lineItems,
+        // Use raw catalog names that match dims+keyword (vendor strip only for display list)
+        catalog
+          .filter((it) => {
+            if (!numEq(it.size1, line.thickness)) return false;
+            return keywordHit(it.nameLc || it.itemName.toLowerCase(), keyword);
+          })
+          .map((it) => it.itemName),
+        line.thickness,
+        keyword,
+        searchOpts,
+      )
+    : null;
+  /** Roll: earned hours use SF recv (Mike PPH is SF/hr). Pipe: Trimble qty unit matches Mike. */
+  const qtyForEarnedHours = isRoll && qtyReceivedSf != null ? qtyReceivedSf : qtyReceived;
+  const hoursEstimatedFromReceived = hoursFromQuantity(qtyForEarnedHours, rollup.productionPerHour);
   return {
     code: lookups.systemCode(line.systemName),
     areaCode: line.areaName ? lookups.areaCode(line.areaName) : null,
     materialCode: lookups.materialCode(insulation),
+    /** Spec/List system unit (Est context: LF/SF). */
     unit: lookups.systemUnit(line.systemName),
+    /** Trimble line-item Unit for matched Recv pool (e.g. Roll). */
+    trimbleUnit,
     materialBase,
     keyword,
     catalogMatchMode: resolved.matchMode,
+    weight,
+    facing: normalizeFacingOption(facing),
     qtyEstimated: rollup.qtyEstimated,
+    hoursEstimated: rollup.hours,
     productionPerHour: rollup.productionPerHour,
     qtyReceived,
+    hoursEstimatedFromReceived,
     qtyRemain: rollup.qtyEstimated - qtyReceived,
-    structshareItem: struct?.itemName ?? null,
-    structshareUnitPrice: struct?.price ?? null,
+    /** No single vendor/cheapest pick — use structshareOptions. */
+    structshareItem: null,
+    structshareUnitPrice: null,
+    /** Collective catalog matches; itemName has vendor branding stripped. */
+    structshareOptions,
+    /** Roll only: modal SF/roll from search pool (not cheapest SKU). */
+    structshareSfPerRoll,
+    qtyReceivedSf,
+    qtyReceivedSummary,
   };
 }

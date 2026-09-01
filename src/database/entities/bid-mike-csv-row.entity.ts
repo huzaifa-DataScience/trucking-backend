@@ -9,6 +9,11 @@ export class BidMikeCsvRow {
   @Column({ name: 'BidId', type: 'int' })
   bidId!: number;
 
+  /** Parent estimation file (`Bid_MikeFiles`). Null only for pre-migration orphans. */
+  @Index()
+  @Column({ name: 'MikeFileId', type: 'bigint', nullable: true })
+  mikeFileId!: number | null;
+
   @Column({ name: 'ExcelRowNumber', type: 'int', nullable: true })
   excelRowNumber!: number | null;
 

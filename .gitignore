@@ -14,6 +14,7 @@ config.bat
 .env.test
 !.env.example
 !.env.production.example
+!.env.sync.example
 
 # TypeScript incremental build cache
 tsconfig.build.tsbuildinfo
@@ -33,5 +34,9 @@ uploads/
 *.xlsx
 ~$*
 
+# Temp slides used to build BACKEND_DESIGN.docx
+docs/.backend-design-slides/
+
 # One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
 /*.sql
+*.bak

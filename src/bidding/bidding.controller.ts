@@ -23,7 +23,14 @@ import { User } from '../database/entities';
 import { MAX_BID_ATTACHMENT_BYTES } from '../files/file-storage.service';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingService } from './bidding.service';
-import { CalculateBidDto, CreateBidDto, PatchBidDto } from './dto/bidding.dto';
+import {
+  CalculateBidDto,
+  CreateBidDto,
+  HandoffBidDto,
+  LinkDuplicateDto,
+  PatchBidDto,
+  SetOutcomeDto,
+} from './dto/bidding.dto';
 
 @Controller('bids')
 @UseGuards(JwtAuthGuard)
@@ -38,11 +45,21 @@ export class BiddingController {
     @Query('status') status?: string,
     @Query('entityId') entityId?: string,
     @Query('search') search?: string,
+    @Query('processStage') processStage?: string,
+    @Query('workType') workType?: string,
+    @Query('outcome') outcome?: string,
+    @Query('ownerProjectNumber') ownerProjectNumber?: string,
+    @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
   ) {
     return this.bidding.list({
       status,
       entityId: entityId ? parseInt(entityId, 10) : undefined,
       search,
+      processStage,
+      workType,
+      outcome,
+      ownerProjectNumber,
+      mechanicalEngineerProjectNumber,
     });
   }
 
@@ -73,6 +90,33 @@ export class BiddingController {
     @CurrentUser() user?: User,
   ) {
     return this.bidding.patch(id, dto, user?.id);
+  }
+
+  @Post(':id/link-duplicate')
+  async linkDuplicate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: LinkDuplicateDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bidding.linkDuplicate(id, dto.keepBidId, dto.notes, user?.id);
+  }
+
+  @Post(':id/handoff')
+  async handoff(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: HandoffBidDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bidding.handoff(id, dto, user?.id);
+  }
+
+  @Post(':id/outcome')
+  async setOutcome(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetOutcomeDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bidding.setOutcome(id, dto, user?.id);
   }
 
   @Delete(':id')

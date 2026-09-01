@@ -27,7 +27,8 @@ These do **not** exist in the DB today and are seeded from **VRF and Lists**, **
 | Table | Purpose | Why new |
 |-------|---------|--------|
 | `Bids` | Estimate header | Transaction root |
-| `Bid_Startup` | 1:1 Startup tab inputs | Per estimate |
+| `Bid_Startup` | *(never built)* | Use `Bid_Content` (`baseBidJson` + `companyInfoJson` + **`processJson`**) |
+| `Bid_Content` | 1:1 JSON: Base Bid, systems, company info, **lifecycle `process`** | Per estimate |
 | `Bid_BaseBidSettings` | 1:1 Base Bid inputs | Per estimate |
 | `Bid_LaborLines` | Labor Costs rows | Per estimate, 1:N |
 | `Bid_QuantityLines` | Quantities sheet rows | Phase 2 |
@@ -35,7 +36,9 @@ These do **not** exist in the DB today and are seeded from **VRF and Lists**, **
 | `Bid_SpecLines` | Spec HVAC/Plumb/Duct selections | Phase 2 (or JSON column on bid if row count stays small) |
 | `Bid_CalcSnapshots` | Audit of `POST /calculate` | Not user input |
 | `Bid_Teams` | Captain, clerk, duct roles lookup | Excel team list; not in `Ref_*` |
+| `Bid_Parties` | Intake owner / architect / ME / invite-contact directory | Deduped from bid `process`; **not** Followup CRM |
 | `Bid_WageRates` | Prevailing / scale wage rows | Excel wage table |
+| `Bid_WageDecisions` | Davis-Bacon / state / city **decision #** lookup | PJ process; selected id on `process.wageDecisionId` |
 | `Bid_ProjectTypes` | Project type dropdown | Excel VRF list |
 | `Bid_States` | State + sales tax % | Excel; US-wide reference for **bidding math only** |
 | `Bid_ContractTypes` | Prime / sub / PO / verbal | Startup checkboxes |
@@ -67,8 +70,7 @@ Optional link later: `Bid_Startup.BidProspectId` → `Ref_BidProspects` when CRM
 ```text
 Ref_OurEntities (1) ──────< Bids >────── (0..1) Ref_Jobs
                               │
-                              ├── 1:1 Bid_Startup
-                              ├── 1:1 Bid_BaseBidSettings
+                              ├── 1:1 Bid_Content  (baseBid / systems / companyInfo / process)
                               ├── 1:N Bid_LaborLines
                               ├── 1:N Bid_QuantityLines   (phase 2)
                               └── 1:N Bid_CalcSnapshots
@@ -111,7 +113,10 @@ Bid_BaseBidSettings.WageRateId ──> Bid_WageRates (optional)
 | `JobId` | `int` FK → `Ref_Jobs` NULL | Optional link to ops job |
 | `EstimateNumber` | `nvarchar(32)` UNIQUE | e.g. IDC6098 |
 | `BidName` | `nvarchar(500)` | |
-| `Status` | `nvarchar(20)` | draft / submitted / archived |
+| `Status` | `nvarchar(20)` | draft / submitted / archived (locks Estimate math) |
+| `ProcessStage` | `nvarchar(40)` | intake / assignment / estimating_setup / takeoff / proposal / post_bid |
+| `OutcomeStatus` | `nvarchar(40)` | open / awarded / lost / no_bid / cancelled / postponed — gates Awarded vs Lost UI |
+| `WorkType` | `nvarchar(40)` NULL | demo / insulation / gc / masonry / other |
 | `BidDate` | `date` | |
 | `SubmitDate` | `date` | Target / actual submit date (cover sheet) |
 | `TimeEstimate` | `decimal(12,2)` | Estimated hours |

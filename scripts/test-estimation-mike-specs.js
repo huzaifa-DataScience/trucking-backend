@@ -211,7 +211,9 @@ async function main() {
 
     const resolved = resolveMaterial(insulation, helpers);
     const roll = rollupMike(mike, size, thick, resolved.baseName);
-    const recv = sumQtyReceived(lineItems, size, thick, resolved.keyword);
+    const recv = sumQtyReceived(lineItems, size, thick, resolved.keyword, {
+      matchMode: resolved.matchMode,
+    });
     const pick = pickStructshareItem(catalog, size, thick, resolved.keyword, {
       weight: weight || resolved.weight,
       facing: facing || null,

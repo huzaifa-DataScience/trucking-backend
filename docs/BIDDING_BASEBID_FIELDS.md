@@ -1,13 +1,13 @@
 # Base Bid — Complete Field & Formula Reference (Frontend)
 
-This documents **every cell** on the Excel **Base Bid** tab: which cells are **inputs** (the user types/selects them → you build form fields) and which are **calculated** (Excel formulas → **the backend computes these; the frontend must NOT recalculate them**, just display what the API returns).
+This documents **every cell** on the Excel **Base Bid** tab: which cells are **inputs** (form fields) and which are **calculated** (Excel formulas — run in the **browser engine**, persist in `computed`). Display stored `computed` from `GET`/`PATCH`. Do not invent a second formula set.
 
-> **Golden rule:** inputs are sent to the backend (`PATCH /bids/:id`), calculated values come back from `POST /bids/:id/calculate`. Never reimplement a formula in the browser — if a number is missing from the API, tell backend to add it (see §6).
+> **Golden rule:** inputs are sent on `PATCH /bids/:id` (`baseBid` / `systems` / **`computed`**). The **browser Excel engine is the source of truth** — store its snapshot in `computed`; `GET` returns that snapshot. `POST /bids/:id/calculate` is a **no-op** unless `{ "forceServerCalc": true }` (verify only). Do **not** reimplement formulas in a second place, and do **not** wait on `/calculate` to populate the UI. Cell map below is still the Excel contract. Full save/load: [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) §1.
 
-Legend for **Backend status**:
-- ✅ **Returned** — already in the `/calculate` `computed` payload.
-- 🟡 **Computed internally** — backend calculates it as part of the math but does **not** yet expose it as its own field.
-- 🔴 **Not yet** — backend does not compute/expose it (needs work if the UI must show it).
+Legend for **legacy server-engine status** (`forceServerCalc` only — not the MVP save path):
+- ✅ **Returned** — in the server `/calculate` snapshot when that verify pass runs.
+- 🟡 **Computed internally** — server math has it but does not expose a named field.
+- 🔴 **Not on the server snapshot** — send it from the **client** engine in `computed` / `baseBid` if the UI needs it.
 
 ---
 
@@ -198,7 +198,7 @@ Columns: **C** Duct, **D** Hydronic, **E** Plumbing, **F** VRF, **G** Equipment,
 
 ## 6. Backend status summary — what `/calculate` returns today
 
-`POST /bids/:id/calculate` currently returns these keys in `computed`:
+`POST /bids/:id/calculate` with `{ "forceServerCalc": true }` returns these keys (legacy verify). Normal save: your client engine should send the same (or richer) keys in `PATCH` `computed`.
 
 ```jsonc
 {
@@ -228,13 +228,13 @@ The **per-system breakdown** (rows 24–33 and 37–45 for each individual syste
 - Schedule: work begin/end dates (B10/B11), avg personnel (H7), total lift cost (J7).
 - Materials/hour (row 27), per-system quantity (B22).
 
-**If the frontend needs to render the full Excel-style itemized table,** request that backend extend `/calculate` to return a `systems[]` array (each with `laborTotal`, `materials`, `materialEscalation`, `materialSalesTax`, `subtotal`, `costPerHour`, `costPerHourWithMargin`, `price`) plus the labor-rate build-up. Until then, the UI can show only the totals above. Do **not** compute these in the browser.
+**If the UI needs the full Excel-style itemized table,** put those keys in the **client** `computed` snapshot (passthrough — extra keys are not stripped). Do not wait for `/calculate` to grow a `systems[]` array.
 
 ---
 
 ## 7. Quick rules for the frontend
-1. **Inputs** (§1) → form fields → save via `PATCH /bids/:id`.
+1. **Inputs** (§1) → form fields → save via `PATCH /bids/:id` (`baseBid` / `systems` / `computed`).
 2. **Lookup-derived** (§2) → fill from the relevant `/lookups/bidding/*` response on selection.
-3. **Everything in §3–§5** → display-only; values come from `/calculate`. Never recompute.
-4. If a calculated value you need is 🟡/🔴 (not in the payload), **ask backend to expose it** — see §6.
+3. **Everything in §3–§5** → run in the **client Excel engine**, persist in `computed`, display from `GET`.
+4. If a calculated value is 🟡/🔴 on the **server** snapshot, still send it from the client engine — `computed` is passthrough.
 5. Empty system columns (not "used") return blank/`""` in Excel — render them as empty, not `0`.

@@ -2,6 +2,8 @@
 
 All project docs live in this folder. **`README.md` in the repo root** covers API setup and run commands.
 
+**Backend map (modules, vendors, tables, flows):** **[BACKEND_DESIGN.md](./BACKEND_DESIGN.md)** — visual walkthrough: [PDF](./BACKEND_DESIGN.pdf) · [Word](./BACKEND_DESIGN.docx)
+
 ## Auth & admin
 
 | Doc | Description |
@@ -9,7 +11,7 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [AUTH.md](./AUTH.md) | Backend auth, JWT, admin guards |
 | [AUTH_DISABLED.md](./AUTH_DISABLED.md) | Temporarily disable login (dev) |
 | [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) | Frontend login/signup flow |
-| [FRONTEND_RBAC.md](./FRONTEND_RBAC.md) | Roles & permissions |
+| [FRONTEND_RBAC.md](./FRONTEND_RBAC.md) | **Give to FE** — roles, permission keys, access-control Settings page |
 | [CREATE_ADMIN_GUIDE.md](./CREATE_ADMIN_GUIDE.md) | Create first admin user |
 | [ADMIN_PANEL_SPEC.md](./ADMIN_PANEL_SPEC.md) | Admin panel UI spec |
 | [ADMIN_PANEL_BACKEND_IMPLEMENTATION.md](./ADMIN_PANEL_BACKEND_IMPLEMENTATION.md) | Admin backend implementation |
@@ -69,8 +71,14 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 
 | Doc | Description |
 |-----|-------------|
-| **[BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md)** | **Single frontend handoff** — Base Bid, attachments, cover sheet, company info |
-| **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** | **Specs Plumb UI + API** — Mike import, Spec grid, Trimble received, catalog prices |
+| **[FRONTEND_BIDDING_CONTEXT.md](./FRONTEND_BIDDING_CONTEXT.md)** | **Read first (FE / AI)** — what we are building, what not to invent, doc order |
+| **[BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md)** | **FE handoff** — PDF stages + handoff + outcome gate (§0), Base Bid, attachments |
+| [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md) | `process` field dictionary (not a second UI spec) |
+| **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** | **Stage 1** — Intake + Assignment (drawing name, project #s, invitations, tiers, team) |
+| **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** | **Give to FE** — spec sheet cascade (family, 2 layers, equipment, duct circumference, manufacturer) |
+| **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** | **Specs Plumb UI + API** — Mike import, Spec grid, Trimble Recv, Structshare item list (no vendor/cheapest) |
+| **[FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)** | **Specs Rules panel** — Mike-only stacking / Qty Est rules for FE button or sub-tab |
+| **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)** | **Production report UI + API** — commodity hours vs Connecteam actual (green/red) |
 | [BIDDING_FRONTEND_CALCULATOR_HANDOFF.md](./BIDDING_FRONTEND_CALCULATOR_HANDOFF.md) | Client-calc contract (backend change history) |
 | [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) | Excel cell ↔ `baseBid` field map |
 | [BIDDING_DATABASE_DESIGN.md](./BIDDING_DATABASE_DESIGN.md) | Bidding DB schema — reuse `Ref_*`, no duplicates |

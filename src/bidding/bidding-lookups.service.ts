@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
+  BidContent,
+  BidParty,
   BidTeam,
   BidWageRate,
+  BidWageDecision,
   BidState,
   BidProjectType,
   BidBuildingType,
@@ -11,6 +14,15 @@ import {
   BidPayrollBurden,
 } from '../database/entities';
 import { computeBurdenedRate, BurdenItem } from './bidding-calc/labor-burden';
+import {
+  INTAKE_PARTY_ROLES,
+  intakePartiesFromProcess,
+  parseProcess,
+  partyDedupeKey,
+  processMeta,
+  type IntakePartyRole,
+  type PartyContact,
+} from './process/bid-process';
 
 export interface WageRateInput {
   rateLabel: string;
@@ -18,6 +30,16 @@ export interface WageRateInput {
   fringe: number;
   displayLabel?: string;
   wageAsOf?: string | null;
+}
+
+export interface WageDecisionInput {
+  decisionNumber: string;
+  decisionDate?: string | null;
+  county?: string | null;
+  jurisdiction?: string | null;
+  category?: string | null;
+  wage?: number | null;
+  fringe?: number | null;
 }
 
 export interface PayrollBurdenInput {
@@ -32,15 +54,66 @@ export interface PayrollBurdenInput {
 
 @Injectable()
 export class BiddingLookupsService {
+  private readonly logger = new Logger(BiddingLookupsService.name);
+  private partiesReady: Promise<void> | null = null;
+
   constructor(
     @InjectRepository(BidTeam) private readonly teamRepo: Repository<BidTeam>,
     @InjectRepository(BidWageRate) private readonly wageRepo: Repository<BidWageRate>,
+    @InjectRepository(BidWageDecision) private readonly wageDecisionRepo: Repository<BidWageDecision>,
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
     @InjectRepository(BidProjectType) private readonly projectTypeRepo: Repository<BidProjectType>,
     @InjectRepository(BidBuildingType) private readonly buildingTypeRepo: Repository<BidBuildingType>,
     @InjectRepository(BidPreference) private readonly preferenceRepo: Repository<BidPreference>,
     @InjectRepository(BidPayrollBurden) private readonly burdenRepo: Repository<BidPayrollBurden>,
+    @InjectRepository(BidParty) private readonly partyRepo: Repository<BidParty>,
+    @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
   ) {}
+
+  async getParties(role?: string, q?: string) {
+    const allowed = INTAKE_PARTY_ROLES as readonly string[];
+    if (!role || !allowed.includes(role)) return [];
+    try {
+      await this.ensurePartiesReady();
+    } catch (err: any) {
+      this.logger.warn(`Bid_Parties lookup skipped: ${err?.message ?? err}`);
+      return [];
+    }
+    const qb = this.partyRepo
+      .createQueryBuilder('p')
+      .where('p.role = :role', { role })
+      .orderBy('p.name', 'ASC')
+      .take(50);
+    const needle = (q ?? '').trim().slice(0, 80).replace(/[%_]/g, '');
+    if (needle) {
+      qb.andWhere('(p.name LIKE :q OR p.company LIKE :q OR p.email LIKE :q)', {
+        q: `%${needle}%`,
+      });
+    }
+    const rows = await qb.getMany();
+    return rows.map((p) => ({
+      id: p.id,
+      name: p.name || p.company || p.email,
+      company: p.company,
+      contactName: p.contactName,
+      email: p.email,
+      phone: p.phone,
+      role: p.role,
+    }));
+  }
+
+  /** PATCH / POST bid process → directory so the next dropdown hit finds them. */
+  async upsertFromProcess(process: unknown): Promise<void> {
+    if (!process || typeof process !== 'object') return;
+    try {
+      await this.ensureTable();
+      for (const { role, contact } of intakePartiesFromProcess(parseProcess(process))) {
+        await this.upsertOne(role, contact);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Bid_Parties upsert skipped: ${err?.message ?? err}`);
+    }
+  }
 
   async getTeams() {
     const rows = await this.teamRepo.find({ where: { isActive: true }, order: { sortOrder: 'ASC' } });
@@ -256,6 +329,161 @@ export class BiddingLookupsService {
   async getPreferences() {
     const rows = await this.preferenceRepo.find({ order: { sortOrder: 'ASC' } });
     return rows.map((r) => ({ id: r.id, name: r.name }));
+  }
+
+  getProcessMeta() {
+    return processMeta();
+  }
+
+  async getWageDecisions() {
+    const rows = await this.wageDecisionRepo.find({
+      where: { isActive: true },
+      order: { sortOrder: 'ASC' },
+    });
+    return rows.map((r) => this.toWageDecision(r));
+  }
+
+  async createWageDecision(input: WageDecisionInput) {
+    const max = await this.wageDecisionRepo
+      .createQueryBuilder('w')
+      .select('MAX(w.sortOrder)', 'm')
+      .getRawOne<{ m: number | null }>();
+    const row = this.wageDecisionRepo.create({
+      decisionNumber: input.decisionNumber.trim(),
+      decisionDate: input.decisionDate ? new Date(input.decisionDate) : null,
+      county: input.county?.trim() || null,
+      jurisdiction: input.jurisdiction?.trim() || null,
+      category: input.category?.trim() || null,
+      wage: input.wage ?? null,
+      fringe: input.fringe ?? null,
+      isActive: true,
+      sortOrder: (max?.m ?? 0) + 1,
+    });
+    return this.toWageDecision(await this.wageDecisionRepo.save(row));
+  }
+
+  async updateWageDecision(id: number, input: Partial<WageDecisionInput>) {
+    const row = await this.wageDecisionRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException(`Wage decision ${id} not found`);
+    if (input.decisionNumber !== undefined) row.decisionNumber = input.decisionNumber.trim();
+    if (input.decisionDate !== undefined) {
+      row.decisionDate = input.decisionDate ? new Date(input.decisionDate) : null;
+    }
+    if (input.county !== undefined) row.county = input.county?.trim() || null;
+    if (input.jurisdiction !== undefined) row.jurisdiction = input.jurisdiction?.trim() || null;
+    if (input.category !== undefined) row.category = input.category?.trim() || null;
+    if (input.wage !== undefined) row.wage = input.wage ?? null;
+    if (input.fringe !== undefined) row.fringe = input.fringe ?? null;
+    return this.toWageDecision(await this.wageDecisionRepo.save(row));
+  }
+
+  async deleteWageDecision(id: number) {
+    const row = await this.wageDecisionRepo.findOne({ where: { id } });
+    if (!row) throw new NotFoundException(`Wage decision ${id} not found`);
+    row.isActive = false;
+    await this.wageDecisionRepo.save(row);
+    return { ok: true };
+  }
+
+  private toWageDecision(w: BidWageDecision) {
+    return {
+      id: w.id,
+      decisionNumber: w.decisionNumber,
+      decisionDate:
+        w.decisionDate instanceof Date ? w.decisionDate.toISOString().slice(0, 10) : w.decisionDate,
+      county: w.county,
+      jurisdiction: w.jurisdiction,
+      category: w.category,
+      wage: w.wage == null ? null : Number(w.wage),
+      fringe: w.fringe == null ? null : Number(w.fringe),
+    };
+  }
+
+  private ensurePartiesReady(): Promise<void> {
+    if (!this.partiesReady) {
+      this.partiesReady = this.ensureTable()
+        .then(() => this.seedFromBids())
+        .catch((err) => {
+          this.partiesReady = null;
+          throw err;
+        });
+    }
+    return this.partiesReady;
+  }
+
+  private async ensureTable(): Promise<void> {
+    await this.partyRepo.query(`
+      IF OBJECT_ID(N'dbo.Bid_Parties', N'U') IS NULL
+      BEGIN
+        CREATE TABLE dbo.Bid_Parties (
+          PartyId int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+          Role nvarchar(40) NOT NULL,
+          Name nvarchar(500) NULL,
+          Company nvarchar(500) NULL,
+          ContactName nvarchar(500) NULL,
+          Email nvarchar(500) NULL,
+          Phone nvarchar(100) NULL,
+          DedupeKey nvarchar(400) NOT NULL,
+          UpdatedAt datetime2 NOT NULL CONSTRAINT DF_Bid_Parties_UpdatedAt DEFAULT SYSUTCDATETIME()
+        );
+        CREATE UNIQUE INDEX UX_Bid_Parties_Dedupe ON dbo.Bid_Parties(DedupeKey);
+        CREATE INDEX IX_Bid_Parties_Role ON dbo.Bid_Parties(Role);
+      END
+    `);
+  }
+
+  /** ponytail: one-shot ProcessJson scan; if this gets slow, a SQL seed job. */
+  private async seedFromBids(): Promise<void> {
+    const rows = await this.contentRepo
+      .createQueryBuilder('c')
+      .select('c.processJson', 'processJson')
+      .where('c.processJson IS NOT NULL')
+      .getRawMany<{ processJson: string }>();
+    for (const row of rows) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(row.processJson);
+      } catch {
+        continue;
+      }
+      const p = parseProcess(parsed);
+      for (const { role, contact } of intakePartiesFromProcess(p)) {
+        await this.upsertOne(role, contact);
+      }
+    }
+  }
+
+  private async upsertOne(role: IntakePartyRole, contact: PartyContact): Promise<void> {
+    const key = partyDedupeKey(role, contact);
+    if (!key) return;
+    const pick = (next: string | null | undefined, prev: string | null) => {
+      const t = (next ?? '').trim();
+      return t || prev || null;
+    };
+    const apply = (row: BidParty) => {
+      row.role = role;
+      row.name = pick(contact.name, row.name);
+      row.company = pick(contact.company, row.company);
+      row.contactName = pick(contact.contactName, row.contactName);
+      row.email = pick(contact.email, row.email);
+      row.phone = pick(contact.phone, row.phone);
+      if (!row.name) row.name = row.company || row.email;
+      if (!row.company) row.company = row.name;
+      row.updatedAt = new Date();
+    };
+    let row = await this.partyRepo.findOne({ where: { dedupeKey: key } });
+    if (!row) {
+      row = this.partyRepo.create({ dedupeKey: key, role, name: null, company: null, contactName: null, email: null, phone: null });
+    }
+    apply(row);
+    try {
+      await this.partyRepo.save(row);
+    } catch {
+      const again = await this.partyRepo.findOne({ where: { dedupeKey: key } });
+      if (!again) return;
+      apply(again);
+      await this.partyRepo.save(again);
+    }
   }
 }
 

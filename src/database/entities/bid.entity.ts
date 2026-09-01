@@ -11,6 +11,21 @@ import { Job } from './job.entity';
 import { BidContent } from './bid-content.entity';
 
 export type BidStatus = 'draft' | 'submitted' | 'archived';
+export type BidProcessStage =
+  | 'intake'
+  | 'assignment'
+  | 'estimating_setup'
+  | 'takeoff'
+  | 'proposal'
+  | 'post_bid'
+  | 'result';
+export type BidOutcomeStatus =
+  | 'open'
+  | 'awarded'
+  | 'lost'
+  | 'no_bid'
+  | 'cancelled'
+  | 'postponed';
 
 /**
  * Bid header — one row per estimate (the "cover sheet" of the Base Bid tab).
@@ -48,6 +63,18 @@ export class Bid {
 
   @Column({ name: 'Status', type: 'nvarchar', length: 20, default: 'draft' })
   status!: BidStatus;
+
+  /** Pre workflow (intake → result/Outcome tab). Win/lose is OutcomeStatus — changeable. */
+  @Column({ name: 'ProcessStage', type: 'nvarchar', length: 40, default: 'intake' })
+  processStage!: BidProcessStage;
+
+  /** Changeable. awarded shows POST startup; lost-like shows POST lost form. */
+  @Column({ name: 'OutcomeStatus', type: 'nvarchar', length: 40, default: 'open' })
+  outcomeStatus!: BidOutcomeStatus;
+
+  /** Demo / insulation / gc / masonry / other — list filter. */
+  @Column({ name: 'WorkType', type: 'nvarchar', length: 40, nullable: true })
+  workType!: string | null;
 
   @Column({ name: 'BidDate', type: 'date', nullable: true })
   bidDate!: Date | null;
