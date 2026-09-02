@@ -387,6 +387,8 @@ export type BidProcess = {
   ocipCcip: { coversGl: boolean | null; coversWc: boolean | null };
   /** Project-level. Federal work. Decide before the spec table. Not per product. */
   buyAmerican: boolean | null;
+  /** Estimating Setup page — one field for the bid, not a spec-sheet column. */
+  aPlus: boolean | null;
   lifts: { needed: boolean | null; addMoney: boolean | null };
   parking: { paidToWorkers: boolean | null; total: number | null };
   relatedBidId: number | null;
@@ -591,6 +593,7 @@ export function emptyProcess(): BidProcess {
     mechanicals: [],
     ocipCcip: { coversGl: null, coversWc: null },
     buyAmerican: null,
+    aPlus: null,
     lifts: { needed: null, addMoney: null },
     parking: { paidToWorkers: null, total: null },
     relatedBidId: null,
@@ -1058,6 +1061,7 @@ function normalizeProcess(p: BidProcess): void {
     p.mechanicalEngineer = emptyParty();
   }
   if (!p.ocipCcip || typeof p.ocipCcip !== 'object') p.ocipCcip = nest.ocipCcip;
+  p.aPlus = triBool(p.aPlus);
   if (!p.lifts || typeof p.lifts !== 'object') p.lifts = nest.lifts;
   if (!p.parking || typeof p.parking !== 'object') p.parking = nest.parking;
   if (!p.insulationSpecs || typeof p.insulationSpecs !== 'object') p.insulationSpecs = nest.insulationSpecs;
@@ -1227,6 +1231,15 @@ function numOrNull(v: unknown): number | null {
   if (v == null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function triBool(v: unknown): boolean | null {
+  if (v === true || v === false) return v;
+  if (v == null || v === '') return null;
+  const s = String(v).trim().toLowerCase();
+  if (s === 'true' || s === 'yes' || s === '1' || s === 'a+') return true;
+  if (s === 'false' || s === 'no' || s === '0') return false;
+  return null;
 }
 
 function nullishStr(v: unknown): string | null {
@@ -1490,6 +1503,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'labor', phase: 'estimating_setup', note: '' },
   { path: 'ocipCcip', phase: 'estimating_setup', note: 'GL = no price impact; WC = downward' },
   { path: 'buyAmerican', phase: 'estimating_setup', note: 'Project-level, before spec sheet. Federal work. Filters manufacturers.' },
+  { path: 'aPlus', phase: 'estimating_setup', note: 'Setup page checkbox. Bid-level, not a spec-sheet column.' },
   { path: 'lifts', phase: 'estimating_setup', note: 'Reuse baseBid.liftsNeeded for money math' },
   { path: 'parking', phase: 'estimating_setup', note: 'Reuse baseBid.parking* for money math' },
   { path: 'schedule', phase: 'estimating_setup', note: '' },

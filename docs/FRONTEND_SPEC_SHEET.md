@@ -45,6 +45,7 @@ Same Estimating Setup screen, **above** spec sheets, next to OCIP:
 | UI | Bind | Rule |
 |----|------|------|
 | Buy American? | `process.buyAmerican` | `true` / `false` / `null`. **Project-level.** Federal work. Not per row. |
+| **A+** | `process.aPlus` | `true` / `false` / `null`. **Setup page only — one checkbox for the bid.** Not a spec-sheet column. |
 
 Incomplete OK. Save with the rest of Setup.
 
@@ -118,7 +119,7 @@ Insulation GET can take 10–20s (Trimble dims). Family / covering / shape are i
 
 ## What to build
 
-Setup → **Add spec** → Duct / HVAC pipe / Plumbing / **Equipment**. Clone `specSheetTemplates[].empty` (6 blank rows). New `id` on the sheet **and** each row (`crypto.randomUUID()`). Never keep `new-duct`.
+Setup → **Add spec** → Duct / HVAC pipe / Plumbing / **Equipment**. Clone `specSheetTemplates[].empty` (6 blank rows). New `id` on the sheet **and** each row (`newId()` — see [FRONTEND_BIDDING_CONTEXT.md](./FRONTEND_BIDDING_CONTEXT.md); raw `crypto.randomUUID()` throws on HTTP). Never keep `new-duct`.
 
 Sheet chrome: title, optional spec number (`230700`), footer note, images (`label=spec-sheet-image`).
 
@@ -369,4 +370,5 @@ Duct row example (any size, two layers):
 - [ ] Manufacturer multi + preferred
 - [ ] Accessories, spec section, spec paragraph, `otherNote`
 - [ ] Setup **Buy American** above the table
+- [ ] Setup **A+** (`process.aPlus`) next to Buy American — bid-level, **not** on spec rows
 - [ ] PATCH full `specSheets` array; new UUIDs
