@@ -82,7 +82,19 @@ Setup → Takeoff blocked until `process.technicalReview.approvedForTakeoff === 
 Outcome tab: `canComplete` is false. Change outcome there; do not hand off off that tab.  
 Assignment “no bid” jumps to Outcome with `no_bid` pre-selected; user can still change it.
 
-Mint unique `id`s on array items (`crypto.randomUUID()`). Do not keep template id `new-duct`.
+Mint unique `id`s on array items (`newId()` below — do **not** call `crypto.randomUUID()` raw; it throws on HTTP / non-secure origins). Do not keep template id `new-duct`.
+
+```ts
+function newId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+```
 
 **Stage 1 (Intake + Assignment):** bid name **locked** to `drawingName`. Two project #s (`#` stripped). `bidKind` includes `budget`. Second invitation → `invitations[]` (plus `addenda` per inviter). One invite → `whoElseBidding.researched` required to hand off. Drawings attachment required for build-to-print / design-assist. Mistake second bid: `POST /bids/:id/link-duplicate`. Typeahead `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. Tiers on intake. Assignment: Nick + PJ, `assignment.teamId`. Party typeahead: `GET /lookups/bidding/parties?role=&q=`. Full contract: [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
 

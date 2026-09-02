@@ -32,7 +32,15 @@ uploads/
 *.csv
 *.CSV
 *.xlsx
+*.xls
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.html
 ~$*
+reports/
 
 # Temp slides used to build BACKEND_DESIGN.docx
 docs/.backend-design-slides/

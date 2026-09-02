@@ -393,6 +393,7 @@ assert(meta.intakeEditor.eorLabel.includes('Engineer of Record'), 'EOR label');
 assert(meta.intakeEditor.inviteCompanyFirst === true, 'invite company first');
 
 assert(mergeProcess(emptyProcess(), { buyAmerican: true }).buyAmerican === true, 'buy American flag');
+assert(mergeProcess(emptyProcess(), { aPlus: true }).aPlus === true, 'Setup A+ flag');
 
 assert(
   partyDedupeKey('mechanical', { name: 'WSP', company: null, contactName: null, email: 'a@wsp.com', phone: null }) ===
