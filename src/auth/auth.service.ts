@@ -161,6 +161,19 @@ export class AuthService {
     return user?.avatarPath ?? null;
   }
 
+  async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    const valid = await this.usersService.validatePassword(currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters');
+    }
+    await this.usersService.updatePassword(userId, newPassword);
+  }
+
   openAvatarStream(relativePath: string) {
     return this.storage.openReadStream(relativePath);
   }
