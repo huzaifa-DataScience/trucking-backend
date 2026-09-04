@@ -43,4 +43,8 @@ export class UsersService {
   async updateLastLogin(userId: number): Promise<void> {
     await this.userRepo.update(userId, { lastLoginAt: new Date() });
   }
+
+  async setAvatarPath(userId: number, avatarPath: string | null): Promise<void> {
+    await this.userRepo.update(userId, { avatarPath });
+  }
 }

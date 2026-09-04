@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RbacService } from './rbac.service';
+import { FileStorageService } from '../files/file-storage.service';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { RbacService } from './rbac.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy, RbacService],
+  providers: [AuthService, JwtStrategy, RbacService, FileStorageService],
   controllers: [AuthController],
   exports: [AuthService, RbacService],
 })

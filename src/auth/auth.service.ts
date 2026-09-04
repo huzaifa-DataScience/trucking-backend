@@ -1,10 +1,22 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  PayloadTooLargeException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { RbacService } from './rbac.service';
 import { User, UserStatus } from '../database/entities';
 import { JwtPayload } from './strategies/jwt.strategy';
+import {
+  ALLOWED_AVATAR_MIMES,
+  FileStorageService,
+  MAX_AVATAR_BYTES,
+} from '../files/file-storage.service';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +25,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly rbacService: RbacService,
     private readonly config: ConfigService,
+    private readonly storage: FileStorageService,
   ) {}
 
   async register(
@@ -96,7 +109,60 @@ export class AuthService {
       role: user.role,
       status: user.status,
       permissions: permissions ?? [],
+      avatarUrl: user.avatarPath ? `/auth/avatar/${user.id}` : null,
     };
+  }
+
+  async uploadAvatar(userId: number, file?: Express.Multer.File): Promise<LoginResult> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('No file uploaded (field name: file)');
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      throw new PayloadTooLargeException(`Image exceeds ${MAX_AVATAR_BYTES} bytes`);
+    }
+    const mimeType = file.mimetype?.trim() || '';
+    if (!ALLOWED_AVATAR_MIMES[mimeType]) {
+      throw new BadRequestException(
+        `Unsupported image type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP`,
+      );
+    }
+
+    const previousPath = user.avatarPath;
+    const { storagePath } = await this.storage.writeAvatarFile(
+      userId,
+      file.buffer,
+      file.originalname,
+      mimeType,
+    );
+    await this.usersService.setAvatarPath(userId, storagePath);
+    if (previousPath) {
+      await this.storage.deleteFile(previousPath);
+    }
+
+    const permissions = await this.getPermissionsForRole(user.role);
+    return this.toLoginResult({ ...user, avatarPath: storagePath }, permissions);
+  }
+
+  async deleteAvatar(userId: number): Promise<LoginResult> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.avatarPath) {
+      await this.storage.deleteFile(user.avatarPath);
+      await this.usersService.setAvatarPath(userId, null);
+    }
+    const permissions = await this.getPermissionsForRole(user.role);
+    return this.toLoginResult({ ...user, avatarPath: null }, permissions);
+  }
+
+  async getAvatarPath(userId: number): Promise<string | null> {
+    const user = await this.usersService.findById(userId);
+    return user?.avatarPath ?? null;
+  }
+
+  openAvatarStream(relativePath: string) {
+    return this.storage.openReadStream(relativePath);
   }
 }
 
@@ -106,4 +172,5 @@ export interface LoginResult {
   role: string;
   status: string;
   permissions: string[];
+  avatarUrl: string | null;
 }
