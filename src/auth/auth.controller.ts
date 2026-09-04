@@ -25,6 +25,7 @@ import { JwtAuthGuard } from './guards';
 // import { Roles } from './decorators';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { User } from '../database/entities';
 
 @Controller('auth')
@@ -80,6 +81,18 @@ export class AuthController {
   async deleteAvatar(@CurrentUser() user: User): Promise<LoginResult> {
     if (!user) throw new BadRequestException('Not authenticated');
     return this.authService.deleteAvatar(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser() user: User,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    if (!user) throw new BadRequestException('Not authenticated');
+    await this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
+    return { message: 'Password updated.' };
   }
 
   /** Public so plain <img src> tags (no Authorization header) can load it. */
