@@ -11,6 +11,7 @@
     "start:prod": "node dist/main",
     "seed": "ts-node src/database/seed/seed.ts",
     "add-status-columns": "ts-node scripts/add-status-columns.ts",
+    "add-avatar-column": "ts-node scripts/add-avatar-column.ts",
     "backfill-siteline-pm-emails": "ts-node scripts/backfill-siteline-pm-emails.ts",
     "refresh-siteline-entity-config": "ts-node scripts/refresh-siteline-entity-config.ts",
     "sync-siteline-aging-once": "ts-node scripts/sync-siteline-aging-once.ts",

@@ -3,6 +3,11 @@ export const DEFAULT_PAGE_SIZE = 50;
 export class PaginationQueryDto {
   page?: number = 1;
   pageSize?: number = DEFAULT_PAGE_SIZE;
+  /** Whitelisted column key (see TICKET_SORT_COLUMNS) to sort the ticket grid by. */
+  sortBy?: string;
+  sortDir?: 'ASC' | 'DESC';
+  /** Free-text search across ticket #, job, hauler, material, site, truck #. */
+  search?: string;
 }
 
 export interface PagedResult<T> {

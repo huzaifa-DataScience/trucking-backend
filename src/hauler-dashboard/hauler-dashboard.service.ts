@@ -8,6 +8,7 @@ import { TicketGridRowDto } from '../common/dto/ticket-grid.dto';
 import { ExcelExportService } from '../common/excel-export.service';
 import { mapTicketToDetail, mapTicketToGridRow } from '../common/ticket-mapper';
 import { HaulerDashboardFiltersDto } from '../common/dto/filters.dto';
+import { applyTicketSearch, applyTicketSort } from '../common/ticket-query.util';
 
 export interface HaulerDashboardKpisDto {
   totalTickets: number;
@@ -158,6 +159,8 @@ export class HaulerDashboardService {
       .orderBy(`${alias}.ticketDate`, 'DESC')
       .addOrderBy(`${alias}.createdAt`, 'DESC');
     this.applyFilters(qb, filters, alias);
+    applyTicketSearch(qb, pagination.search);
+    applyTicketSort(qb, pagination.sortBy, pagination.sortDir);
 
     const page = Math.max(1, pagination.page ?? 1);
     const pageSize = Math.min(100, pagination.pageSize ?? DEFAULT_PAGE_SIZE);

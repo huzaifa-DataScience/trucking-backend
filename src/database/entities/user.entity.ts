@@ -45,4 +45,8 @@ export class User {
 
   @Column({ name: 'LastLoginAt', type: 'datetime2', nullable: true })
   lastLoginAt: Date | null;
+
+  /** Relative storage path under UPLOAD_ROOT (e.g. avatars/12/uuid.jpg), not a public URL. */
+  @Column({ name: 'AvatarPath', type: 'nvarchar', length: 500, nullable: true })
+  avatarPath: string | null;
 }

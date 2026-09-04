@@ -15,6 +15,13 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
 export const MAX_BID_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_BID_ATTACHMENTS_PER_BID = 20;
 
+export const ALLOWED_AVATAR_MIMES: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+export const MAX_AVATAR_BYTES = 3 * 1024 * 1024;
+
 @Injectable()
 export class FileStorageService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
@@ -61,6 +68,24 @@ export class FileStorageService implements OnModuleInit {
 
   openReadStream(relativePath: string): ReadStream {
     return createReadStream(this.absolutePath(relativePath));
+  }
+
+  relativePathForAvatar(userId: number, storedFileName: string): string {
+    return join('avatars', String(userId), storedFileName).replace(/\\/g, '/');
+  }
+
+  async writeAvatarFile(
+    userId: number,
+    buffer: Buffer,
+    originalName: string,
+    mimeType: string,
+  ): Promise<{ storagePath: string; sizeBytes: number }> {
+    const storedName = this.storedFileName(originalName, mimeType);
+    const storagePath = this.relativePathForAvatar(userId, storedName);
+    const absolute = this.absolutePath(storagePath);
+    await fs.mkdir(dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, buffer);
+    return { storagePath, sizeBytes: buffer.length };
   }
 
   async deleteFile(relativePath: string): Promise<void> {
