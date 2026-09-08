@@ -637,25 +637,27 @@ export class ConnecteamChatService implements OnModuleInit {
     );
 
     if (existing.length) {
-      await this.messages.query(
-        `UPDATE dbo.Connecteam_Messages
-         SET Body = @0,
-             UserId = COALESCE(@1, UserId),
-             MessageType = COALESCE(@2, MessageType),
-             AttachmentsJson = COALESCE(@3, AttachmentsJson),
-             ModifiedAt = @4,
-             IsDeleted = 0,
-             SentAt = @5
-         WHERE MessageId = @6`,
-        [body, userId, messageType, attachmentsJson, modifiedAt, sentAt, existing[0].MessageId],
-      );
+      await this.updateMessageRow(existing[0].MessageId, body, userId, messageType, attachmentsJson, modifiedAt, sentAt);
     } else {
-      await this.messages.query(
-        `INSERT INTO dbo.Connecteam_Messages
-           (ConversationId, UserId, AppUserId, Body, SentAt, RecordSource, ExternalMessageId, IsDeleted, MessageType, AttachmentsJson, ModifiedAt)
-         VALUES (@0, @1, NULL, @2, @3, 'sync', @4, 0, @5, @6, @7)`,
-        [conversationId, userId, body, sentAt, externalId, messageType, attachmentsJson, modifiedAt],
-      );
+      try {
+        await this.messages.query(
+          `INSERT INTO dbo.Connecteam_Messages
+             (ConversationId, UserId, AppUserId, Body, SentAt, RecordSource, ExternalMessageId, IsDeleted, MessageType, AttachmentsJson, ModifiedAt)
+           VALUES (@0, @1, NULL, @2, @3, 'sync', @4, 0, @5, @6, @7)`,
+          [conversationId, userId, body, sentAt, externalId, messageType, attachmentsJson, modifiedAt],
+        );
+      } catch (e) {
+        // Lost a race with another concurrent upsert (webhook vs. replay cron) for the same
+        // ExternalMessageId — the other caller already inserted it; update instead.
+        if (!this.isDuplicateKeyError(e)) throw e;
+        const winner: Array<{ MessageId: string }> = await this.messages.query(
+          `SELECT MessageId FROM dbo.Connecteam_Messages WHERE ConversationId = @0 AND ExternalMessageId = @1`,
+          [conversationId, externalId],
+        );
+        if (winner.length) {
+          await this.updateMessageRow(winner[0].MessageId, body, userId, messageType, attachmentsJson, modifiedAt, sentAt);
+        }
+      }
     }
 
     const row = await this.messages.findOne({
@@ -667,6 +669,35 @@ export class ConnecteamChatService implements OnModuleInit {
     }
     await this.refreshConversationPreview(conversationId, row);
     await this.emitMessageLive(conversationId, row);
+  }
+
+  private async updateMessageRow(
+    messageId: string,
+    body: string,
+    userId: number | null,
+    messageType: string | null,
+    attachmentsJson: string | null,
+    modifiedAt: Date | null,
+    sentAt: Date,
+  ): Promise<void> {
+    await this.messages.query(
+      `UPDATE dbo.Connecteam_Messages
+       SET Body = @0,
+           UserId = COALESCE(@1, UserId),
+           MessageType = COALESCE(@2, MessageType),
+           AttachmentsJson = COALESCE(@3, AttachmentsJson),
+           ModifiedAt = @4,
+           IsDeleted = 0,
+           SentAt = @5
+       WHERE MessageId = @6`,
+      [body, userId, messageType, attachmentsJson, modifiedAt, sentAt, messageId],
+    );
+  }
+
+  private isDuplicateKeyError(e: unknown): boolean {
+    const err = e as { number?: number; code?: string; message?: string } | undefined;
+    if (err?.number === 2627 || err?.number === 2601) return true;
+    return typeof err?.message === 'string' && err.message.includes('Cannot insert duplicate key row');
   }
 
   private async markMessageDeleted(msg: ConnecteamWebhookMessage): Promise<void> {
