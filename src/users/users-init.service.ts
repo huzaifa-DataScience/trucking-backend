@@ -75,6 +75,16 @@ export class UsersInitService implements OnModuleInit {
         console.log('✅ Added LastLoginAt column to App_Users table');
       }
 
+      const teamRows = await this.dataSource.query(`
+        SELECT COUNT(*) as cnt
+        FROM sys.columns
+        WHERE object_id = OBJECT_ID('dbo.App_Users') AND name = 'BidTeamId'
+      `);
+      if (getCount(teamRows) === 0) {
+        await this.dataSource.query(`ALTER TABLE dbo.App_Users ADD BidTeamId int NULL`);
+        console.log('✅ Added BidTeamId column to App_Users table');
+      }
+
       // Step 4: Ensure admin users are active (Status exists after steps 1–2)
       await this.dataSource.query(`
         UPDATE dbo.App_Users SET Status = 'active' WHERE Role = 'admin' AND (Status IS NULL OR Status != 'active')

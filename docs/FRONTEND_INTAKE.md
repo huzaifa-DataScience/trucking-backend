@@ -1,12 +1,14 @@
 # Stage 1 — Intake + Assignment
 
 **Give this file to FE** (with [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) for Setup).  
-**Last updated:** 2026-08-25  
-**Source:** PJ + Amr (2026-08-20) + spec catch-up (2026-08-23). Locked pairs only.  
+**Last updated:** 2026-09-09  
+**Source:** PJ + Amr (2026-08-20) + spec catch-up (2026-08-23) + PJ intake dry-run (2026-09). Locked pairs only.  
 **Chrome / handoff:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
 **Enums:** `GET /lookups/bidding/process-meta` → `bidKinds`, `tierRoles`, `intakeEditor`
 
 25 Aug extras: label **Engineer of Record — mechanical** (not “ME project”). Invitation **company first**, then contacts. Typeahead `GET /lookups/bidding/parties?role=&q=`. Activity = who / what / when.
+
+9 Sep extras (PJ): **no `jobId` on intake** — link the job when awarded. Paste a full US address in `projectAddress.line1` — backend fills city/state/zip if those are empty (keeps `line1`). Preferred reach: `contact.preferredContact` `email` | `phone`. Paste the invitation email in `invitations[].inviteBody` (not `notes`). Mark `documentLinks[].checkAddenda` on the owner/federal source. Bid clerk (John) may complete **Assignment** so the queue does not sit. `intakeEditor` flags: `jobIdOnIntake`, `hideJobIdOnIntake`, `fillAddressFromLine1`, `preferredContact`, `inviteBody`, `checkAddenda`, `assignmentOwners`.
 
 Incomplete **save** is OK. **Complete & Hand Off** from Intake is gated — read `workflow.canComplete` / `completeBlockedReason`. Bid clerk on Intake. Estimator is **not** on this page.
 
@@ -17,7 +19,7 @@ Incomplete **save** is OK. **Complete & Hand Off** from Intake is gated — read
 | Stage | Who | Save | Hand off |
 |-------|-----|------|----------|
 | `intake` | Bid clerk (John) | `PATCH /bids/:id` `{ process }` | `POST /bids/:id/handoff` `{ "action": "complete" }` → Assignment |
-| `assignment` | **Nick + PJ** | same | Complete → Setup. `assignment.pursue === false` → Outcome tab with `no_bid` |
+| `assignment` | **Nick + PJ + bid clerk** | same | Complete → Setup. `assignment.pursue === false` → Outcome tab with `no_bid` |
 
 New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 
@@ -29,14 +31,18 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 |----|------|---------|
 | Bid / estimate # | header `estimateNumber` | Already on create |
 | Bid name | header `bidName` **and** `process.drawingName` | **Locked to the drawing name.** If `drawingName` is set, header `bidName` is overwritten. Clerk cannot keep a nickname. |
-| Address | `process.projectAddress` | From drawings. City + state when known. |
+| Address | `process.projectAddress` | Paste the full line in `line1` (Followup-style). On save, city/state/zip fill if empty. **Do not clear `line1`.** |
+| Linked job | header `jobId` | **Skip on intake.** Hide the job picker. Set when awarded. |
 | Due date / time | `process.dueDate`, `process.dueTime` | |
+| Sticky Notes (whole bid) | `process.notes` | One pad on the bid. Cap 2000. **Not** invite paste — that is `invitations[].inviteBody`. |
 | Invitation received | `process.invitations[].receivedAt` | Required when known. **Many vendors → many rows, one bid.** |
-| Invitation contact | `process.invitations[].contact` | **Company first**, then that company's people. Email/phone fill from the pick. Typeahead: `GET /lookups/bidding/parties?role=invite_contact&q=`. |
+| Invitation company / person | `process.invitations[].contact` | **Company first**, then `contactName`. Typeahead: `GET /lookups/bidding/parties?role=invite_contact&q=`. |
+| **Preferred contact** | `process.invitations[].contact.preferredContact` | **Dropdown — replace the old “Contact” field.** Options: `email` / `phone`. Next to it show `preferredContactValue` (that email or phone). Same on `owner` / `architect` / `mechanicalEngineer`. |
+| Invitation email | `process.invitations[].inviteBody` | **Paste the full email / portal dump.** Cap 50k. `notes` stays clerk notes. |
 | Inviter drawing links | `process.invitations[].links` | That inviter’s set. |
 | Addenda from this inviter | `process.invitations[].addenda` | `{ number, receivedAt, attachmentIds, notes }` — which of the three sent addendum 2/3. |
 | Who else is bidding? | `process.whoElseBidding` | If `invitations.length < 2`, `researched: true` is required to hand off. Call GC/architect/ME. **Do not ask the inviter.** |
-| Owner / federal links | `process.documentLinks` | **More than one.** Public owner/federal set + extras. |
+| Owner / federal links | `process.documentLinks` | **More than one.** Public owner/federal set + extras. Mark `checkAddenda: true` on the source clerks should re-check for addenda. |
 | Docs | `POST /bids/:id/attachments` `label=invitation\|drawings\|specifications\|addenda` | Put ids on `invitations[].attachmentIds`. |
 | Bid type | `process.bidKind` | **Mandatory.** `built_to_print` / `design_build` / `design_assist` / `budget` / `unknown`. Labels in `process-meta.bidKindLabels`. |
 | Budget | *(do not show a checkbox)* | Budget **is** `bidKind: "budget"`. `budgetOnly` is derived — hide it. |
@@ -147,7 +153,7 @@ Insulation **can** be direct to owner — do not require a mechanical row.
 
 ## Assignment
 
-Nick + PJ (not the clerk).
+Nick + PJ **and** the bid clerk (John). Queue must not sit if Nick/PJ are out. Handoff is not role-gated — whoever has the page can Complete.
 
 | UI | Bind |
 |----|------|
@@ -172,19 +178,20 @@ Then Complete → Estimating Setup.
     "bidKind": "built_to_print",
     "dueDate": "2026-09-04",
     "dueTime": "14:00",
-    "projectAddress": { "line1": "…", "city": "Baltimore", "state": "MD", "zip": null },
-    "owner": { "name": "Johns Hopkins" },
+    "projectAddress": { "line1": "800 N Charles St, Baltimore, MD 21201", "city": null, "state": null, "zip": null },
+    "owner": { "name": "Johns Hopkins", "email": "a@jhu.edu", "phone": "410-555-0100", "preferredContact": "email" },
     "architect": { "name": "Ford Keely" },
     "mechanicalEngineer": { "name": "WSP" },
     "relatedBidId": null,
-    "documentLinks": [{ "url": "https://…", "label": "Owner set", "source": "owner" }],
+    "documentLinks": [{ "url": "https://…", "label": "Owner set", "source": "owner", "checkAddenda": true }],
     "whoElseBidding": { "researched": true, "notes": "Called Clark — two other mechanicals" },
     "invitations": [{
       "receivedAt": "2026-08-20",
-      "contact": { "name": "Pat", "email": "pat@mech.com", "phone": null },
+      "contact": { "name": "Pat", "email": "pat@mech.com", "phone": "301-555-0100", "preferredContact": "phone" },
       "links": [{ "url": "https://…", "label": "Invite set", "source": "inviter" }],
       "attachmentIds": [101],
       "addenda": [{ "number": "2", "receivedAt": "2026-08-22", "attachmentIds": [204], "notes": null }],
+      "inviteBody": "Hi — please bid Weinberg USP 800…",
       "notes": null
     }],
     "contractTiers": [
@@ -210,6 +217,8 @@ Arrays **replace**. To add a second invitation, send the full `invitations` arra
 - Ask the inviter who else is bidding
 - Build Division / Project type dropdowns (not locked — use `workType`)
 - Hide unit on spec sheet when size/thick are blank (unrelated)
+- Require / show linked job (`jobId`) on intake
+- Put the pasted invitation email in `notes` — that field is clerk notes; use `inviteBody`
 
 ---
 

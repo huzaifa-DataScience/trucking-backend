@@ -89,7 +89,7 @@ export class AdminService {
 
   async updateUser(
     userId: number,
-    updates: { role?: Role; status?: UserStatus; permissions?: string[] },
+    updates: { role?: Role; status?: UserStatus; permissions?: string[]; teamId?: number | null },
     currentAdminId: number,
   ): Promise<User> {
     if (updates.permissions) {
@@ -122,6 +122,9 @@ export class AdminService {
         );
       }
       user.status = updates.status;
+    }
+    if (updates.teamId !== undefined) {
+      user.bidTeamId = updates.teamId;
     }
     return this.userRepo.save(user);
   }
@@ -201,6 +204,7 @@ export class AdminService {
       permissions,
       createdAt: user.createdAt.toISOString(),
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      teamId: user.bidTeamId ?? null,
     };
   }
 }

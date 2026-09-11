@@ -84,10 +84,15 @@ export const SPEC_COVERINGS = [
 export const SPEC_MANUFACTURERS = [
   { value: 'owens_corning', label: 'Owens Corning' },
   { value: 'johns_manville', label: 'Johns Manville' },
+  { value: 'certainteed', label: 'CertainTeed' },
   { value: 'knauf', label: 'Knauf' },
   { value: 'manson', label: 'Manson' },
   { value: 'other', label: 'Other' },
 ] as const;
+
+/** Size / width the estimator types — inches. Mike “and greater” is 999. */
+export const MIKE_SIZE_MIN = 0;
+export const MIKE_SIZE_MAX = 999;
 
 /** PJ: tanks / chillers / pumps live here, not as a pipe system. */
 export const EQUIPMENT_SYSTEMS: Array<{
@@ -211,10 +216,12 @@ export type SpecSheetRow = {
   areaName: string | null;
   /** List BA. Auto from areaName. Shared list — not per system. */
   areaCode: string | null;
-  /** Pipe NPS / duct circumference lower bound (inches). Null = any / not set. */
+  /** Pipe NPS / duct circumference lower bound (inches). 0–999. Null = any / not set. */
   sizeMin: number | null;
-  /** Inclusive upper bound. Null = no upper limit. */
+  /** Inclusive upper bound. 0–999. Null = no upper limit. */
   sizeMax: number | null;
+  /** Roll / board width (inches). 0–999. Null = not set. */
+  widthIn: number | null;
   /** nps = pipe. circumference = duct. any = equipment / all sizes. */
   sizeMode: SizeMode | null;
   ductShape: DuctShape | null;
@@ -242,10 +249,12 @@ export type SpecSheetRow = {
 /** List HVAC_Thickness (BC). No Mike code. */
 export const SPEC_THICKNESSES = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8];
 
-/** List HVAC_Pipe_Size (BD). No Mike code. */
+/** List HVAC_Pipe_Size (BD). 0 and 999 are the typed bounds. */
 export const SPEC_PIPE_SIZES = [
+  MIKE_SIZE_MIN,
   0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.125, 1.25, 1.375, 1.5, 1.75, 2, 2.5, 3, 3.5,
   ...Array.from({ length: 57 }, (_, i) => i + 4),
+  MIKE_SIZE_MAX,
 ];
 
 const INCH_FRAC: Record<string, string> = {
@@ -262,9 +271,33 @@ const INCH_FRAC: Record<string, string> = {
 
 /** Dropdown chip — same `{ value, label, sortOrder }` shape as spec-facings. */
 export function specInchOption(value: number, sortOrder: number): { value: number; label: string; sortOrder: number } {
+  if (value === MIKE_SIZE_MAX) return { value, label: '999 (and greater)', sortOrder };
   const key = String(value);
   const label = INCH_FRAC[key] ?? `${value}"`;
   return { value, label, sortOrder };
+}
+
+export function clampSpecInch(n: number | null): number | null {
+  if (n == null) return null;
+  if (n < MIKE_SIZE_MIN) return MIKE_SIZE_MIN;
+  if (n > MIKE_SIZE_MAX) return MIKE_SIZE_MAX;
+  return n;
+}
+
+export function withSizeBounds(
+  opts: Array<{ value: number; label: string; sortOrder: number }>,
+): Array<{ value: number; label: string; sortOrder: number }> {
+  const kept = opts.filter((o) => o.value >= MIKE_SIZE_MIN && o.value <= MIKE_SIZE_MAX);
+  const out = [...kept];
+  if (!out.some((o) => o.value === MIKE_SIZE_MIN)) out.unshift(specInchOption(MIKE_SIZE_MIN, 0));
+  if (!out.some((o) => o.value === MIKE_SIZE_MAX)) out.push(specInchOption(MIKE_SIZE_MAX, out.length));
+  return out.map((o, i) => ({ ...o, sortOrder: i }));
+}
+
+export function withMikeSizeMax(
+  opts: Array<{ value: number; label: string; sortOrder: number }>,
+): Array<{ value: number; label: string; sortOrder: number }> {
+  return withSizeBounds(opts);
 }
 
 export type SpecSheetSystemCat = {
@@ -317,6 +350,7 @@ function emptyRow(i: number): SpecSheetRow {
     areaCode: null,
     sizeMin: null,
     sizeMax: null,
+    widthIn: null,
     sizeMode: null,
     ductShape: null,
     insulationFamily: null,
@@ -487,12 +521,15 @@ function fillOneRow(row: SpecSheetRow, kind: SpecSheetKind, cat: SpecSheetCatalo
   } else if (next.materialName && next.insulationFamily == null) {
     next.insulationFamily = classifyInsulationFamily(next.materialName);
   }
-  if (row.materialName && (next.sizeMin == null || next.thicknessIn == null)) {
+  if (row.materialName && (next.sizeMin == null || next.thicknessIn == null || next.widthIn == null)) {
     const roll = parseRollDims(row.materialName);
     const pipe = parseLineItemName(row.materialName);
     if (next.sizeMin == null && pipe.sizeNum != null && roll.sfPerRoll == null) {
-      next.sizeMin = pipe.sizeNum;
-      if (next.sizeMax == null) next.sizeMax = pipe.sizeNum;
+      next.sizeMin = clampSpecInch(pipe.sizeNum);
+      if (next.sizeMax == null) next.sizeMax = next.sizeMin;
+    }
+    if (next.widthIn == null && roll.widthIn != null) {
+      next.widthIn = clampSpecInch(roll.widthIn);
     }
     if (next.thicknessIn == null) {
       next.thicknessIn = roll.thickIn ?? pipe.thickNum;
@@ -594,11 +631,18 @@ function asEnum<T extends string>(raw: unknown, allowed: readonly T[]): T | null
 
 function normalizeRow(raw: unknown, index: number, sheetIndex: number): SpecSheetRow {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const sizeMin = numOrNull(o.sizeMin);
-  const sizeMax = numOrNull(o.sizeMax);
+  const sizeMin = clampSpecInch(numOrNull(o.sizeMin));
+  const sizeMax = clampSpecInch(numOrNull(o.sizeMax));
+  const widthIn = clampSpecInch(numOrNull(o.widthIn));
   if (sizeMin != null && sizeMax != null && sizeMax < sizeMin) {
     throw new Error(`specSheets[${sheetIndex}].rows[${index}] sizeMax < sizeMin`);
   }
+  const manufacturersAllowed = strList(o.manufacturersAllowed, 8, 80);
+  const preferredRaw = strOrNull(o.manufacturerPreferred, 80);
+  const manufacturerPreferred =
+    preferredRaw && manufacturersAllowed.some((a) => a.toLowerCase() === preferredRaw.toLowerCase())
+      ? manufacturersAllowed.find((a) => a.toLowerCase() === preferredRaw.toLowerCase()) ?? preferredRaw
+      : null;
   return {
     id: String(o.id || `row-${index + 1}`).slice(0, 80),
     systemName: strOrNull(o.systemName, 200),
@@ -608,6 +652,7 @@ function normalizeRow(raw: unknown, index: number, sheetIndex: number): SpecShee
     areaCode: strOrNull(o.areaCode, 20),
     sizeMin,
     sizeMax,
+    widthIn,
     sizeMode: asEnum(o.sizeMode, SIZE_MODES),
     ductShape: asEnum(o.ductShape, DUCT_SHAPES),
     insulationFamily: asEnum(o.insulationFamily, INSULATION_FAMILIES),
@@ -617,8 +662,8 @@ function normalizeRow(raw: unknown, index: number, sheetIndex: number): SpecShee
     weight: numOrNull(o.weight),
     facing: strOrNull(o.facing, 40),
     jacket: strOrNull(o.jacket, 40),
-    manufacturersAllowed: strList(o.manufacturersAllowed, 8, 80),
-    manufacturerPreferred: strOrNull(o.manufacturerPreferred, 80),
+    manufacturersAllowed,
+    manufacturerPreferred,
     accessories: strOrNull(o.accessories, 500),
     specSection: strOrNull(o.specSection, 40),
     specParagraph: strOrNull(o.specParagraph, 40),
