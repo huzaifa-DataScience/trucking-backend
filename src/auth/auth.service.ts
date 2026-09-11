@@ -96,6 +96,7 @@ export class AuthService {
       role: user.role,
       status: user.status,
       permissions: permissions ?? [],
+      teamId: user.bidTeamId ?? null,
     };
   }
 }
@@ -106,4 +107,5 @@ export interface LoginResult {
   role: string;
   status: string;
   permissions: string[];
+  teamId: number | null;
 }

@@ -198,7 +198,7 @@ Until the business changes them, `process-meta.defaults`:
 
 | Question | Default |
 |----------|---------|
-| Who assigns after intake? | Nick + PJ (`assignment.teamId` from `GET /lookups/bidding/teams`) |
+| Who assigns after intake? | Nick + PJ + bid clerk (`assignment.teamId` from `GET /lookups/bidding/teams`) |
 | Intake mandatory to hand off | Header `estimateNumber` + `ourEntityId` only; rest incomplete OK |
 | Specs / technical review / takeoff assign | Captain |
 | Proposal approval | Estimating review |

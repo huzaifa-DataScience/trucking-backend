@@ -315,15 +315,25 @@ export class SpecsService implements OnModuleInit {
     );
   }
 
+  // ponytail: catalogs rarely change during a save; 5 min ceiling. Clear on admin catalog writes if codes go stale.
+  private specSheetCatalogAt = 0;
+  private specSheetCatalog: Parameters<typeof fillSpecSheetCodes>[1] | null = null;
+
   async applySpecSheetCodes(process: { specSheets?: SpecSheet[] }): Promise<void> {
     if (!process.specSheets?.length) return;
+    process.specSheets = fillSpecSheetCodes(process.specSheets, await this.specSheetCatalogs());
+  }
+
+  private async specSheetCatalogs(): Promise<NonNullable<SpecsService['specSheetCatalog']>> {
+    const now = Date.now();
+    if (this.specSheetCatalog && now - this.specSheetCatalogAt < 300_000) return this.specSheetCatalog;
     const [systems, areas, materials, helpers] = await Promise.all([
       this.systems.find({ where: { isActive: true } }),
       this.areas.find({ where: { isActive: true } }),
       this.materials.find({ where: { isActive: true } }),
       this.helpers.find({ where: { isActive: true } }),
     ]);
-    process.specSheets = fillSpecSheetCodes(process.specSheets, {
+    this.specSheetCatalog = {
       systems,
       areas,
       materials: materials.map((r) => this.mapSpecMaterial(r)),
@@ -334,7 +344,9 @@ export class SpecsService implements OnModuleInit {
         rawPrefix: h.rawPrefix,
         baseName: h.baseName,
       })),
-    });
+    };
+    this.specSheetCatalogAt = now;
+    return this.specSheetCatalog;
   }
 
   private mapSpecMaterial(r: BidSpecMaterial) {

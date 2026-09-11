@@ -37,6 +37,10 @@ export class User {
   @Column({ name: 'Role', type: 'nvarchar', length: 50, default: Role.User })
   role: Role;
 
+  /** Bidding crew — `Bid_Teams.TeamId`. Null = not on a team yet. */
+  @Column({ name: 'BidTeamId', type: 'int', nullable: true })
+  bidTeamId: number | null;
+
   @Column({ name: 'Status', type: 'nvarchar', length: 50, default: UserStatus.Pending })
   status: UserStatus;
 

@@ -1,7 +1,7 @@
 # Access control — Frontend Handoff
 
 **Give this file to FE.** Admin Settings → Access control + widen `user.role`.  
-**Last updated:** 2026-09-01  
+**Last updated:** 2026-09-10  
 **Auth (already live — do not rip):** [FRONTEND_AUTH.md](./FRONTEND_AUTH.md)
 
 Login, register, profile, token, 401, and `user.status` are **unchanged**. Same `AuthUser` object: `id`, `email`, `role`, `status`, `permissions`. This doc only:
@@ -24,7 +24,7 @@ Permissions are **per role**, not per user. A user’s `permissions[]` always co
 | Workspace chrome | `admin` and `super_admin` see **every** workspace (Ops, Bidding, Mike, Siteline, Clearstory, Workforce, Admin). **Do not** hide those items on missing permission keys |
 | Super admin | Nick, PJ. Role id `super_admin`. Always every key. **No checkboxes.** FE must not PATCH this role |
 | Matrix save | `PATCH /admin/rbac/roles/:roleName` — one role at a time |
-| User picker | `PATCH /admin/users/:id` `{ "role": "captain" }` — **do not** send `permissions` |
+| User picker | `PATCH /admin/users/:id` `{ "role": "captain", "teamId": 2 }` — **do not** send `permissions`. `teamId` is `Bid_Teams` id (Mike’s crew). Null = not on a team |
 | New signup default | `PATCH /admin/settings/rbac-user-defaults` `{ "role": "assistant_estimator" }` — **do not** send a permission list |
 | After matrix save | That role’s users must **log in again** (permissions live in JWT) |
 | Bidding fallback | If `permissions` has **no** `bidding:*` key, show **all** bidding UI including totals (old tokens). Once any `bidding:*` is present, gate normally |
@@ -45,6 +45,8 @@ Use `GET /admin/rbac` → `roles[]` for labels. Do not hardcode if the GET alrea
 | `project_manager` | Project manager | PMs |
 | `operations_manager` | Operations manager | OMs |
 | `user` | Legacy user | Old accounts; treat like AE + trucking dashboards |
+
+**Home** is **`GET /dashboard`** — not Estimates. **Estimates** is `GET /bids`. `admin` / `super_admin` see **every bid** on Estimates; `canEdit` always true. Hide Edit for others when `canEdit === false`. Put a non-admin on a team: `PATCH /admin/users/:id` `{ "teamId" }` from `GET /lookups/bidding/teams`. Login `user.teamId`.
 
 Widen the TypeScript union on the existing `AuthUser` from [FRONTEND_AUTH.md](./FRONTEND_AUTH.md). Login JSON is the same shape; `role` can now be any of these 8 strings. Keep storing `user` in localStorage as you already do.
 
@@ -68,7 +70,7 @@ Use `GET /admin/rbac` → `permissions[]` (or `GET /admin/permissions`). Group b
 
 | Key | UI |
 |-----|-----|
-| `bidding:read` | Bidding list + open bid |
+| `bidding:read` | Bidding list + open bid + Excel export (`GET /bids/export`) |
 | `bidding:write` | Create / edit bids, intake, spec sheet |
 | `bidding:summary` | MIKE / PJ $ on the results rail |
 | `tickets:read` | Ticket grids |

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseIntPipe,
   Patch,
@@ -50,6 +51,7 @@ export class BiddingController {
     @Query('outcome') outcome?: string,
     @Query('ownerProjectNumber') ownerProjectNumber?: string,
     @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
+    @CurrentUser() user?: User,
   ) {
     return this.bidding.list({
       status,
@@ -60,7 +62,44 @@ export class BiddingController {
       outcome,
       ownerProjectNumber,
       mechanicalEngineerProjectNumber,
+      editor: user,
     });
+  }
+
+  /** Same payload as `GET /dashboard`. Do not use this on the Estimates list. Register before `@Get(':id')`. */
+  @Get('my-plate')
+  async myPlate(@CurrentUser() user: User) {
+    return this.bidding.myPlate(user);
+  }
+
+  /** Same filters as `GET /bids`. Register before `@Get(':id')`. */
+  @Get('export')
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  async exportList(
+    @Res({ passthrough: true }) res: Response,
+    @Query('status') status?: string,
+    @Query('entityId') entityId?: string,
+    @Query('search') search?: string,
+    @Query('processStage') processStage?: string,
+    @Query('workType') workType?: string,
+    @Query('outcome') outcome?: string,
+    @Query('ownerProjectNumber') ownerProjectNumber?: string,
+    @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
+    @CurrentUser() user?: User,
+  ) {
+    const buffer = await this.bidding.exportList({
+      status,
+      entityId: entityId ? parseInt(entityId, 10) : undefined,
+      search,
+      processStage,
+      workType,
+      outcome,
+      ownerProjectNumber,
+      mechanicalEngineerProjectNumber,
+      editor: user,
+    });
+    res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
+    return new StreamableFile(buffer);
   }
 
   @Post()
@@ -79,8 +118,8 @@ export class BiddingController {
   }
 
   @Get(':id')
-  async getOne(@Param('id', ParseIntPipe) id: number) {
-    return this.bidding.getDetail(id);
+  async getOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user?: User) {
+    return this.bidding.getDetail(id, user);
   }
 
   @Patch(':id')
@@ -89,6 +128,7 @@ export class BiddingController {
     @Body() dto: PatchBidDto,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.patch(id, dto, user?.id);
   }
 
@@ -98,6 +138,7 @@ export class BiddingController {
     @Body() dto: LinkDuplicateDto,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.linkDuplicate(id, dto.keepBidId, dto.notes, user?.id);
   }
 
@@ -107,6 +148,7 @@ export class BiddingController {
     @Body() dto: HandoffBidDto,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.handoff(id, dto, user?.id);
   }
 
@@ -116,11 +158,13 @@ export class BiddingController {
     @Body() dto: SetOutcomeDto,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.setOutcome(id, dto, user?.id);
   }
 
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user?: User) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.remove(id, user?.id);
   }
 
@@ -145,6 +189,7 @@ export class BiddingController {
     @Body('label') label?: string,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(id, user);
     return this.attachments.upload(id, file, { label, userId: user?.id });
   }
 
@@ -168,6 +213,7 @@ export class BiddingController {
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
     @CurrentUser() user?: User,
   ) {
+    await this.bidding.assertUserCanEdit(bidId, user);
     return this.attachments.remove(bidId, attachmentId, user?.id);
   }
 }

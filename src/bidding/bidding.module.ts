@@ -34,6 +34,7 @@ import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingActivityService } from './bidding-activity.service';
 import { BiddingLookupsController } from './bidding-lookups.controller';
 import { BiddingLookupsService } from './bidding-lookups.service';
+import { RoleDashboardController } from './role-dashboard.controller';
 import { SpecsController } from './specs/specs.controller';
 import { SpecsService } from './specs/specs.service';
 
@@ -73,7 +74,7 @@ import { SpecsService } from './specs/specs.service';
       Job,
     ]),
   ],
-  controllers: [BiddingController, BiddingLookupsController, SpecsController],
+  controllers: [RoleDashboardController, BiddingController, BiddingLookupsController, SpecsController],
   providers: [
     BiddingService,
     BiddingLookupsService,

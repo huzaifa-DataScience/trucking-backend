@@ -194,6 +194,7 @@ export interface AuthUser {
   role: AppRoleId;
   status: UserStatus;
   permissions: string[];
+  teamId: number | null;
 }
 
 export interface LoginResponse {
