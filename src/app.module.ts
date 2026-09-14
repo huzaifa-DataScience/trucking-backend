@@ -19,6 +19,7 @@ import { ClearstoryModule } from './clearstory/clearstory.module';
 import { TrimbleModule } from './trimble/trimble.module';
 import { BiddingModule } from './bidding/bidding.module';
 import { ConnecteamModule } from './connecteam/connecteam.module';
+import { WfsModule } from './wfs/wfs.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ConnecteamModule } from './connecteam/connecteam.module';
     TrimbleModule,
     BiddingModule,
     ConnecteamModule,
+    WfsModule,
   ],
   controllers: [AppController],
 })

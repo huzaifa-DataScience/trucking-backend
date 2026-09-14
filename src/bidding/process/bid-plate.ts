@@ -259,10 +259,11 @@ export type DashboardMessage = {
 };
 
 export type DashboardNotification = {
-  kind: 'message' | 'due' | 'new_bid';
+  kind: 'message' | 'due' | 'new_bid' | 'comment_mention';
   title: string;
   body: string | null;
   bidId?: string;
+  commentId?: number;
   conversationId?: string;
   at?: string | null;
 };
