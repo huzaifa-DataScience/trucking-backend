@@ -449,6 +449,7 @@ assert(meta.intakeEditor.budgetIsBidKind === true, 'budget is a bid kind');
 assert(meta.intakeEditor.bidNameFrom === 'drawingName', 'bid name from drawings');
 assert(meta.intakeEditor.teamField === 'assignment.teamId', 'team from teams lookup');
 assert(meta.intakeEditor.partiesLookup.includes('/lookups/bidding/parties'), 'parties lookup');
+assert(meta.intakeEditor.partiesLookup.includes('pageSize='), 'parties lookup paginated');
 assert(meta.intakeEditor.partyRoles.includes('invite_contact'), 'invite_contact role');
 assert(meta.intakeEditor.eorLabel.includes('Engineer of Record'), 'EOR label');
 assert(meta.intakeEditor.inviteCompanyFirst === true, 'invite company first');

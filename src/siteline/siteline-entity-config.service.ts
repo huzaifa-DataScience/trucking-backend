@@ -29,7 +29,11 @@ export class SitelineEntityConfigService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.ensureTable();
     await this.seedRowsIfMissing();
-    await this.refreshAllCompanies();
+    // Don't block listen() on Siteline GraphQL — otherwise every API 502s until 3 companies resolve.
+    void this.refreshAllCompanies().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`Siteline company refresh skipped: ${msg}`);
+    });
   }
 
   private async ensureTable(): Promise<void> {

@@ -31,6 +31,12 @@ export class User {
   @Column({ name: 'Email', type: 'nvarchar', length: 255, unique: true })
   email: string;
 
+  @Column({ name: 'FirstName', type: 'nvarchar', length: 200, nullable: true })
+  firstName: string | null;
+
+  @Column({ name: 'LastName', type: 'nvarchar', length: 200, nullable: true })
+  lastName: string | null;
+
   @Column({ name: 'PasswordHash', type: 'nvarchar', length: 255 })
   passwordHash: string;
 
@@ -49,4 +55,27 @@ export class User {
 
   @Column({ name: 'LastLoginAt', type: 'datetime2', nullable: true })
   lastLoginAt: Date | null;
+}
+
+export type UserNameBits = {
+  id?: number;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export function cleanPersonName(v: unknown): string | null {
+  const t = String(v ?? '').trim();
+  return t || null;
+}
+
+/** `First Last`, or null if both missing. */
+export function userFullName(user: UserNameBits | null | undefined): string | null {
+  const parts = [cleanPersonName(user?.firstName), cleanPersonName(user?.lastName)].filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+/** First + last, else email, else `User {id}`. */
+export function userDisplayName(user: UserNameBits | null | undefined, fallback = 'Unknown'): string {
+  return userFullName(user) || cleanPersonName(user?.email) || (user?.id ? `User ${user.id}` : fallback);
 }

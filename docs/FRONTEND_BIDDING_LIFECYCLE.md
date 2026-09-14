@@ -80,7 +80,7 @@ Handoff: `POST /bids/:id/handoff`. Setup → takeoff requires `technicalReview.a
 | Mike CSV versions | existing Mike upload — **never throw out old files** |
 | Specs grid (qty) | `GET /bids/:id/spec-lines` — Takeoff. Not the Setup spec **sheet** tables |
 | Team / Duct1–Plumbing2 names | `GET /lookups/bidding/teams` |
-| Owner / architect / ME / invite contact | `GET /lookups/bidding/parties?role=&q=` (PATCH on the bid upserts) |
+| Owner / architect / ME / invite contact | `GET /lookups/bidding/parties?role=&q=&page=&pageSize=` `{ items, total, page, pageSize }` (PATCH on the bid upserts) |
 
 **Wage decision ≠ wage rate.**  
 `Bid_WageRates` = calculator scale.  
@@ -94,7 +94,7 @@ Handoff: `POST /bids/:id/handoff`. Setup → takeoff requires `technicalReview.a
 
 ```
 GET    /lookups/bidding/process-meta
-GET    /lookups/bidding/parties?role=&q=
+GET    /lookups/bidding/parties?role=&q=&page=&pageSize=
 GET    /lookups/bidding/wage-decisions
 POST   /lookups/bidding/wage-decisions
 PATCH  /lookups/bidding/wage-decisions/:id

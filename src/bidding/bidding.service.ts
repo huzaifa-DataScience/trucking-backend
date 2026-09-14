@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -20,6 +22,7 @@ import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
 import { CalculateBidDto, CreateBidDto, HandoffBidDto, PatchBidDto, SetOutcomeDto } from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingActivityService } from './bidding-activity.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
@@ -126,6 +129,8 @@ export class BiddingService {
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
     private readonly attachments: BiddingAttachmentsService,
+    @Inject(forwardRef(() => BiddingCommentsService))
+    private readonly comments: BiddingCommentsService,
     private readonly activity: BiddingActivityService,
     private readonly specs: SpecsService,
     private readonly lookups: BiddingLookupsService,
@@ -215,7 +220,19 @@ export class BiddingService {
       user.id != null
         ? await this.chat.inboxPreview(user.id)
         : { totalUnread: 0, items: [] };
-    const notifications = dashboardNotifications(groups, messages.items);
+    const mentions =
+      user.id != null ? await this.comments.unreadMentions(user.id) : [];
+    const notifications = [
+      ...mentions.map((m) => ({
+        kind: 'comment_mention' as const,
+        title: m.title,
+        body: m.body,
+        bidId: String(m.bidId),
+        commentId: m.commentId,
+        at: m.at,
+      })),
+      ...dashboardNotifications(groups, messages.items),
+    ].slice(0, 15);
     return {
       role: plate.role,
       plateId: plate.plateId,

@@ -26,7 +26,14 @@ export const ROLE_META: Record<AppRoleId, { label: string; note: string; locked?
   user: { label: 'Legacy user', note: 'Old App_Users.Role=user — treat like assistant estimator' },
 };
 
-export type PermissionDef = { key: string; label: string; description: string; group: string };
+export type PermissionDef = {
+  key: string;
+  label: string;
+  description: string;
+  group: string;
+  /** Matrix cannot grant this. JWT + API are super_admin only. */
+  locked?: boolean;
+};
 
 export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: 'bidding:read', label: 'Bidding — view', description: 'List and open bids', group: 'Bidding' },
@@ -43,20 +50,35 @@ export const PERMISSION_CATALOG: PermissionDef[] = [
   { key: 'trimble:read', label: 'Trimble', description: 'Line items / company items', group: 'Jobs' },
   { key: 'connecteam:read', label: 'Workforce — view', description: 'Hours, roster, schedule', group: 'Workforce' },
   { key: 'connecteam:write', label: 'Workforce — write', description: 'Clock, PTO, chat writes', group: 'Workforce' },
+  { key: 'wfs:read', label: 'WFS — view', description: 'Company financial health plate (super_admin only)', group: 'Finance', locked: true },
+  { key: 'wfs:write', label: 'WFS — edit static', description: 'LOC / notes / property knobs (super_admin only)', group: 'Finance', locked: true },
   { key: 'admin:users', label: 'Admin — users', description: 'Approve, reject, change role/status', group: 'Admin' },
   { key: 'admin:create_user', label: 'Admin — create user', description: 'Create accounts', group: 'Admin' },
   { key: 'admin:rbac', label: 'Admin — access control', description: 'Edit the role × permission matrix', group: 'Admin' },
 ];
 
 export const PERMISSION_KEYS = PERMISSION_CATALOG.map((p) => p.key);
+export const SUPER_ADMIN_ONLY_KEYS = PERMISSION_CATALOG.filter((p) => p.locked).map((p) => p.key);
 
 const ALL = PERMISSION_KEYS;
+const ADMIN_KEYS = PERMISSION_KEYS.filter((k) => !SUPER_ADMIN_ONLY_KEYS.includes(k));
+
+export function isSuperAdminOnlyKey(key: string): boolean {
+  return SUPER_ADMIN_ONLY_KEYS.includes(key);
+}
+
+/** Runtime JWT / matrix. null = use App_RolePermissions. */
+export function hardcodedPermissionsForRole(roleName: string): string[] | null {
+  if (roleName === 'super_admin') return [...ALL];
+  if (roleName === 'admin') return [...ADMIN_KEYS];
+  return null;
+}
 
 /** First-time seed only (empty role). super_admin is always ALL at runtime. */
 export const DEFAULT_PERMISSIONS_BY_ROLE: Record<AppRoleId, string[]> = {
   super_admin: ALL,
-  /** Runtime JWT is also ALL (see RbacService.getPermissionNamesForRole). */
-  admin: ALL,
+  /** Runtime JWT is ADMIN_KEYS (no WFS). See RbacService.getPermissionNamesForRole. */
+  admin: ADMIN_KEYS,
   bid_clerk: ['bidding:read', 'bidding:write'],
   captain: ['bidding:read', 'bidding:write', 'bidding:summary', 'trimble:read'],
   assistant_estimator: ['bidding:read', 'bidding:write', 'bidding:summary', 'trimble:read'],

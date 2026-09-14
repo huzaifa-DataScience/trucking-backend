@@ -196,7 +196,7 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 | GET | `/lookups/bidding/process-meta` | Lifecycle enums, field entry-phase, HQ tier example (**[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**) |
 | GET / POST / PATCH / DELETE | `/lookups/bidding/wage-decisions` | Prevailing-wage **decision #** lookup (not calculator wage rates) |
 | GET | `/lookups/bidding/teams` | Teams with crew roles |
-| GET | `/lookups/bidding/parties` | Intake directory `?role=owner\|architect\|mechanical\|invite_contact&q=` |
+| GET | `/lookups/bidding/parties` | Intake directory `?role=owner\|architect\|mechanical\|invite_contact&q=&page=&pageSize=` → `{ items, total, page, pageSize }` |
 | GET | `/lookups/bidding/wage-rates` | Wage/fringe options |
 | GET | `/lookups/bidding/payroll-burden` | Burden constants |
 | GET | `/lookups/bidding/states` | `{ stateCode, salesTaxRate }[]` |
@@ -231,12 +231,19 @@ Team admin:
 
 ### Parties (intake directory)
 ```jsonc
-// GET /lookups/bidding/parties?role=mechanical&q=wsp
-[
-  { "id": 12, "name": "WSP", "company": "WSP", "contactName": null, "email": "a@wsp.com", "phone": null, "role": "mechanical" }
-]
+// GET /lookups/bidding/parties?role=mechanical&q=wsp&page=1&pageSize=10
+{
+  "items": [
+    {
+      "id": 12, "name": "WSP", "company": "WSP", "contactName": null,
+      "email": "a@wsp.com", "phone": null, "role": "mechanical",
+      "inactive": false, "doNotContact": false, "status": null
+    }
+  ],
+  "total": 1, "page": 1, "pageSize": 10
+}
 ```
-Filter `role` + optional `q` (name / company / email). Seeded from past bids; `PATCH /bids/:id { process }` upserts owner / architect / mechanicalEngineer / invitations[].contact. No POST.
+Filter `role` + optional `q` (name / company / email). Default `page=1`, `pageSize=10` (max 50). Seeded from past bids; `PATCH /bids/:id { process }` upserts owner / architect / mechanicalEngineer / invitations[].contact. No POST. Not a bare array.
 
 ### Wage rates (CRUD)
 ```jsonc
@@ -609,6 +616,8 @@ Check-and-balance: who touched the bid, what area changed, when. Logged automati
       "changedFields": ["baseBid.marginPercent", "baseBid.projectState"],
       "userId": 5,
       "userEmail": "estimator@goelservices.com",
+      "userFirstName": "Hassan",
+      "userLastName": "Riaz",
       "createdAt": "2026-06-15T14:30:00.000Z"
     },
     {

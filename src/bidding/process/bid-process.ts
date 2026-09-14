@@ -1604,7 +1604,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'bidKind', phase: 'intake', note: 'Mandatory. Budget is a kind — not a separate checkbox.' },
   { path: 'budgetOnly', phase: 'intake', note: 'Derived: true when bidKind=budget. Do not show as its own field.' },
   { path: 'relatedBidId', phase: 'intake', note: 'Rebid / prior job — click through. Do not duplicate the project.' },
-  { path: 'notes', phase: 'later', note: 'Bid-level sticky Notes. PATCH process.notes. Cap 2000. Invite paste is invitations[].inviteBody.' },
+  { path: 'notes', phase: 'later', note: 'Deprecated pad. Notes drawer is GET/POST /bids/:id/comments. Invite paste is invitations[].inviteBody.' },
   { path: 'dueDate', phase: 'intake', note: '' },
   { path: 'dueTime', phase: 'intake', note: '' },
   { path: 'owner', phase: 'intake', note: 'From drawings' },
@@ -1720,7 +1720,7 @@ const INTAKE_EDITOR = {
   assignmentOwners: 'Nick + PJ + bid clerk',
   teamField: 'assignment.teamId',
   teamLookup: 'GET /lookups/bidding/teams',
-  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=',
+  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=&page=1&pageSize=10',
   partyRoles: INTAKE_PARTY_ROLES,
   sketchTiers: [
     { sortOrder: 0, role: 'owner', note: 'Who owns the property' },

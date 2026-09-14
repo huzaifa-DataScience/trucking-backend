@@ -34,7 +34,7 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 | Address | `process.projectAddress` | Paste the full line in `line1` (Followup-style). On save, city/state/zip fill if empty. **Do not clear `line1`.** |
 | Linked job | header `jobId` | **Skip on intake.** Hide the job picker. Set when awarded. |
 | Due date / time | `process.dueDate`, `process.dueTime` | |
-| Sticky Notes (whole bid) | `process.notes` | One pad on the bid. Cap 2000. **Not** invite paste — that is `invitations[].inviteBody`. |
+| Sticky Notes (whole bid) | **Comment thread** — [FRONTEND_BID_COMMENTS.md](./FRONTEND_BID_COMMENTS.md) | `GET`/`POST /bids/:id/comments`. Do **not** PATCH `process.notes`. Invite paste stays `invitations[].inviteBody`. |
 | Invitation received | `process.invitations[].receivedAt` | Required when known. **Many vendors → many rows, one bid.** |
 | Invitation company / person | `process.invitations[].contact` | **Company first**, then `contactName`. Typeahead: `GET /lookups/bidding/parties?role=invite_contact&q=`. |
 | **Preferred contact** | `process.invitations[].contact.preferredContact` | **Dropdown — replace the old “Contact” field.** Options: `email` / `phone`. Next to it show `preferredContactValue` (that email or phone). Same on `owner` / `architect` / `mechanicalEngineer`. |
@@ -56,19 +56,39 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 
 `inviteContact` + `invitationReceivedAt` still exist. Backend mirrors `invitations[0]`. Prefer `invitations[]`.
 
-Activity: `GET /bids/:id/activity` — show **who** (`userEmail`), **what** (`summary` + `changedFields`), **when** (`createdAt`). Not just “a change occurred”.
+Activity: `GET /bids/:id/activity` — show **who** (`userFirstName` + `userLastName`, else `userEmail`), **what** (`summary` + `changedFields`), **when** (`createdAt`). Not just “a change occurred”.
 
 ### Party directory
 
 ```
-GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=
+GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=&page=1&pageSize=10
 ```
 
-Past owner / architect / mechanical / invite contacts (deduped). `q` matches name, company, email. Invalid / missing `role` → `[]`. No `POST` — PATCH on the bid upserts. 404/error on FE → empty list + free text is still OK.
+Past owner / architect / mechanical / invite contacts (deduped). `q` matches name, company, email. Invalid / missing `role` → `{ items: [], total: 0, page, pageSize }`. Default `page=1`, `pageSize=10` (max 50). No `POST` — PATCH on the bid upserts. 404/error on FE → empty list + free text is still OK.
+
+Response is **not** a bare array.
 
 ```json
-[{ "id": 12, "name": "WSP", "company": "WSP", "contactName": null, "email": "a@wsp.com", "phone": null, "role": "mechanical" }]
+{
+  "items": [{
+    "id": 12,
+    "name": "WSP",
+    "company": "WSP",
+    "contactName": null,
+    "email": "a@wsp.com",
+    "phone": null,
+    "role": "mechanical",
+    "inactive": false,
+    "doNotContact": false,
+    "status": null
+  }],
+  "total": 1,
+  "page": 1,
+  "pageSize": 10
+}
 ```
+
+Address book modal: search `q`, table Name / Company / Email / Phone, row +, paginate with `page` / `pageSize`. If `inactive` / `doNotContact` → Name column `(Inactive)` / `(do not contact)`. Those flags are not stored yet — always `false`. Select fills the related intake fields.
 
 ---
 

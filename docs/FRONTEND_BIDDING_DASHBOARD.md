@@ -109,7 +109,8 @@ Authorization: Bearer <access_token>
   "notifications": [
     { "kind": "message", "title": "Mike", "body": "drawings are in", "conversationId": "abc", "at": "…" },
     { "kind": "due", "title": "Weinberg", "body": "Due 2026-09-10", "bidId": "12", "at": "2026-09-10" },
-    { "kind": "new_bid", "title": "Weinberg", "body": "Updated in the last 7 days", "bidId": "12" }
+    { "kind": "new_bid", "title": "Weinberg", "body": "Updated in the last 7 days", "bidId": "12" },
+    { "kind": "comment_mention", "title": "Hassan Riaz mentioned you", "body": "see drawings", "bidId": "12", "commentId": 44, "at": "…" }
   ]
 }
 ```
@@ -131,6 +132,8 @@ Captain / AE: `user.teamId` set → that crew. Null → those stages for all tea
 Due = overdue + today. Upcoming = next 7 days.
 
 `messages` = Connecteam unread preview. Not a new inbox. `process-meta.defaults.notifications` stays false.
+
+`kind: "comment_mention"` = someone @mentioned this user on a bid comment. Click `bidId` → Notes drawer. Clears when they `GET /bids/:id/comments`. See [FRONTEND_BID_COMMENTS.md](./FRONTEND_BID_COMMENTS.md).
 
 Login `user.teamId` / `role` / `permissions[]`: [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) · [FRONTEND_RBAC.md](./FRONTEND_RBAC.md). Admin JWT has every permission — do not hide app tabs for admin.
 

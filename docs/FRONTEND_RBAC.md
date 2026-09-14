@@ -1,7 +1,7 @@
 # Access control — Frontend Handoff
 
 **Give this file to FE.** Admin Settings → Access control + widen `user.role`.  
-**Last updated:** 2026-09-10  
+**Last updated:** 2026-09-13  
 **Auth (already live — do not rip):** [FRONTEND_AUTH.md](./FRONTEND_AUTH.md)
 
 Login, register, profile, token, 401, and `user.status` are **unchanged**. Same `AuthUser` object: `id`, `email`, `role`, `status`, `permissions`. This doc only:
@@ -21,7 +21,8 @@ Permissions are **per role**, not per user. A user’s `permissions[]` always co
 | Thing | Rule |
 |-------|------|
 | Who sees Admin layout | Same as today: `role === 'admin'`, **plus** `super_admin`. Do not require `admin:rbac` for the whole admin app |
-| Workspace chrome | `admin` and `super_admin` see **every** workspace (Ops, Bidding, Mike, Siteline, Clearstory, Workforce, Admin). **Do not** hide those items on missing permission keys |
+| Workspace chrome | `admin` and `super_admin` see **every** workspace **except WFS** (Ops, Bidding, Mike, Siteline, Clearstory, Workforce, Admin). **Do not** hide those items on missing permission keys |
+| WFS | **`role === 'super_admin'` only.** Hide the tab for `admin` and everyone else. `/wfs/*` is 403 otherwise. Matrix cannot grant `wfs:*` |
 | Super admin | Nick, PJ. Role id `super_admin`. Always every key. **No checkboxes.** FE must not PATCH this role |
 | Matrix save | `PATCH /admin/rbac/roles/:roleName` — one role at a time |
 | User picker | `PATCH /admin/users/:id` `{ "role": "captain", "teamId": 2 }` — **do not** send `permissions`. `teamId` is `Bid_Teams` id (Mike’s crew). Null = not on a team |
@@ -84,6 +85,8 @@ Use `GET /admin/rbac` → `permissions[]` (or `GET /admin/permissions`). Group b
 | `trimble:read` | Trimble |
 | `connecteam:read` | Workforce view |
 | `connecteam:write` | Workforce writes |
+| `wfs:read` | WFS plate — **locked**, super_admin only (hide this matrix row) |
+| `wfs:write` | WFS knobs — **locked**, super_admin only (hide this matrix row) |
 | `admin:users` | Admin → Users |
 | `admin:create_user` | Create user |
 | `admin:rbac` | Admin → Access control |
@@ -120,7 +123,7 @@ Rip the “backend not ready” card.
 
 - Load `GET /admin/rbac`
 - Columns = `roles.filter(r => !r.locked)`
-- Rows = `permissions`, section headers from `p.group` (Bidding, Trucking, Jobs, Workforce, Admin)
+- Rows = `permissions` where `locked !== true` (hide Finance / WFS — those are super_admin only)
 - Checkbox on ⇔ `matrix[roleId].includes(p.key)`
 - **Save** per column: `PATCH /admin/rbac/roles/{roleId}` `{ "permissions": ["bidding:read", ...] }` (checked keys only)
 - Toast: users with that role must log in again
@@ -202,7 +205,7 @@ Backend fills **empty** roles on boot. Super admin is always all keys. Existing 
 | `captain` / `assistant_estimator` | bidding all three + `trimble:read` |
 | `project_manager` | `bidding:read`, `siteline:read`, `clearstory:read` |
 | `operations_manager` | `siteline:read`, `clearstory:read`, `connecteam:read`, `connecteam:write` |
-| `admin` | **all keys** (same as super_admin at login) |
+| `admin` | **all keys except `wfs:*`** (IT does not see WFS) |
 | `user` (legacy) | bidding all three + trucking dashboards |
 
 ---
@@ -212,5 +215,6 @@ Backend fills **empty** roles on boot. Super admin is always all keys. Existing 
 - Per-user permission matrix
 - Extra roles: duct1, field, owner, GC, mechanical
 - Treat `admin` as Nick/PJ — that is `super_admin`
+- Show WFS to `admin` — company cash / AR / loans is `super_admin` only
 - Hide bidding when `permissions` is missing `bidding:*` (legacy allow-all)
 - Call a backend HTML URL for this screen — this is **your** Settings page

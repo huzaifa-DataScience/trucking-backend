@@ -12,17 +12,20 @@ import {
   Res,
   StreamableFile,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../database/entities';
 import { MAX_BID_ATTACHMENT_BYTES } from '../files/file-storage.service';
+import { MAX_COMMENT_IMAGES } from './bidding-comments';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingService } from './bidding.service';
 import {
   CalculateBidDto,
@@ -39,6 +42,7 @@ export class BiddingController {
   constructor(
     private readonly bidding: BiddingService,
     private readonly attachments: BiddingAttachmentsService,
+    private readonly comments: BiddingCommentsService,
   ) {}
 
   @Get()
@@ -115,6 +119,37 @@ export class BiddingController {
   @Get(':id/activity')
   async getActivity(@Param('id', ParseIntPipe) id: number) {
     return this.bidding.getActivity(id);
+  }
+
+  @Get(':id/comments')
+  async listComments(@Param('id', ParseIntPipe) id: number, @CurrentUser() user?: User) {
+    return this.comments.list(id, user);
+  }
+
+  @Post(':id/comments')
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_COMMENT_IMAGES, {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_BID_ATTACHMENT_BYTES },
+    }),
+  )
+  async createComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('body') body: unknown,
+    @Body('mentionUserIds') mentionUserIds: unknown,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: User,
+  ) {
+    return this.comments.create(id, user, body, files, mentionUserIds);
+  }
+
+  @Delete(':id/comments/:commentId')
+  async deleteComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('commentId', ParseIntPipe) commentId: number,
+    @CurrentUser() user: User,
+  ) {
+    return this.comments.remove(id, commentId, user);
   }
 
   @Get(':id')
