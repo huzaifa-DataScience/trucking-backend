@@ -87,6 +87,10 @@ export class Bid {
   @Column({ name: 'TimeEstimate', type: 'decimal', precision: 12, scale: 2, nullable: true })
   timeEstimate!: number | null;
 
+  /** PJ estimate grand total, mirrored from the latest client calc snapshot for list sort/filter/export. */
+  @Column({ name: 'BaseBidAmount', type: 'decimal', precision: 14, scale: 2, nullable: true })
+  baseBidAmount!: number | null;
+
   @Column({ name: 'CreatedByUserId', type: 'int', nullable: true })
   createdByUserId!: number | null;
 

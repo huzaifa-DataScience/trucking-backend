@@ -159,6 +159,19 @@ export class BiddingAttachmentsService {
     return bid;
   }
 
+  /** Batched attachment counts for a list of bids — avoids N+1 on the Estimates list. */
+  async countByBidIds(bidIds: number[]): Promise<Map<number, number>> {
+    if (bidIds.length === 0) return new Map();
+    const rows = await this.attachmentRepo
+      .createQueryBuilder('a')
+      .select('a.bidId', 'bidId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('a.bidId IN (:...bidIds)', { bidIds })
+      .groupBy('a.bidId')
+      .getRawMany<{ bidId: number; cnt: string }>();
+    return new Map(rows.map((r) => [Number(r.bidId), Number(r.cnt)]));
+  }
+
   private toDto(row: BidAttachment): BidAttachmentDto {
     const f = row.file;
     return {

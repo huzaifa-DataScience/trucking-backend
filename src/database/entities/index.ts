@@ -67,6 +67,7 @@ export { BidState } from './bid-state.entity';
 export { BidProjectType } from './bid-project-type.entity';
 export { BidBuildingType } from './bid-building-type.entity';
 export { BidPreference } from './bid-preference.entity';
+export { BidOffice } from './bid-office.entity';
 export { BidPayrollBurden, BurdenRateType } from './bid-payroll-burden.entity';
 export { AppFile } from './app-file.entity';
 export { BidAttachment } from './bid-attachment.entity';
