@@ -113,6 +113,16 @@ export class BiddingLookupsController {
     return this.lookups.getTeams();
   }
 
+  @Get('captains')
+  getCaptains() {
+    return this.lookups.getCaptains();
+  }
+
+  @Get('contacts')
+  getContacts(@Query('role') role?: string) {
+    return this.lookups.getContacts(role);
+  }
+
   @Get('parties')
   getParties(
     @Query('role') role?: string,

@@ -8,6 +8,7 @@ import { Repository, In } from 'typeorm';
 import { RbacService } from '../auth/rbac.service';
 import { isAppRoleId } from '../auth/rbac-catalog';
 import { User, UserStatus, Role } from '../database/entities';
+import { UsersService } from '../users/users.service';
 
 export interface AdminUsersQuery {
   page?: number;
@@ -25,6 +26,7 @@ export class AdminService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly rbac: RbacService,
+    private readonly users: UsersService,
   ) {}
 
   async getUsers(query: AdminUsersQuery, currentAdminId: number) {
@@ -123,10 +125,11 @@ export class AdminService {
       }
       user.status = updates.status;
     }
+    await this.userRepo.save(user);
     if (updates.teamId !== undefined) {
-      user.bidTeamId = updates.teamId;
+      return this.users.setBidTeamId(user.id, updates.teamId);
     }
-    return this.userRepo.save(user);
+    return user;
   }
 
   async deleteUser(userId: number, currentAdminId: number): Promise<void> {

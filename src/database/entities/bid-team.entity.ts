@@ -33,6 +33,10 @@ export class BidTeam {
   @Column({ name: 'Plumbing2', type: 'nvarchar', length: 100, nullable: true })
   plumbing2!: string | null;
 
+  /** Slot → { appUserId, connecteamUserId, name, email }. Names also copied onto the role columns. */
+  @Column({ name: 'CrewJson', type: 'nvarchar', length: 'max', nullable: true })
+  crewJson!: string | null;
+
   @Column({ name: 'IsActive', type: 'bit', default: true })
   isActive!: boolean;
 

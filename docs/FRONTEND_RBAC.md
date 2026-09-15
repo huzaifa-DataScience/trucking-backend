@@ -1,10 +1,10 @@
 # Access control — Frontend Handoff
 
 **Give this file to FE.** Admin Settings → Access control + widen `user.role`.  
-**Last updated:** 2026-09-13  
+**Last updated:** 2026-09-15  
 **Auth (already live — do not rip):** [FRONTEND_AUTH.md](./FRONTEND_AUTH.md)
 
-Login, register, profile, token, 401, and `user.status` are **unchanged**. Same `AuthUser` object: `id`, `email`, `role`, `status`, `permissions`. This doc only:
+Login, register, profile, token, 401, and `user.status` are **unchanged**. Same `AuthUser` object: `id`, `email`, `role`, `status`, `permissions`, `teamId`, `avatarUrl`. This doc only:
 
 1. Widens `role` from `'user' | 'admin'` to 8 ids (`super_admin` still uses the admin panel).
 2. Adds Admin → Settings → Access control (matrix APIs).
@@ -41,13 +41,15 @@ Use `GET /admin/rbac` → `roles[]` for labels. Do not hardcode if the GET alrea
 | `super_admin` | Super admin | Nick, PJ — locked, not a matrix column |
 | `admin` | Admin | IT |
 | `bid_clerk` | Bid clerk | John — intake |
-| `captain` | Captain | Wilder / Bil / Mike |
+| `captain` | Captain | Whoever has `role=captain` in Admin (Excel roster Wilder / Bil / Mike is seeded onto Bid_Teams; they appear here only after they have a login) |
 | `assistant_estimator` | Assistant estimator | Hassan, etc. |
 | `project_manager` | Project manager | PMs |
 | `operations_manager` | Operations manager | OMs |
 | `user` | Legacy user | Old accounts; treat like AE + trucking dashboards |
 
-**Home** is **`GET /dashboard`** — not Estimates. **Estimates** is `GET /bids`. `admin` / `super_admin` see **every bid** on Estimates; `canEdit` always true. Hide Edit for others when `canEdit === false`. Put a non-admin on a team: `PATCH /admin/users/:id` `{ "teamId" }` from `GET /lookups/bidding/teams`. Login `user.teamId`.
+**Home** is **`GET /dashboard`** — not Estimates. **Estimates** is `GET /bids`. `admin` / `super_admin` see **every bid** on Estimates; `canEdit` always true. Hide Edit for others when `canEdit === false`.
+
+Captain / AE: captain builds their crew in **Settings → My team** (`GET/PATCH /auth/team`, contacts `GET /lookups/bidding/contacts`). Not a pick-from-existing-teams dropdown. After save, `user.teamId` is their crew and `GET /bids` is that team only. Admin can still `PATCH /admin/users/:id` `{ "teamId" }`.
 
 Widen the TypeScript union on the existing `AuthUser` from [FRONTEND_AUTH.md](./FRONTEND_AUTH.md). Login JSON is the same shape; `role` can now be any of these 8 strings. Keep storing `user` in localStorage as you already do.
 

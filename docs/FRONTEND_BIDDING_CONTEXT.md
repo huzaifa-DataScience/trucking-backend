@@ -1,7 +1,7 @@
 # Bidding frontend — context for the FE agent
 
 **Who:** Frontend (human or AI). Read this **before** any other bidding doc.  
-**Last updated:** 2026-09-11  
+**Last updated:** 2026-09-16  
 **Backend:** live NestJS. JWT on every call.
 
 You are building the **bidding UI**. Backend already computes Specs, production hours, and workflow gates. **Do not rebuild those engines.** Wrap existing screens in the PDF stage chrome. Incomplete save is allowed.
@@ -64,7 +64,9 @@ Do not mix these three.
 /bidding/[id]?stage=lost             only if workflow.showLost
 ```
 
-**Estimates (`/bidding`):** `GET /bids` — **full company list**. Each row has `canEdit`. Hide Edit / Save when `canEdit === false`. `admin` / `super_admin`: every bid, always `canEdit: true`. Do not filter that page by stage. Export button: `GET /bids/export` (same query params → `bids.xlsx`).
+**Estimates (`/bidding`):** `GET /bids` — admin / clerk see the **full company list**. Captain / AE with `user.teamId` see **that team only**. Each row has `canEdit`. Hide Edit / Save when `canEdit === false`. `admin` / `super_admin`: every bid, always `canEdit: true`. Do not filter that page by stage. Export button: `GET /bids/export` (same query params → `bids.xlsx`).
+
+Captain picks a crew in **Settings → My team**: people from `GET /lookups/bidding/contacts` (AEs included; also `GET /auth/team` → `people`) → `PATCH /auth/team` `{ slots }`. Replace stored `user` from `response.user`. Do not use `GET /lookups/bidding/captains` for this dropdown. Do not dropdown pre-made `GET /lookups/bidding/teams`. Do not page the dropdown.
 
 **Dashboard (separate route `/dashboard`, not Estimates):** `GET /dashboard`. Widgets: `due`, `upcoming`, `assigned` + `messages`. Row click from either page → `/bidding/:id?stage=` + `row.processStage`.
 
@@ -72,7 +74,7 @@ Do not mix these three.
 - Bid has no `teamId` yet: anyone may edit (intake)
 - Bid `assignment.teamId` set: only users on that team (`user.teamId` from login) + admins
 
-Assign a person to a crew: `PATCH /admin/users/:id` `{ "teamId": <Bid_Teams id> }` (`GET /lookups/bidding/teams`). Captain / AE plates filter to that team when `user.teamId` is set.
+Assign a person to a crew: captain **Settings → My team** `PATCH /auth/team` `{ slots }`, or admin `PATCH /admin/users/:id` `{ "teamId": <Bid_Teams id> }`. Captain / AE plates **and Estimates** filter to that team when `user.teamId` is set.
 
 Team label: `GET /lookups/bidding/teams` + `row.teamId`.
 
@@ -125,7 +127,7 @@ function newId(): string {
 }
 ```
 
-**Stage 1 (Intake + Assignment):** bid name **locked** to `drawingName`. Two project #s (`#` stripped). `bidKind` includes `budget`. Second invitation → `invitations[]` (plus `addenda` per inviter). Paste invite email in `invitations[].inviteBody`. Preferred reach `contact.preferredContact`. Paste address in `projectAddress.line1` (city/state/zip fill on save). Owner/federal `documentLinks[].checkAddenda`. **No `jobId` until awarded.** One invite → `whoElseBidding.researched` required to hand off. Drawings attachment required for build-to-print / design-assist. Mistake second bid: `POST /bids/:id/link-duplicate`. Typeahead `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. Tiers on intake. Assignment: Nick + PJ + clerk, `assignment.teamId`. Party address book: `GET /lookups/bidding/parties?role=&q=&page=&pageSize=` → `{ items, total, page, pageSize }`. Full contract: [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
+**Stage 1 (Intake + Assignment):** bid name **locked** to `drawingName`. Two project #s (`#` stripped). `bidKind` includes `budget`. Second invitation → `invitations[]` (plus `addenda` per inviter). Paste invite email in `invitations[].inviteBody`. Preferred reach `contact.preferredContact`. Paste address in `projectAddress.line1` (city/state/zip fill on save). Owner/federal `documentLinks[].checkAddenda`. **No `jobId` until awarded.** One invite → `whoElseBidding.researched` required to hand off. Drawings attachment required for build-to-print / design-assist. Mistake second bid: `POST /bids/:id/link-duplicate`. Typeahead `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. Tiers on intake. **Building type / project type / impacted GSF / company rule on intake** (`constructionType`, `constructionSubtype`, `impactedGsf`, `entityRule`) — not on proposal. Assignment: Nick + PJ + clerk, pick captain (`assignment.captainUserId` from `GET /lookups/bidding/captains` — login users only, not hardcoded names) → `teamId` fills. Party address book: `GET /lookups/bidding/parties?role=&q=&page=&pageSize=` → `{ items, total, page, pageSize }`. Full contract: [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
 
 ---
 
@@ -167,9 +169,27 @@ Full contract: [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md).
 
 ---
 
-## Estimate (Proposal) — client Excel engine
+## Estimate (Proposal) — output + client Excel engine
+
+**PJ 13 Sep:** not a second intake form. Proposal = **output + calculations**. Cell map: **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)**. `process-meta.proposalEditor`.
+
+**First here (or mainly here) — not Intake/Assignment:**
+
+| Block | Fields |
+|-------|--------|
+| Schedule / money | Bid date, submit date, time estimate (hrs), margin, hours/day, days/week, duration (months), start in # months, backcheck hours, avg # people, material escalation / year |
+| Wage / flags | Wage **rate** (scale), citizen, apprenticeable, sales tax applicable. Preference (MBE), PLA, CCIP-covers-WC — **also on Setup**, keep in sync |
+| Lifts | Needed?, % on lifts, cost / 4 weeks |
+| Parking | Parking?, % who park, cost / day |
+| Mike / system grid | Per column: Mike estimate #, materials, labor hours, Mike total, quantity, used? |
+
+**Read-only — do not re-ask:** company, estimate #, bid name · building / project type · impacted SF · state · team / captain / AE / crew.
+
+Setup is **still editable** (spec sheet, wage **decision**, PLA, OCIP). Identity fields are not Setup/Proposal editors.
 
 Browser Excel engine is source of truth. `PATCH` `baseBid` + `systems` + **`computed`**. Extra `computed` keys are **not stripped**. `POST /bids/:id/calculate` is a **no-op** unless `{ "forceServerCalc": true }`.
+
+If the engine needs GSF, copy `process.impactedGsf` → `baseBid.gsfOfBuilding`.
 
 **Wage decision** (Davis-Bacon #, `process.wageDecisionId`) ≠ **wage rate** (calculator scale, `baseBid.wageRateLabel`).
 

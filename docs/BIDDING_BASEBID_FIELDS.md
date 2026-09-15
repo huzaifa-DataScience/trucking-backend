@@ -2,7 +2,12 @@
 
 This documents **every cell** on the Excel **Base Bid** tab: which cells are **inputs** (form fields) and which are **calculated** (Excel formulas — run in the **browser engine**, persist in `computed`). Display stored `computed` from `GET`/`PATCH`. Do not invent a second formula set.
 
-> **Golden rule:** inputs are sent on `PATCH /bids/:id` (`baseBid` / `systems` / **`computed`**). The **browser Excel engine is the source of truth** — store its snapshot in `computed`; `GET` returns that snapshot. `POST /bids/:id/calculate` is a **no-op** unless `{ "forceServerCalc": true }` (verify only). Do **not** reimplement formulas in a second place, and do **not** wait on `/calculate` to populate the UI. Cell map below is still the Excel contract. Full save/load: [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) §1.
+**PJ 13 Sep 2026 — this sheet is the Proposal screen: output + calculator, not a second intake form.**  
+Building type, project type, impacted GSF, company (`ourEntityId` / `entityRule`), address, bid kind already live on **intake**. Team / captain / AE already live on **assignment** (`process.assignment`). On Proposal: **show those read-only**. Do not re-ask. Calc-only fields below stay editable. `GET /lookups/bidding/process-meta` → `proposalEditor.isOutput`.
+
+If the engine needs GSF, copy `process.impactedGsf` → `baseBid.gsfOfBuilding` (do not put an impacted-SF editor on this page).
+
+> **Golden rule:** calculator inputs are sent on `PATCH /bids/:id` (`baseBid` / `systems` / **`computed`**). The **browser Excel engine is the source of truth** — store its snapshot in `computed`; `GET` returns that snapshot. `POST /bids/:id/calculate` is a **no-op** unless `{ "forceServerCalc": true }` (verify only). Do **not** reimplement formulas in a second place, and do **not** wait on `/calculate` to populate the UI. Cell map below is still the Excel contract. Full save/load: [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) §1.
 
 Legend for **legacy server-engine status** (`forceServerCalc` only — not the MVP save path):
 - ✅ **Returned** — in the server `/calculate` snapshot when that verify pass runs.
@@ -13,65 +18,68 @@ Legend for **legacy server-engine status** (`forceServerCalc` only — not the M
 
 ## 1. Inputs (build form fields for these)
 
-These are user-entered. They are stored in `baseBid` / `systems` (see `BIDDING_FRONTEND_API.md`).
+**Proposal pe pehli baar (ya mainly yahan)** calculator fields. Intake/Assignment pe yeh editors mat lagao.
 
-### Header / project
+### Read-only on Proposal (already captured — do not re-ask)
+
+Company, estimate #, bid name · building / project type · impacted SF · state · team / captain / AE / crew.
+
+| Cell | Label | Source | API field |
+|------|-------|--------|-----------|
+| B1 | BID Estimate # | bid header | `estimateNumber` |
+| D1 | Bid Name | intake | `bidName` / `process.drawingName` |
+| D2 | Company Bidding | intake | `ourEntityId` — `GET /lookups/our-entities` |
+| — | Client / GC | intake | `companyInfo` — **not** `ourEntityId` |
+| — | Building type | intake | `process.constructionType` — `GET /lookups/bidding/building-types` |
+| D5–D7 | Project Type | intake | `process.constructionSubtype` — `GET /lookups/bidding/project-types` |
+| E7 | Impacted SF (GSF cell) | intake | `process.impactedGsf` — copy to `baseBid.gsfOfBuilding` for calc only |
+| B5 | Project State | intake address | `projectAddress.state` — copy to `baseBid.projectState` for tax |
+| F2 | Team | assignment | `process.assignment.teamId` → `GET /lookups/bidding/teams` |
+| A4 | Captain | assignment / team row | `process.assignment.captain` / teams → `captain` |
+| C3 | Assistant Estimator | assignment / team | `process.assignment.assistantEstimator` |
+| B16–G16 | Crew (duct / hydronic / plumbing) | assigned team | teams → `duct1`…`plumbing2` — Settings roster, not this sheet |
+
+### Schedule / money (Proposal)
 | Cell | Label | Input type | API field |
 |------|-------|-----------|-----------|
-| B1 | BID Estimate # | text | `estimateNumber` |
-| D1 | Bid Name | text | `bidName` |
 | B2 | Bid Date | date | `bidDate` (header) |
 | — | Submit Date | date | `submitDate` (header) |
 | — | Time Estimate | number (hours) | `timeEstimate` (header) |
-| — | Client / GC company | form section | `companyInfo` (§3.5 in API doc) — **not** `ourEntityId` |
-| D2 | Company Bidding | dropdown (our-entities) | `ourEntityId` |
-| F2 | Team | dropdown (`/lookups/bidding/teams`) | `teamName` |
-| C3 | Assistant Estimator | text | `assistantEstimator` |
 | D4 | Margin | percent (e.g. 0.25) | `marginPercent` |
-| H3 | PLA | Yes/No | `pla` |
-
-### Location / schedule
-| Cell | Label | Input | API field |
-|------|-------|-------|-----------|
-| B5 | What State is this project in? | dropdown (`/states`) | `projectState` |
-| D5–D7 | Project Type | dropdown (`/project-types`) | `projectType` |
 | F4 | Hours per day | number | `hoursPerDay` |
 | F5 | Days per week | number | `daysPerWeek` |
-| E7 | GSF of Building | number | `gsfOfBuilding` |
 | B12 | Duration of Project – Months | number | `durationMonths` |
 | B13 | Start in # of months from bid | number | `startInMonths` |
-| G7 | Number of personnel | number | (used in crew math) |
+| — | Backcheck hours | number | `backcheckHours` |
+| G7 | Average # people (personnel) | number | `averageNoPeople` (Excel H7 also derives this) |
+| H10 | Escalation on materials per Year | percent (0.04) | `materialEscalationPerYear` |
 
-### Wage / flags
+### Wage / flags (Proposal)
 | Cell | Label | Input | API field |
 |------|-------|-------|-----------|
-| B8/C8/D8 | Wage rate (scale) | dropdown (`/wage-rates`, `displayLabel`) | `wageRateLabel` |
-| F8 | Does O/CCIP cover WC? | Yes/No | `ccipCoversWc` |
+| B8/C8/D8 | Wage rate (scale) | dropdown (`/wage-rates`, `displayLabel`) | `wageRateLabel` — **not** Setup wage **decision** |
 | F12 | Citizen Project | Yes/No | `citizenProject` |
 | F13 | Apprenticeable job | Yes/No | `apprenticeable` |
-| G5 | MBE or preference | dropdown (`/preferences`) | `preference` |
-
-### Material escalation & tax
-| Cell | Label | Input | API field |
-|------|-------|-------|-----------|
-| H10 | Escalation on materials per Year | percent (0.04) | `materialEscalationPerYear` |
 | H12 | Sales Tax Applicable | Yes/No | `salesTaxApplicable` |
+| G5 | Preference (MBE) | dropdown (`/preferences`) | `preference` — **also on Setup** (`process.mbePreference`); keep in sync |
+| H3 | PLA | Yes/No | `pla` / `process.pla` — **also editable on Setup** |
+| F8 | Does O/CCIP cover WC? | Yes/No | `ccipCoversWc` — **also editable on Setup** |
 
-### Lifts
+### Lifts (Proposal)
 | Cell | Label | Input | API field |
 |------|-------|-------|-----------|
 | J4 | Lifts (needed?) | Yes/No | `liftsNeeded` |
 | J5 | % of people on Lifts we provide | percent | `liftPercentage` |
 | J6 | Lift cost average rental per 4 weeks | number | `liftCostPer4Weeks` |
 
-### Parking
+### Parking (Proposal)
 | Cell | Label | Input | API field |
 |------|-------|-------|-----------|
 | J9 | Parking | Yes/No | `parking` |
 | J10 | % of people that will park | percent | `parkingPeoplePercent` |
 | J11 | Parking Cost per Day – we reimburse | number | `parkingCostPerDay` |
 
-### System grid (one column per system: Duct1 B, Duct2 C, Hydronic1 D, Hydronic2 E, Plumbing1 F, Plumbing2 G, VRF H, Equipment I)
+### Mike / system grid (Proposal — one column per system: Duct1 B, Duct2 C, Hydronic1 D, Hydronic2 E, Plumbing1 F, Plumbing2 G, VRF H, Equipment I)
 | Row | Label | Input | API field (per `systems[]` item) |
 |-----|-------|-------|------------------|
 | 17 | MIKE Estimate # | number | `mikeEstimateNumber` |
@@ -79,13 +87,13 @@ These are user-entered. They are stored in `baseBid` / `systems` (see `BIDDING_F
 | 19 | Labor Hours | number | `laborHours` |
 | 20 | TOTAL PRICE per MIKE | number | `mikeTotalPrice` |
 | 21 | Quantity (LF/SF) | number | `quantity` |
-| 23 | Who was used | Yes/No | `used` |
+| 23 | Used? | Yes/No | `used` |
 
 ---
 
 ## 2. Lookup-derived cells (auto-filled from a dropdown selection)
 
-When the user picks a **Team**, **Wage rate**, or **State**, these cells auto-populate. The frontend should populate them from the corresponding lookup API response — **no math**, just a lookup by the selected value.
+When the user picks a **Wage rate** or **State**, these cells auto-populate. Team / captain / crew are **not** picked on this sheet — they come from `process.assignment.teamId` (Settings roster on that team). Fill from `GET /lookups/bidding/teams` **by that id** — **no math**, no hardcoded names.
 
 | Cell | Formula (Excel) | Meaning | Source API | Backend |
 |------|-----------------|---------|-----------|---------|

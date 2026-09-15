@@ -55,6 +55,7 @@ export class BiddingController {
     @Query('outcome') outcome?: string,
     @Query('ownerProjectNumber') ownerProjectNumber?: string,
     @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
+    @Query('teamId') teamId?: string,
     @CurrentUser() user?: User,
   ) {
     return this.bidding.list({
@@ -66,6 +67,7 @@ export class BiddingController {
       outcome,
       ownerProjectNumber,
       mechanicalEngineerProjectNumber,
+      teamId: parseTeamIdQuery(teamId),
       editor: user,
     });
   }
@@ -89,6 +91,7 @@ export class BiddingController {
     @Query('outcome') outcome?: string,
     @Query('ownerProjectNumber') ownerProjectNumber?: string,
     @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
+    @Query('teamId') teamId?: string,
     @CurrentUser() user?: User,
   ) {
     const buffer = await this.bidding.exportList({
@@ -100,6 +103,7 @@ export class BiddingController {
       outcome,
       ownerProjectNumber,
       mechanicalEngineerProjectNumber,
+      teamId: parseTeamIdQuery(teamId),
       editor: user,
     });
     res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
@@ -154,7 +158,7 @@ export class BiddingController {
 
   @Get(':id')
   async getOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user?: User) {
-    return this.bidding.getDetail(id, user);
+    return this.bidding.getDetail(id, user, { skipSpecCodes: true });
   }
 
   @Patch(':id')
@@ -251,4 +255,12 @@ export class BiddingController {
     await this.bidding.assertUserCanEdit(bidId, user);
     return this.attachments.remove(bidId, attachmentId, user?.id);
   }
+}
+
+function parseTeamIdQuery(raw?: string): number | 'all' | undefined {
+  const v = raw?.trim();
+  if (!v) return undefined;
+  if (v === 'all') return 'all';
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : undefined;
 }

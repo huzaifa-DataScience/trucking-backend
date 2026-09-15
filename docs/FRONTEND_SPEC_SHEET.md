@@ -1,14 +1,14 @@
 # Spec sheet — Frontend Handoff
 
 **Give this file to FE.** It replaces last week’s spec-sheet cascade.  
-**Last updated:** 2026-09-09  
+**Last updated:** 2026-09-16  
 **Stage:** Estimating Setup (`estimating_setup`) — **before takeoff**  
 **Chrome:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
 **Source:** PJ catch-up 2026-08-23 + dry run 2026-09-05. Lock this cascade.
 
 Enums live in `GET /lookups/bidding/process-meta` → `specSheetEditor` + `setupEditor`. Do not hardcode if meta already has the list.
 
-9 Sep extras: **CertainTeed** in manufacturers. Preferred must be in `manufacturersAllowed`. Pipe **999 (and greater)** like Mike. Copy row / stack all sheets / confirm before delete — `specSheetEditor.copyRow`, `stackSheets`, `confirmDeleteSheet`. Paste spec image → `imageAttachmentIds`. Default one layer = jacket `none`. Construction type = `GET /lookups/bidding/building-types` (Followup buckets), subtype `project-types`, MBE `preferences`. VRF + equipment takeoff = hydronic team (`defaults.equipmentAndVrfTeam`).
+9 Sep extras: **CertainTeed** in manufacturers. Preferred must be in `manufacturersAllowed`. Pipe **999 (and greater)** like Mike. Copy row / stack all sheets / confirm before delete — `specSheetEditor.copyRow`, `stackSheets`, `confirmDeleteSheet`. Paste spec image → `imageAttachmentIds`. Default one layer = jacket `none`. MBE `preferences` stay on Setup. **Building type / project type / GSF are intake** (`intakeEditor`) — do not put them on this page. VRF + equipment takeoff = hydronic team (`defaults.equipmentAndVrfTeam`).
 
 This is **not** a spreadsheet. Codes are **never a dropdown**. Estimators may **type the Mike code** (`FGA`) to fill the row. PMs go family → product. Column label is **Mike code**, not Skip.
 

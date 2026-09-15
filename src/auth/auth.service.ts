@@ -1,10 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { RbacService } from './rbac.service';
-import { User, UserStatus } from '../database/entities';
+import { User, UserStatus, userAvatarUrl } from '../database/entities';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { AVATAR_MIMES, FileStorageService } from '../files/file-storage.service';
+import type { PatchTeamDto } from './dto/patch-team.dto';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +15,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly rbacService: RbacService,
     private readonly config: ConfigService,
+    private readonly storage: FileStorageService,
   ) {}
 
   async register(
@@ -97,7 +100,48 @@ export class AuthService {
       status: user.status,
       permissions: permissions ?? [],
       teamId: user.bidTeamId ?? null,
+      avatarUrl: userAvatarUrl(user),
     };
+  }
+
+  async uploadAvatar(user: User, file: Express.Multer.File | undefined): Promise<LoginResult> {
+    if (!file?.buffer?.length) throw new BadRequestException('file required');
+    const mime = file.mimetype?.trim() || '';
+    if (!(AVATAR_MIMES as readonly string[]).includes(mime)) {
+      throw new BadRequestException(`images only: ${AVATAR_MIMES.join(', ')}`);
+    }
+    if (user.avatarPath) await this.storage.deleteFile(user.avatarPath);
+    const avatarPath = await this.storage.writeAvatar(user.id, file.buffer, mime);
+    const saved = await this.usersService.setAvatarPath(user.id, avatarPath);
+    const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
+    return this.toLoginResult(saved, permissions);
+  }
+
+  async removeAvatar(user: User): Promise<LoginResult> {
+    if (user.avatarPath) await this.storage.deleteFile(user.avatarPath);
+    const saved = await this.usersService.setAvatarPath(user.id, null);
+    const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
+    return this.toLoginResult(saved, permissions);
+  }
+
+  async getMyTeam(user: User) {
+    return this.usersService.getMyCrew(user);
+  }
+
+  async setMyTeam(user: User, slots: PatchTeamDto['slots']) {
+    const { user: saved, team } = await this.usersService.saveMyCrew(user, slots ?? {});
+    const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
+    return { user: this.toLoginResult(saved, permissions), team };
+  }
+
+  async openAvatar(userId: number): Promise<{ stream: ReturnType<FileStorageService['openReadStream']>; mimeType: string }> {
+    const target = await this.usersService.findById(userId);
+    if (!target?.avatarPath) throw new NotFoundException('avatar not found');
+    const mime =
+      target.avatarPath.endsWith('.png') ? 'image/png'
+      : target.avatarPath.endsWith('.webp') ? 'image/webp'
+      : 'image/jpeg';
+    return { stream: this.storage.openReadStream(target.avatarPath), mimeType: mime };
   }
 }
 
@@ -108,4 +152,5 @@ export interface LoginResult {
   status: string;
   permissions: string[];
   teamId: number | null;
+  avatarUrl: string | null;
 }

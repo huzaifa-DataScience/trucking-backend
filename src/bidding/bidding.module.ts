@@ -31,6 +31,7 @@ import {
   Job,
 } from '../database/entities';
 import { ConnecteamModule } from '../connecteam/connecteam.module';
+import { UsersModule } from '../users/users.module';
 import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
 import { BiddingService } from './bidding.service';
@@ -52,6 +53,7 @@ import { SpecsService } from './specs/specs.service';
 @Module({
   imports: [
     ConnecteamModule,
+    UsersModule,
     TypeOrmModule.forFeature([
       Bid,
       BidContent,

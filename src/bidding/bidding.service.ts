@@ -28,6 +28,7 @@ import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
 import { ConnecteamChatService } from '../connecteam/connecteam-chat.service';
+import { bindAssignmentCrew, resolveEstimatesTeamId } from './process/bid-crew';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -116,6 +117,7 @@ type BidListQuery = {
   outcome?: string;
   ownerProjectNumber?: string;
   mechanicalEngineerProjectNumber?: string;
+  teamId?: number | 'all';
   editor?: BidEditor;
 };
 
@@ -163,7 +165,12 @@ export class BiddingService {
     if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
     const opn = normalizeProjectNumber(params.ownerProjectNumber);
     const mepn = normalizeProjectNumber(params.mechanicalEngineerProjectNumber);
-    const needProcess = !!(params.search || opn || mepn);
+    const teamId = resolveEstimatesTeamId({
+      queryTeamId: params.teamId,
+      role: params.editor?.role,
+      userTeamId: params.editor?.bidTeamId ?? null,
+    });
+    const needProcess = !!(params.search || opn || mepn || teamId != null);
     if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
     if (params.search) {
       const q = params.search.replace(/#/g, '').trim();
@@ -188,6 +195,12 @@ export class BiddingService {
         { mepn },
       );
     }
+    if (teamId != null) {
+      qb.andWhere(
+        `TRY_CONVERT(int, JSON_VALUE(cnt.ProcessJson, '$.assignment.teamId')) = :teamId`,
+        { teamId },
+      );
+    }
     qb.orderBy('b.updatedAt', 'DESC');
 
     const rows = await qb.getMany();
@@ -199,7 +212,7 @@ export class BiddingService {
     return rows.map((b) => this.toSummary(b, contentByBid.get(b.id), params.editor));
   }
 
-  /** Same rows/filters as `list()`. Full company list — not role-filtered. */
+  /** Same rows/filters as `list()`. Captain / AE inherit their team filter. */
   async exportList(params: BidListQuery): Promise<Buffer> {
     const rows = await this.list(params);
     const teams = await this.lookups.getTeams();
@@ -286,6 +299,7 @@ export class BiddingService {
     const process = dto.process
       ? this.mergeProcessSafe(emptyProcess(), dto.process)
       : null;
+    if (process) await this.applyAssignmentCrew(process);
     if (process) await this.specs.applySpecSheetCodes(process);
     await this.assertUniqueOpportunity({
       estimateNumber: dto.estimateNumber,
@@ -338,7 +352,7 @@ export class BiddingService {
 
     await this.activity.recordCreated(saved.id, userId, dto.estimateNumber);
 
-    return this.getDetail(saved.id);
+    return this.getDetail(saved.id, undefined, { skipSpecCodes: true });
   }
 
   /** Persist a client-calculated snapshot (Excel engine output) as the latest. */
@@ -366,21 +380,19 @@ export class BiddingService {
   }
 
   async getDetail(id: number, editor?: BidEditor, opts?: { skipSpecCodes?: boolean }) {
-    const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false }, relations: ['ourEntity'] });
+    const [bid, content, clientSnap, anySnap, attachments, activitySummary] = await Promise.all([
+      this.bidRepo.findOne({ where: { id, isDeleted: false }, relations: ['ourEntity'] }),
+      this.contentRepo.findOne({ where: { bidId: id } }),
+      this.snapshotRepo.findOne({ where: { bidId: id, source: 'client' }, order: { id: 'DESC' } }),
+      this.snapshotRepo.findOne({ where: { bidId: id }, order: { id: 'DESC' } }),
+      this.attachments.listForBid(id, { skipExistCheck: true }),
+      this.activity.getSummary(id),
+    ]);
     if (!bid) throw new NotFoundException(`Bid ${id} not found`);
-    const content = await this.contentRepo.findOne({ where: { bidId: id } });
-    // Prefer the latest client snapshot so an optional server verify pass never
-    // overwrites what the UI displays; fall back to any for legacy rows.
-    const snapshot =
-      (await this.snapshotRepo.findOne({
-        where: { bidId: id, source: 'client' },
-        order: { id: 'DESC' },
-      })) ??
-      (await this.snapshotRepo.findOne({ where: { bidId: id }, order: { id: 'DESC' } }));
+    const snapshot = clientSnap ?? anySnap;
 
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
-    const attachments = await this.attachments.listForBid(id);
     return {
       ...this.toSummary(bid, content, editor),
       jobId: bid.jobId,
@@ -392,7 +404,7 @@ export class BiddingService {
       workflow: workflowChrome(process, { hasDrawings: this.hasDrawingsLabel(attachments) }),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
       attachments,
-      activitySummary: await this.activity.getSummary(id),
+      activitySummary,
     };
   }
 
@@ -427,12 +439,8 @@ export class BiddingService {
     if (dto.trimbleProjectId !== undefined) bid.trimbleProjectId = dto.trimbleProjectId ?? null;
     if (dto.estimateNumber != null) bid.estimateNumber = dto.estimateNumber;
 
-    // Job changed (and trimble not explicitly patched) → re-resolve from JobNumber
+    // Only when they actually change the job — not on every calc save.
     if (dto.jobId !== undefined && dto.trimbleProjectId === undefined) {
-      await this.applyTrimbleFromJob(bid, { jobId: bid.jobId, trimbleExplicit: false });
-    }
-    // New job on create-like patch where trimble still empty
-    if (dto.trimbleProjectId === undefined && bid.trimbleProjectId == null && bid.jobId != null) {
       await this.applyTrimbleFromJob(bid, { jobId: bid.jobId, trimbleExplicit: false });
     }
     let content = await this.contentRepo.findOne({ where: { bidId: id } });
@@ -443,6 +451,7 @@ export class BiddingService {
       dto.process !== undefined
         ? this.mergeProcessSafe(existingProcess, dto.process)
         : existingProcess;
+    if (dto.process?.assignment !== undefined) await this.applyAssignmentCrew(processNow);
     const prevBidName = bid.bidName;
     const prevEstimate = bid.estimateNumber;
     if (processNow.drawingName) bid.bidName = processNow.drawingName;
@@ -497,7 +506,7 @@ export class BiddingService {
       content.companyInfoJson = JSON.stringify({ ...existing, ...dto.companyInfo });
     }
     if (dto.process !== undefined) {
-      await this.specs.applySpecSheetCodes(processNow);
+      if (dto.process.specSheets !== undefined) await this.specs.applySpecSheetCodes(processNow);
       content.processJson = JSON.stringify(processNow);
       content.inputsSchemaVer = Math.max(Number(content.inputsSchemaVer) || 1, 2);
       bid.processStage = processNow.stage;
@@ -526,7 +535,7 @@ export class BiddingService {
       content,
     );
 
-    return this.getDetail(id, undefined, { skipSpecCodes: dto.process !== undefined });
+    return this.getDetail(id, undefined, { skipSpecCodes: true });
   }
 
   async handoff(id: number, dto: HandoffBidDto, userId?: number) {
@@ -590,7 +599,7 @@ export class BiddingService {
     await this.contentRepo.save(content);
     await this.lookups.upsertFromProcess(next);
     await afterSave();
-    return this.getDetail(bid.id);
+    return this.getDetail(bid.id, undefined, { skipSpecCodes: true });
   }
 
   private handoffSafe(current: BidProcess, action: HandoffAction, notes?: string, ctx?: HandoffCtx) {
@@ -747,6 +756,14 @@ export class BiddingService {
       if (e instanceof BidProcessError) throw new BadRequestException(e.message);
       throw e;
     }
+  }
+
+  private async applyAssignmentCrew(process: BidProcess): Promise<void> {
+    const [captains, teams] = await Promise.all([
+      this.lookups.getCaptains(),
+      this.lookups.getTeams(),
+    ]);
+    process.assignment = bindAssignmentCrew(process.assignment, captains, teams);
   }
 
   /** Same estimate #, name, or title-block # → one opportunity. Case-insensitive. */

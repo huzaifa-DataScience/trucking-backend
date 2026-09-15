@@ -355,6 +355,8 @@ export type BidProcess = {
   wageDecisionId: number | null;
   constructionType: string | null;
   constructionSubtype: string | null;
+  /** Life-safety impacted / renovated SF — not the whole building. Intake. */
+  impactedGsf: number | null;
   mbePreference: string | null;
   owner: PartyContact;
   architect: PartyContact;
@@ -369,6 +371,7 @@ export type BidProcess = {
     pursue: boolean | null;
     priority: string | null;
     teamId: number | null;
+    captainUserId: number | null;
     captain: string | null;
     assistantEstimator: string | null;
     bidClerk: string | null;
@@ -610,6 +613,7 @@ export function emptyProcess(): BidProcess {
     wageDecisionId: null,
     constructionType: null,
     constructionSubtype: null,
+    impactedGsf: null,
     mbePreference: null,
     owner: emptyParty(),
     architect: emptyParty(),
@@ -632,6 +636,7 @@ export function emptyProcess(): BidProcess {
       pursue: null,
       priority: null,
       teamId: null,
+      captainUserId: null,
       captain: null,
       assistantEstimator: null,
       bidClerk: null,
@@ -1084,6 +1089,7 @@ function normalizeProcess(p: BidProcess): void {
   p.mechanicalEngineerProjectNumber = normalizeProjectNumber(p.mechanicalEngineerProjectNumber);
   if (p.assignment && typeof p.assignment === 'object') {
     p.assignment.teamId = numOrNull(p.assignment.teamId);
+    p.assignment.captainUserId = numOrNull(p.assignment.captainUserId);
   }
   if (p.bidKind === 'budget') p.budgetOnly = true;
   else if (p.budgetOnly === true && (p.bidKind == null || p.bidKind === 'other')) {
@@ -1091,6 +1097,7 @@ function normalizeProcess(p: BidProcess): void {
   }
   p.amountSubmitted = numOrNull(p.amountSubmitted);
   p.proposalIteration = numOrNull(p.proposalIteration);
+  p.impactedGsf = numOrNull(p.impactedGsf);
   const nest = emptyProcess();
   if (!p.award || typeof p.award !== 'object') p.award = nest.award;
   else p.award.performingOurEntityId = numOrNull(p.award.performingOurEntityId);
@@ -1403,6 +1410,7 @@ export function processMeta() {
     tierRoles: TIER_ROLES,
     intakeEditor: INTAKE_EDITOR,
     setupEditor: SETUP_EDITOR,
+    proposalEditor: PROPOSAL_EDITOR,
     takeoffRoles: TAKEOFF_ROLES,
     dashboardPlates: dashboardPlatesMeta(),
     lostReasons: LOST_REASONS,
@@ -1555,7 +1563,7 @@ export function processMeta() {
       specSheets: 'PATCH process.specSheets — Setup dropdown rules. FRONTEND_SPEC_SHEET.md. Family → layer 1 → layer 2.',
       mikeFiles: 'POST /bids/:id/mike-files — versions kept, never deleted on re-upload',
       specs: 'GET /bids/:id/spec-lines — Takeoff stage screen (qty grid, not spec schedules)',
-      estimate: 'baseBid / systems / computed — Proposal stage screen',
+      estimate: 'baseBid / systems / computed — Proposal OUTPUT. Identity fields already on intake — show read-only',
       production: 'existing production APIs — after awarded',
       teams: 'GET /lookups/bidding/teams',
     },
@@ -1578,7 +1586,7 @@ const STAGE_WHO: Record<ProcessStage, string> = {
   assignment: 'Nick + PJ + bid clerk — bid/no-bid, team (1/2/3), takeoff plan',
   estimating_setup: 'Captain / estimator — wage, spec sheets, approve for takeoff',
   takeoff: 'Assigned takeoff — Mike/Specs; versions never overwritten',
-  proposal: 'Estimating review — calculator, proposal versions, submit',
+  proposal: 'Estimating review — calculator + totals + versions. Do not re-edit intake identity',
   post_bid: 'Follow-up — competitors, BAFO',
   result: 'Win / lose tab at the end of pre. Changeable. Post screens follow.',
 };
@@ -1613,12 +1621,13 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'contractTiers', phase: 'intake', note: 'Sketch ~5 layers on intake. hasTheJob / invitedUs / isPaying. Bonds confirm at award.' },
   { path: 'generalContractors', phase: 'intake', note: 'Multiple GCs on the same opportunity; hasTheJob / stillBidding' },
   { path: 'mechanicals', phase: 'intake', note: 'Multiple mechanicals on the same opportunity; hasTheJob / stillBidding' },
-  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+clerk. teamId from /lookups/bidding/teams. pursue false = no-bid on complete' },
+  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+clerk. captainUserId from /lookups/bidding/captains fills teamId. pursue false = no-bid on complete' },
   { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. VRF + equipment = hydronic team' },
-  { path: 'constructionType', phase: 'estimating_setup', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name' },
-  { path: 'constructionSubtype', phase: 'estimating_setup', note: 'GET /lookups/bidding/project-types' },
+  { path: 'constructionType', phase: 'intake', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name. Not on proposal.' },
+  { path: 'constructionSubtype', phase: 'intake', note: 'GET /lookups/bidding/project-types. Not on proposal.' },
+  { path: 'impactedGsf', phase: 'intake', note: 'Life-safety impacted / renovated SF. Not whole-building GSF. Proposal shows read-only; calc may copy to baseBid.gsfOfBuilding' },
   { path: 'mbePreference', phase: 'estimating_setup', note: 'GET /lookups/bidding/preferences' },
-  { path: 'entityRule', phase: 'estimating_setup', note: 'Suggests Goel DC / DCB / Goel Services' },
+  { path: 'entityRule', phase: 'intake', note: 'John’s first company call (DC/MD). Suggests Goel DC / DCB / Goel Services. Header ourEntityId is the pick.' },
   { path: 'pla', phase: 'estimating_setup', note: 'Also on baseBid.pla — keep in sync in UI' },
   { path: 'wageDecisionId', phase: 'estimating_setup', note: 'Lookup Bid_WageDecisions — not Bid_WageRates' },
   { path: 'clearance', phase: 'estimating_setup', note: 'US citizen / US person / Real ID' },
@@ -1633,8 +1642,8 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'specSheets', phase: 'estimating_setup', note: 'Spec rules rows (dropdowns). Before takeoff. Not the qty grid.' },
   { path: 'technicalReview', phase: 'estimating_setup', note: 'approvedForTakeoff required to hand off' },
   { path: 'takeoffAssignments.versions', phase: 'takeoff', note: 'Never overwrite; new version each revision' },
-  { path: 'amendments', phase: 'proposal', note: '+ Add; arrays replace on PATCH' },
-  { path: 'estimateReview', phase: 'proposal', note: '' },
+  { path: 'amendments', phase: 'proposal', note: '+ Add; arrays replace on PATCH. Output stage — do not put building type / GSF here' },
+  { path: 'estimateReview', phase: 'proposal', note: 'Totals / scope notes. Identity fields are intake — show read-only' },
   { path: 'proposalVersions', phase: 'proposal', note: 'BAFO / VE / scope change flags' },
   { path: 'submission', phase: 'proposal', note: '' },
   { path: 'intelligence', phase: 'post_bid', note: 'Follow-up + competitors + source + confidence' },
@@ -1717,9 +1726,27 @@ const INTAKE_EDITOR = {
   inviteBody: 'invitations[].inviteBody — paste the email',
   checkAddenda: 'documentLinks[].checkAddenda',
   tiersOnIntake: true,
+  constructionType: {
+    bind: 'constructionType',
+    lookup: 'GET /lookups/bidding/building-types',
+    note: 'Followup CRM building buckets. Save the name. Do not invent new ones. Not on proposal.',
+  },
+  constructionSubtype: {
+    bind: 'constructionSubtype',
+    lookup: 'GET /lookups/bidding/project-types',
+    note: 'Not on proposal.',
+  },
+  impactedGsf: {
+    bind: 'impactedGsf',
+    note: 'Life-safety impacted / renovated SF. Not whole-building GSF.',
+  },
+  entityRule: 'process.entityRule — suggests ourEntityId. John makes the first company call.',
   assignmentOwners: 'Nick + PJ + bid clerk',
   teamField: 'assignment.teamId',
   teamLookup: 'GET /lookups/bidding/teams',
+  captainField: 'assignment.captainUserId',
+  captainLookup: 'GET /lookups/bidding/captains',
+  captainSelectsTeam: true,
   partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=&page=1&pageSize=10',
   partyRoles: INTAKE_PARTY_ROLES,
   sketchTiers: [
@@ -1734,23 +1761,15 @@ const INTAKE_EDITOR = {
     'Let the clerk freely rename the bid',
     'Show budget as a checkbox next to bid type',
     'Ask the inviter who else is bidding',
-    'Put Division / Project type fields — values were not locked; use workType',
+    'Invent Division — workType is kind of work; constructionType is Followup building buckets',
+    'Put building type / GSF / project type on proposal — those are intake',
     'Require jobId / linked job on intake — wait until awarded',
     'Clear line1 after filling city/state/zip from a pasted address',
   ],
 };
 
-/** Estimating Setup — Followup buckets already in Bid_BuildingTypes / Bid_ProjectTypes / Bid_Preferences. */
+/** Estimating Setup — spec rules + money flags. Building type / GSF live on intake. */
 const SETUP_EDITOR = {
-  constructionType: {
-    bind: 'constructionType',
-    lookup: 'GET /lookups/bidding/building-types',
-    note: 'Followup CRM building buckets. Save the name. Do not invent new ones.',
-  },
-  constructionSubtype: {
-    bind: 'constructionSubtype',
-    lookup: 'GET /lookups/bidding/project-types',
-  },
   mbePreference: {
     bind: 'mbePreference',
     lookup: 'GET /lookups/bidding/preferences',
@@ -1759,4 +1778,81 @@ const SETUP_EDITOR = {
   buyAmerican: 'process.buyAmerican',
   aPlus: 'process.aPlus',
   specSheet: 'FRONTEND_SPEC_SHEET.md',
+  doNot: [
+    'Building type / project type / GSF — those moved to intake (PJ 13 Sep 2026)',
+  ],
+};
+
+/** Proposal = output + calculator. Do not re-ask intake identity. PJ 13 Sep 2026. */
+const PROPOSAL_EDITOR = {
+  isOutput: true,
+  bind: [
+    'baseBid',
+    'systems',
+    'computed',
+    'estimateReview',
+    'proposalVersions',
+    'amendments',
+    'submission',
+    'dateSubmitted',
+    'amountSubmitted',
+  ],
+  /** First appear (or mainly) on Proposal — not Intake/Assignment editors. */
+  firstHere: [
+    'bidDate',
+    'submitDate',
+    'timeEstimate',
+    'marginPercent',
+    'hoursPerDay',
+    'daysPerWeek',
+    'durationMonths',
+    'startInMonths',
+    'backcheckHours',
+    'averageNoPeople',
+    'materialEscalationPerYear',
+    'wageRateLabel',
+    'citizenProject',
+    'apprenticeable',
+    'salesTaxApplicable',
+    'liftsNeeded',
+    'liftPercentage',
+    'liftCostPer4Weeks',
+    'parking',
+    'parkingPeoplePercent',
+    'parkingCostPerDay',
+    'systems',
+  ],
+  /** Already on Setup; Proposal may show/edit the same flag. Keep in sync. */
+  alsoOnSetup: ['pla', 'ccipCoversWc', 'preference', 'mbePreference'],
+  readOnly: [
+    'ourEntityId',
+    'estimateNumber',
+    'bidName',
+    'drawingName',
+    'constructionType',
+    'constructionSubtype',
+    'impactedGsf',
+    'projectAddress',
+    'entityRule',
+    'assignment.teamId',
+    'assignment.captainUserId',
+    'assignment.captain',
+    'assignment.assistantEstimator',
+    'crew',
+  ],
+  showFromIntake: [
+    'constructionType',
+    'constructionSubtype',
+    'impactedGsf',
+    'entityRule',
+    'drawingName',
+    'projectAddress',
+  ],
+  showFromIntakeNote: 'Read-only chrome. Captured on intake. Do not re-edit.',
+  gsfForCalc: 'If the Excel engine needs GSF, copy process.impactedGsf → baseBid.gsfOfBuilding',
+  doNot: [
+    'Editable building type / GSF / project type / company / state / team / captain / AE / crew',
+    'Re-ask address, owner, bid kind, our entity, estimate #, bid name',
+    'Duplicate Follow-up CRM / startup / Proposify identity fields',
+  ],
 };

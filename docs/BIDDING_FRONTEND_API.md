@@ -10,7 +10,7 @@
 - `process` field dictionary: **[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**
 - Excel cell map: **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)**
 
-- **Last updated:** 2026-09-10
+- **Last updated:** 2026-09-16
 - **Base URL:** same API host as the rest of the dashboard (e.g. `https://<api-host>/bids`, `/lookups/bidding/...`).
 - **Auth:** every endpoint requires JWT (`Authorization: Bearer <token>`).
 - **JSON requests:** `Content-Type: application/json` (except attachment upload — `multipart/form-data`).
@@ -22,6 +22,9 @@
 
 | Date | Feature | Status |
 |------|---------|--------|
+| 2026-09-16 | **Proposal = output** (PJ) — building type / project type / impacted GSF / company on **intake**. Base Bid sheet shows them read-only; calculator stays editable. | **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)** · **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** |
+| 2026-09-16 | **Captain Settings crew** — `GET/PATCH /auth/team` picks **people** (`GET /connecteam/users`), not a pre-made Bid_Teams dropdown. First save creates their team. | **[FRONTEND_AUTH.md](./FRONTEND_AUTH.md)** |
+| 2026-09-15 | **Captain team** — `PATCH /auth/team`. Estimates auto-filters captain/AE by `user.teamId`. Assignment: pick captain (`GET /lookups/bidding/captains`) → `teamId` fills. | **[FRONTEND_BIDDING_DASHBOARD.md](./FRONTEND_BIDDING_DASHBOARD.md)** · **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** |
 | 2026-09-11 | **Estimates Excel export** — `GET /bids/export` (same filters as `GET /bids`). `.xlsx` download. | **[FRONTEND_BIDDING_DASHBOARD.md](./FRONTEND_BIDDING_DASHBOARD.md)** |
 | 2026-09-10 | **Role dashboards** — `GET /dashboard` (alias `GET /bids/my-plate`) is due / upcoming / assigned + messages. Estimates list is `GET /bids`. | **[FRONTEND_BIDDING_DASHBOARD.md](./FRONTEND_BIDDING_DASHBOARD.md)** |
 | 2026-09-10 | **Team edit** — `GET /bids` is not role-filtered. `canEdit` per row. Assign `teamId` on the user. | **This doc §3 + [FRONTEND_BIDDING_CONTEXT.md](./FRONTEND_BIDDING_CONTEXT.md)** |
@@ -71,7 +74,7 @@ Outcome is a **tab at the end of Pre**, not a one-shot button. Win → Lost → 
 
 ```text
 /dashboard                            GET /dashboard      (role widgets — not Estimates)
-/bidding                              GET /bids           (Estimates list — all bids, not the dashboard)
+/bidding                              GET /bids           (Estimates list — captain/AE = their team; admin = all)
 /bidding/new                          3 fields → POST → intake
 /bidding/[id]?stage=intake|assignment|estimating_setup|takeoff|proposal|post_bid|result
 /bidding/[id]?stage=award             only when workflow.showAward   ← POST
@@ -122,10 +125,10 @@ Outcome tab: **Complete & Hand Off** is off (`canComplete: false`). Change `outc
 | Stage | Bind | Notes |
 |-------|------|--------|
 | Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. Two project #s. `bidKind` (budget is a kind). `invitations[]` (`inviteBody`, `preferredContact`) + `documentLinks[]` (`checkAddenda`). Paste address in `line1`. **Hide `jobId`.** Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
-| Assignment | `process.assignment`, `takeoffAssignments` | Nick + PJ + bid clerk. `assignment.teamId` from `GET /lookups/bidding/teams`. Bid/no-bid, captain/AE/clerk, 1 or 2 people per scope. |
-| Estimating Setup | wage **decision**, PLA, OCIP, lifts, parking, `insulationSpecs`, **`specSheets`**, `technicalReview` | Wage **decision** ≠ wage **rate**. Construction type = `GET /lookups/bidding/building-types` (Followup buckets). Spec **sheet** = dropdown **rules** — **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**. |
+| Assignment | `process.assignment`, `takeoffAssignments` | Nick + PJ + bid clerk. Pick **captain** from `GET /lookups/bidding/captains` (`assignment.captainUserId`) — backend fills `assignment.teamId`. Bid/no-bid, AE/clerk, 1 or 2 people per scope. |
+| Estimating Setup | wage **decision**, PLA, OCIP, lifts, parking, `insulationSpecs`, **`specSheets`**, `technicalReview` | Wage **decision** ≠ wage **rate**. Spec **sheet** = dropdown **rules** — **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**. Building type / GSF are **intake**, not here. |
 | Takeoff | existing Specs/Mike + `takeoffAssignments.versions` | Never overwrite a takeoff file. New version each revision. Show `workflow.takeoffComparisons`. |
-| Proposal | existing Estimate + `estimateReview`, `proposalVersions`, `amendments`, `submission` | `+ Add` amendment (not a fixed 30 boxes). |
+| Proposal | existing Estimate (`baseBid` + `computed`) + `estimateReview`, `proposalVersions`, `amendments`, `submission` | **Output + calc.** `proposalEditor.firstHere` = schedule/money, wage rate, lifts, parking, Mike grid. `readOnly` = company / estimate # / bid name / building / project type / GSF / state / team / captain / AE / crew. PLA/CCIP/MBE also on Setup. `+ Add` amendment. **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)** |
 | Post-Bid | `process.intelligence`, GC/mechanical `stillBidding` | Follow-up, competitors. Still **Pre**. |
 | **Outcome** | `process.outcome` / `POST .../outcome` | Last Pre tab. Awarded / Lost / No bid / Cancelled / Postponed. **Change anytime.** |
 | Awarded / startup (**Post**) | `process.award`, `startup`, `contractTiers`, `jobId` | **Only if `workflow.showAward`.** Hidden if they switch away from awarded. Data stays. |
@@ -195,7 +198,9 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 | GET | `/lookups/our-entities` | **Reuse existing** — company list `{ id, name }[]` (GOEL / GOEL DC / DCB). Do **not** build a new one. |
 | GET | `/lookups/bidding/process-meta` | Lifecycle enums, field entry-phase, HQ tier example (**[FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md)**) |
 | GET / POST / PATCH / DELETE | `/lookups/bidding/wage-decisions` | Prevailing-wage **decision #** lookup (not calculator wage rates) |
-| GET | `/lookups/bidding/teams` | Teams with crew roles |
+| GET | `/lookups/bidding/teams` | Teams with crew roles + `captainUserId` |
+| GET | `/lookups/bidding/captains` | `App_Users` `role=captain` (not rejected/inactive). `{ userId, name, email, status, teamId, teamName }`. **`teamId` may be null — still show the row.** Not “who is logged in right now.” Empty only if no user has role captain. |
+| GET | `/lookups/bidding/contacts` | Settings people picker — login captains **and AEs/clerks** + Connecteam + Excel roster. `{ appUserId, connecteamUserId, name, email, role }[]`. Optional `?role=assistant_estimator`. No paging. |
 | GET | `/lookups/bidding/parties` | Intake directory `?role=owner\|architect\|mechanical\|invite_contact&q=&page=&pageSize=` → `{ items, total, page, pageSize }` |
 | GET | `/lookups/bidding/wage-rates` | Wage/fringe options |
 | GET | `/lookups/bidding/payroll-burden` | Burden constants |
@@ -218,13 +223,23 @@ All under `GET /lookups/bidding/*`. Use these to populate selects on the form.
 [
   {
     "id": 1, "teamName": "Wilder Rodriguez",
-    "captain": "Wilder Rodriguez", "bidClerk": "Hassan Riaz",
+    "captain": "Wilder Rodriguez", "captainUserId": 12, "bidClerk": "Hassan Riaz",
     "duct1": "John Carlo Orpilla", "duct2": null,
     "hydronic1": "Jonathan Bruce", "hydronic2": "Brian Angelo Limon",
     "plumbing1": "Hennan Berberio", "plumbing2": "Mark Chua"
   }
 ]
+
+// GET /lookups/bidding/captains  — login users with role=captain only (example row)
+[
+  { "userId": 12, "name": "Wilder Rodriguez", "firstName": "Wilder", "lastName": "Rodriguez",
+    "email": "wilder@goel.com", "teamId": 1, "teamName": "Wilder Rodriguez" }
+]
 ```
+Assignment: bind captain to `assignment.captainUserId` from that GET. Do **not** hardcode Wilder/Bil/Mike. If the array is empty, nobody has role captain yet. Save — `teamId` + `captain` name fill. Team-first still works (fills captain **only** if that team has a login captain).
+
+Captain’s own crew (**Settings → My team**): `GET/PATCH /auth/team` — pick people from `GET /lookups/bidding/contacts` (or `GET /auth/team` → `people`). Includes AEs / clerks / Excel Wilder-Bil-Mike crew, not captains-only. Not `GET /lookups/bidding/teams`.
+
 Team admin:
 - `POST /lookups/bidding/teams` body `{ "teamName": "New Team" }`
 - `DELETE /lookups/bidding/teams/:id` (soft remove)
@@ -316,7 +331,7 @@ Use when the user picks a wage rate to show **single-tier** burden + breakdown (
 | GET | `/bids/:id/activity` | Full change history + summary stats |
 | GET | `/dashboard` | **Role dashboard** (not Estimates). `{ title, hint, plateId, teamId, counts, groups, messages, notifications }`. `groups` = `due` / `upcoming` / `assigned`. |
 | GET | `/bids/my-plate` | Same payload as `GET /dashboard`. Prefer `/dashboard`. Register before `:id`. |
-| GET | `/bids?status=&entityId=&search=&processStage=&workType=&outcome=&ownerProjectNumber=&mechanicalEngineerProjectNumber=` | List. `search` also matches drawing name + both project #s. Exact # params for duplicate typeahead. Rows include `drawingName`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `relatedBidId`, `bidKind`, `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`. Hide Edit when `canEdit` is false. |
+| GET | `/bids?status=&entityId=&search=&processStage=&workType=&outcome=&ownerProjectNumber=&mechanicalEngineerProjectNumber=&teamId=` | List. Captain/AE with `user.teamId` auto-scoped to that crew (`teamId=all` to see everyone). `search` also matches drawing name + both project #s. Exact # params for duplicate typeahead. Rows include `drawingName`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `relatedBidId`, `bidKind`, `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`. Hide Edit when `canEdit` is false. |
 | GET | `/bids/export` | Excel of the same list. Same query params as `GET /bids`. Register before `:id`. `bidding:read`. `.xlsx` attachment `bids.xlsx`. |
 | POST | `/bids` | Create a draft (optional `process`) |
 | GET | `/bids/:id` | Full detail (inputs + `process` + `workflow` + last stored `computed`) |
@@ -807,7 +822,7 @@ All fields optional; send what the form has. **`baseBid` is passthrough** — an
 | `hoursPerDay` / `daysPerWeek` | number | schedule |
 | `durationMonths` / `startInMonths` | number | schedule (`startInMonths` = Excel B13) |
 | `bidDate` | string | `YYYY-MM-DD` |
-| `gsfOfBuilding` | number | |
+| `gsfOfBuilding` | number | **Copy** from `process.impactedGsf` for the engine. Do **not** edit GSF on Proposal (PJ: intake). |
 | `parking` | boolean | + `parkingCostPerDay`, `parkingPeoplePercent` (`1` = 100%) |
 | `liftsNeeded` | boolean | + `liftPercentage`, `liftCostPer4Weeks` |
 | `averageNoPeople` | number | Excel H7 / G7 crew size |
@@ -817,8 +832,8 @@ All fields optional; send what the form has. **`baseBid` is passthrough** — an
 | `wageRateLabel` | string | selected wage rate label (lookup) |
 | `materialEscalationPerYear` | number | e.g. `0.04` |
 | `laborRateCompositePerHour` | number | **D10** — client engine or manual; not `burdened-rate` |
-| `teamName` / `assistantEstimator` | string | |
-| `projectType` / `buildingType` / `preference` | string | from lookups |
+| `teamName` / `assistantEstimator` | string | Echo from assignment / team row. Do **not** pick a hardcoded team on Proposal. |
+| `projectType` / `buildingType` / `preference` | string | `projectType` / `buildingType` = intake (`constructionSubtype` / `constructionType`) — **show read-only**. `preference` is Setup MBE. |
 | `ccipCoversWc` / `citizenProject` / `apprenticeable` / `pla` | boolean | flags |
 
 ### System row (`systems[]`)
@@ -858,7 +873,7 @@ The client Excel engine is the source of truth, so you **do not need to call thi
 
 **App chrome and tabs: §0.** Then:
 
-1. **Estimates list:** `GET /bids` — full list. **Dashboard (other page):** `GET /dashboard`. Do not mix.
+1. **Estimates list:** `GET /bids` — admin/clerk full list; captain/AE their team. **Dashboard (other page):** `GET /dashboard`. Do not mix.
 2. **On bid open:** `GET /bids/:id` → hydrate `process`, **`workflow`**, `baseBid`, Specs if takeoff, attachments.
 2. **Company info:** Proposal/Estimate (§3.5). Job pick → prefill, PATCH `companyInfo`.
 3. **Activity log:** `activitySummary` on chrome; timeline `GET /bids/:id/activity` (§3.6). Handoff/outcome are their own actions.

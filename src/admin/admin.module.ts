@@ -12,9 +12,10 @@ import { AdminSmtpTestController } from './admin-smtp-test.controller';
 import { AdminRbacController } from './admin-rbac.controller';
 import { SitelineModule } from '../siteline/siteline.module';
 import { AdminService } from './admin.service';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [DatabaseModule, EmailTemplateModule, AppSettingsModule, SitelineModule, AuthModule],
+  imports: [DatabaseModule, UsersModule, EmailTemplateModule, AppSettingsModule, SitelineModule, AuthModule],
   controllers: [
     AdminController,
     AdminEmailTemplatesController,

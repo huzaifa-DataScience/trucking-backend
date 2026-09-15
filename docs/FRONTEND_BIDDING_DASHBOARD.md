@@ -1,7 +1,7 @@
 # Role dashboards — Frontend Handoff
 
 **Give this file to FE.**  
-**Last updated:** 2026-09-11  
+**Last updated:** 2026-09-15  
 **Chat click-through:** [FRONTEND_CONNECTEAM_CHAT.md](./FRONTEND_CONNECTEAM_CHAT.md)
 
 **Two screens. Do not merge them.**
@@ -19,11 +19,13 @@ JWT on every call. Do **not** rebuild bidding engines.
 
 ## Bidding list (`/bidding` · Estimates)
 
-**`GET /bids`.** One table. Same rows for every login. Backend does **not** filter by role.
+**`GET /bids`.** One table.
 
-**`admin` / `super_admin`:** show **every bid** (every stage / outcome). Always `canEdit: true`. Do not hide Edit. Do not filter by `processStage`.
+**`admin` / `super_admin` / `bid_clerk`:** show **every bid** (every stage / outcome). Admin always `canEdit: true`. Do not hide Edit. Do not filter by `processStage`. Optional `?teamId=2` still works if you want a team-scoped admin view.
 
-Other roles: still the **full list**. Hide Edit / Save only when `row.canEdit === false` (other team’s bid). They can still open the row.
+**`captain` / `assistant_estimator` / `user`:** after they have a crew (`user.teamId` from **profile**), Estimates is **that team only**. Same for `GET /bids/export`. No team yet → full list. `?teamId=all` shows every bid.
+
+Do **not** put team setup on Estimates. **Settings → My team** — [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) (`GET/PATCH /auth/team`, contacts `GET /lookups/bidding/contacts`).
 
 ```
 /bidding          GET /bids     ← Estimates list (this page)
@@ -31,9 +33,9 @@ Other roles: still the **full list**. Hide Edit / Save only when `row.canEdit ==
 /bidding/[id]?stage=…
 ```
 
-Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`.
+Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`).
 
-**Export:** `GET /bids/export` — same query params, same full list (not role-filtered). Returns `.xlsx` (`Content-Disposition: attachment; filename="bids.xlsx"`). Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
+**Export:** `GET /bids/export` — same query params as `GET /bids` (including captain auto-team). Returns `.xlsx` (`Content-Disposition: attachment; filename="bids.xlsx"`). Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
 
 Row: `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`, `takeoffAssigned`, `takeoffReceived`, …
 
@@ -44,7 +46,7 @@ Row: `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`, `takeoffAssigned`, `tak
 | Bid `teamId` set | Only `user.teamId === row.teamId` |
 
 Team label: `GET /lookups/bidding/teams` + `row.teamId`.  
-Assign crew: `PATCH /admin/users/:id` `{ "teamId" }`.
+Captain sets crew in **Settings → My team**: `GET/PATCH /auth/team` (people from `GET /connecteam/users`). Admin can still `PATCH /admin/users/:id` `{ "teamId" }`.
 
 **If Estimates still looks like “Estimating management / Assignment waiting / Post-bid / Empty queue” — that is wrong. Replace with one full bid table.**
 
@@ -142,7 +144,7 @@ Login `user.teamId` / `role` / `permissions[]`: [FRONTEND_AUTH.md](./FRONTEND_AU
 ## Do not
 
 - Put `GET /dashboard` or `GET /bids/my-plate` on the Estimates / bidding list
-- Filter `GET /bids` by role or stage for admin
+- Filter `GET /bids` by role or stage for **admin** (captain/AE *are* team-filtered — that is correct)
 - Keep “Assignment waiting” + “Post-bid” as the Estimates page
 - Use `GET /bids` as the dashboard
 - Call `GET /bids/my-plate` as `GET /bids/:id`

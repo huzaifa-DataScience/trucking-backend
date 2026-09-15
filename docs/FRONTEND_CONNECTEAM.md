@@ -191,8 +191,11 @@ All list endpoints support pagination where noted. Response field names are **ca
 ### 5.1 Users
 
 ```
+GET /connecteam/users?pageSize=all
 GET /connecteam/users?search=&page=1&pageSize=50&includeArchived=false
 ```
+
+Captain Settings dropdown (and any people picker that cannot page): **`?pageSize=all`** — every non-archived user, `users.length === total`. Numeric `page` / `pageSize` still pages (max 200) for tables.
 
 ```json
 {
