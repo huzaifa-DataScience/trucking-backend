@@ -62,4 +62,19 @@ export class ExcelExportService {
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
+
+  /** Header+keyed rows (bidding list, etc.). */
+  async exportSheet(
+    columns: { header: string; key: string; width?: number }[],
+    rows: Record<string, unknown>[],
+    sheetName = 'Sheet1',
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(sheetName);
+    sheet.columns = columns.map((c) => ({ header: c.header, key: c.key, width: c.width ?? 16 }));
+    sheet.addRows(rows);
+    sheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
 }

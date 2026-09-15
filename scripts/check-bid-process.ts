@@ -12,8 +12,10 @@ import {
   classifyInsulationFamily,
   classifySpecLayer,
   emptyProcess,
+  fillProjectAddress,
   intakeCompleteBlocked,
   mergeProcess,
+  parseUsAddress,
   normalizeProjectNumber,
   ourTierIndex,
   parseProcess,
@@ -25,6 +27,17 @@ import {
   takeoffComparisons,
   workflowChrome,
 } from '../src/bidding/process/bid-process';
+import {
+  BID_LIST_EXCEL_COLUMNS,
+  bidListExcelRow,
+  canEditBid,
+  dueBucket,
+  fillPlateGroups,
+  isNewBid,
+  plateForRole,
+  todayYmd,
+} from '../src/bidding/process/bid-plate';
+import { APP_ROLE_IDS } from '../src/auth/rbac-catalog';
 import {
   fillSpecSheetCodes,
   implyMaterialFields,
@@ -248,6 +261,36 @@ const withSheet = mergeProcess(emptyProcess(), {
 assert(withSheet.specSheets[0].rows[0].sizeMax === 1.5, 'spec row size saved');
 assert(parseProcess(JSON.parse(JSON.stringify(withSheet))).specSheets[0].kind === 'plumbing', 'spec sheet round-trip');
 
+const prefOk = mergeProcess(emptyProcess(), {
+  specSheets: [
+    {
+      id: 'mfr',
+      kind: 'plumbing',
+      rows: [
+        {
+          id: 'r1',
+          manufacturersAllowed: ['owens_corning', 'certainteed'],
+          manufacturerPreferred: 'certainteed',
+          sizeMin: 0,
+          sizeMax: 999,
+        },
+      ],
+    },
+  ],
+});
+assert(prefOk.specSheets[0].rows[0].manufacturerPreferred === 'certainteed', 'preferred in allowed kept');
+assert(prefOk.specSheets[0].rows[0].sizeMax === 999, 'Mike 999 sizeMax');
+const prefDrop = mergeProcess(emptyProcess(), {
+  specSheets: [
+    {
+      id: 'mfr2',
+      kind: 'plumbing',
+      rows: [{ id: 'r1', manufacturersAllowed: ['owens_corning'], manufacturerPreferred: 'johns_manville' }],
+    },
+  ],
+});
+assert(prefDrop.specSheets[0].rows[0].manufacturerPreferred === null, 'preferred not in allowed dropped');
+
 const fg = implyMaterialFields('Fiberglass with ASJ');
 assert(fg.facing === 'ASJ' && fg.thicknessIn == null, 'pipe material facing from name');
 const wrap = implyMaterialFields('2" 3/4lb Duct Wrap');
@@ -341,6 +384,13 @@ try {
 }
 assert(threw, 'sizeMax < sizeMin rejected');
 
+const clampedSize = mergeProcess(emptyProcess(), {
+  specSheets: [{ id: 'x', kind: 'hydronic', rows: [{ id: 'a', sizeMin: 0, sizeMax: 5000, widthIn: 120 }] }],
+});
+assert(clampedSize.specSheets[0].rows[0].sizeMin === 0, 'size min 0 kept');
+assert(clampedSize.specSheets[0].rows[0].sizeMax === 999, 'size max clamped to 999');
+assert(clampedSize.specSheets[0].rows[0].widthIn === 120, 'width stored');
+
 threw = false;
 try {
   mergeProcess(emptyProcess(), {
@@ -376,6 +426,17 @@ assert(meta.specSheetEditor.mikeCodeEntry.loading, 'Mike code Go has a loader');
 assert(meta.specSheetEditor.loading.noFetch.includes('insulationFamily'), 'family list is local — no spinner');
 assert(meta.specSheetEditor.buyAmericanBeforeSheet === true, 'Buy American before spec table');
 assert(meta.specSheetEditor.layers.length === 2, 'two layers');
+assert(meta.specSheetEditor.copyRow === true, 'copy spec row');
+assert(meta.specSheetEditor.stackSheets === true, 'stack sheets not add-tab');
+assert(meta.specSheetEditor.confirmDeleteSheet === true, 'confirm before delete sheet');
+assert(meta.specSheetEditor.preferredFromAllowedOnly === true, 'preferred from allowed');
+assert(meta.specSheetEditor.mikeSizeMax === 999, 'Mike 999');
+assert(meta.specSheetEditor.mikeSizeMin === 0, 'size min 0');
+assert(meta.specSheetEditor.sizeRange.min === 0 && meta.specSheetEditor.sizeRange.max === 999, 'size/width 0–999');
+assert(meta.specSheetEditor.sizeRange.fields.includes('widthIn'), 'width uses same range');
+assert(meta.specSheetEditor.manufacturers.some((m: { value: string }) => m.value === 'certainteed'), 'CertainTeed');
+assert(meta.setupEditor.constructionType.lookup.includes('building-types'), 'setup construction type = Followup buckets');
+assert(meta.defaults.equipmentAndVrfTeam === 'hydronic', 'VRF/equipment hydronic team');
 assert(meta.specSheetEditor.sizeModeByKind.duct === 'circumference', 'duct uses circumference');
 assert(Array.isArray(meta.specSheetEditor.sizes) && meta.specSheetEditor.sizes.length === 0, 'no global size list');
 assert(Array.isArray(meta.specSheetEditor.thicknesses) && meta.specSheetEditor.thicknesses.length === 0, 'no global thick list');
@@ -388,11 +449,13 @@ assert(meta.intakeEditor.budgetIsBidKind === true, 'budget is a bid kind');
 assert(meta.intakeEditor.bidNameFrom === 'drawingName', 'bid name from drawings');
 assert(meta.intakeEditor.teamField === 'assignment.teamId', 'team from teams lookup');
 assert(meta.intakeEditor.partiesLookup.includes('/lookups/bidding/parties'), 'parties lookup');
+assert(meta.intakeEditor.partiesLookup.includes('pageSize='), 'parties lookup paginated');
 assert(meta.intakeEditor.partyRoles.includes('invite_contact'), 'invite_contact role');
 assert(meta.intakeEditor.eorLabel.includes('Engineer of Record'), 'EOR label');
 assert(meta.intakeEditor.inviteCompanyFirst === true, 'invite company first');
 
 assert(mergeProcess(emptyProcess(), { buyAmerican: true }).buyAmerican === true, 'buy American flag');
+assert(mergeProcess(emptyProcess(), { aPlus: true }).aPlus === true, 'Setup A+ flag');
 
 assert(
   partyDedupeKey('mechanical', { name: 'WSP', company: null, contactName: null, email: 'a@wsp.com', phone: null }) ===
@@ -503,5 +566,145 @@ assert(absorbed.drawingName === 'Keep Job', 'absorb keeps drawing name');
 
 assert(meta.intakeEditor.bidNameLockedToDrawingName === true, 'bid name locked');
 assert(meta.intakeEditor.linkDuplicate.includes('link-duplicate'), 'link-duplicate in meta');
+assert(meta.intakeEditor.jobIdOnIntake === 'skip_until_awarded', 'jobId skipped on intake');
+assert(meta.intakeEditor.hideJobIdOnIntake === true, 'hide job picker on intake');
+assert(meta.intakeEditor.fillAddressFromLine1 === true, 'paste address fills city/state/zip');
+assert(meta.intakeEditor.preferredContact.ui === 'dropdown', 'preferred contact is dropdown');
+assert(
+  meta.intakeEditor.preferredContact.options.some((o: { value: string }) => o.value === 'email') &&
+    meta.intakeEditor.preferredContact.options.some((o: { value: string }) => o.value === 'phone'),
+  'preferred contact email/phone',
+);
+assert(meta.intakeEditor.inviteBody.includes('inviteBody'), 'invite body in meta');
+assert(meta.intakeEditor.checkAddenda.includes('checkAddenda'), 'checkAddenda in meta');
+assert(meta.intakeEditor.assignmentOwners.includes('bid clerk'), 'clerk may assign');
+assert(meta.defaults.assignmentOwner === 'nick_pj_and_clerk', 'defaults assignment owner includes clerk');
+assert(meta.stages.find((s: { id: string }) => s.id === 'assignment')?.who.includes('bid clerk'), 'assignment who includes clerk');
+
+const parsedAddr = parseUsAddress('123 Main St, Baltimore, MD 21201');
+assert(parsedAddr.city === 'Baltimore' && parsedAddr.state === 'MD' && parsedAddr.zip === '21201', 'parse US address');
+const keptLine = fillProjectAddress({
+  line1: '123 Main St, Baltimore, MD 21201',
+  line2: null,
+  city: null,
+  state: null,
+  zip: null,
+});
+assert(keptLine.line1 === '123 Main St, Baltimore, MD 21201', 'address fill keeps line1');
+assert(keptLine.city === 'Baltimore' && keptLine.state === 'MD' && keptLine.zip === '21201', 'address fill city/state/zip');
+const keepCity = fillProjectAddress({
+  line1: '123 Main St, Baltimore, MD 21201',
+  line2: null,
+  city: 'Rockville',
+  state: 'MD',
+  zip: null,
+});
+assert(keepCity.city === 'Rockville' && keepCity.zip === '21201', 'address fill does not overwrite city');
+
+const intakePj = mergeProcess(emptyProcess(), {
+  projectAddress: { line1: '800 N Charles St, Baltimore, MD 21201' },
+  owner: { name: 'JHU', email: 'a@jhu.edu', preferredContact: 'email' },
+  documentLinks: [{ url: 'https://owner.example', label: 'Federal set', source: 'federal', checkAddenda: true }],
+  invitations: [
+    {
+      receivedAt: '2026-08-20',
+      contact: { name: 'Pat', phone: '301-555-0100', preferredContact: 'phone' },
+      inviteBody: 'Hi — please bid Weinberg…',
+    },
+  ],
+});
+assert(intakePj.projectAddress.city === 'Baltimore' && intakePj.projectAddress.state === 'MD', 'PATCH address autofill');
+assert(intakePj.owner.preferredContact === 'email' && intakePj.owner.preferredContactValue === 'a@jhu.edu', 'owner preferred shows email');
+assert(
+  intakePj.invitations[0].contact.preferredContact === 'phone' &&
+    intakePj.invitations[0].contact.preferredContactValue === '301-555-0100',
+  'invite preferred shows phone',
+);
+assert(intakePj.invitations[0].inviteBody === 'Hi — please bid Weinberg…', 'inviteBody stored');
+assert(intakePj.documentLinks[0].checkAddenda === true, 'checkAddenda stored');
+assert(intakePj.invitations[0].notes === null, 'inviteBody is not notes');
+
+const sticky = mergeProcess(emptyProcess(), { notes: '  clerk pad  ' });
+assert(sticky.notes === 'clerk pad', 'process.notes sticky persist');
+const notesGone = mergeProcess(sticky, { notes: '' });
+assert(notesGone.notes === null, 'empty notes clears');
+
+const clipped = mergeProcess(emptyProcess(), {
+  invitations: [{ contact: { name: 'Pat' }, inviteBody: 'x'.repeat(50_001) }],
+});
+assert(clipped.invitations[0].inviteBody?.length === 50_000, 'inviteBody capped');
+
+const now = new Date('2026-09-10T12:00:00Z');
+assert(isNewBid('2026-09-08T00:00:00Z', null, now) === true, 'isNew within 7d');
+assert(isNewBid('2026-08-01T00:00:00Z', null, now) === false, 'isNew older than 7d');
+assert(canEditBid({ role: 'admin' }, 3) === true, 'admin edits any team');
+assert(canEditBid({ role: 'super_admin' }, 3) === true, 'super_admin edits any team');
+assert(canEditBid({ role: 'captain', bidTeamId: 2 }, null) === true, 'unassigned bid anyone edits');
+assert(canEditBid({ role: 'captain', bidTeamId: 2 }, 2) === true, 'same team edits');
+assert(canEditBid({ role: 'captain', bidTeamId: 2 }, 3) === false, 'other team cannot edit');
+assert(canEditBid({ role: 'assistant_estimator', bidTeamId: null }, 3) === false, 'no team cannot edit assigned');
+assert(plateForRole('bid_clerk').plateId === 'clerk', 'clerk plate');
+assert(plateForRole('admin').plateId === 'admin', 'admin plate');
+assert(plateForRole('captain').groups.map((g) => g.id).join() === 'due,upcoming,assigned', 'captain widgets');
+assert(APP_ROLE_IDS.every((r) => plateForRole(r).groups.length === 3), 'every role has due/upcoming/assigned');
+
+const today = todayYmd(new Date(2026, 8, 10));
+assert(today === '2026-09-10', 'todayYmd local');
+assert(dueBucket('2026-09-09', today) === 'overdue', 'overdue');
+assert(dueBucket('2026-09-10', today) === 'due', 'due today');
+assert(dueBucket('2026-09-12', today) === 'upcoming', 'upcoming');
+assert(dueBucket(null, today) === 'none', 'no date');
+
+const sample = [
+  { id: '1', processStage: 'intake', outcomeStatus: 'open', dueDate: '2026-09-10', teamId: null },
+  { id: '2', processStage: 'assignment', outcomeStatus: 'open', dueDate: '2026-09-12', teamId: null },
+  { id: '3', processStage: 'takeoff', outcomeStatus: 'open', dueDate: '2026-09-20', teamId: 2 },
+  { id: '4', processStage: 'result', outcomeStatus: 'awarded', dueDate: '2026-09-11', teamId: 2 },
+  { id: '5', processStage: 'estimating_setup', outcomeStatus: 'open', dueDate: '2026-09-10', teamId: 2 },
+];
+const clerk = fillPlateGroups('bid_clerk', sample, { now: new Date(2026, 8, 10) });
+assert(clerk.find((g) => g.id === 'assigned')?.rows.map((r) => r.id).join() === '1', 'clerk assigned = intake');
+assert(clerk.find((g) => g.id === 'due')?.rows.map((r) => r.id).join() === '1', 'clerk due = intake due today');
+assert(plateForRole('admin').groups.find((g) => g.id === 'assigned')?.title === 'All bids', 'admin list title');
+const nick = fillPlateGroups('admin', sample, { now: new Date(2026, 8, 10) });
+assert(
+  nick.find((g) => g.id === 'assigned')?.rows.map((r) => r.id).sort().join() === '1,2,3,4,5',
+  'admin assigned = every bid',
+);
+assert(nick.find((g) => g.id === 'due')?.rows.some((r) => r.id === '1'), 'admin due includes intake');
+const cap = fillPlateGroups('captain', sample, { bidTeamId: 2, now: new Date(2026, 8, 10) });
+assert(cap.find((g) => g.id === 'assigned')?.rows.map((r) => r.id).sort().join() === '3,5', 'captain team estimating');
+const ae = fillPlateGroups('assistant_estimator', sample, { bidTeamId: 2, now: new Date(2026, 8, 10) });
+assert(ae.find((g) => g.id === 'due')?.rows.map((r) => r.id).join() === '5', 'AE due this week on team');
+const pm = fillPlateGroups('project_manager', sample, { now: new Date(2026, 8, 10) });
+assert(pm.find((g) => g.id === 'assigned')?.rows.map((r) => r.id).join() === '4', 'PM assigned = awarded');
+
+const excel = bidListExcelRow(
+  {
+    estimateNumber: 'B-100',
+    bidName: 'Weinberg',
+    companyName: 'Goel',
+    clientCompanyName: 'JHU',
+    dueDate: '2026-09-10',
+    dueTime: '14:00',
+    processStage: 'takeoff',
+    outcomeStatus: 'open',
+    status: 'draft',
+    workType: 'duct',
+    bidKind: 'hard',
+    ownerProjectNumber: 'OWN-1',
+    mechanicalEngineerProjectNumber: 'ME-2',
+    isNew: true,
+  },
+  'Team Wilder',
+);
+assert(excel.stage === 'Takeoff & Estimate', 'excel stage label');
+assert(excel.teamName === 'Team Wilder', 'excel team name');
+assert(excel.isNew === 'Yes', 'excel new flag');
+assert(BID_LIST_EXCEL_COLUMNS.every((c) => c.key in excel), 'excel columns covered');
+
+assert(Array.isArray(meta.dashboardPlates) && meta.dashboardPlates.length === APP_ROLE_IDS.length, 'process-meta plates');
+assert(meta.dashboardPlates.some((p: { plateId: string }) => p.plateId === 'clerk'), 'meta clerk plate');
+assert(!meta.notNow.includes('role dashboard / notifications'), 'dashboard no longer notNow');
 
 console.log('check-bid-process: ok');

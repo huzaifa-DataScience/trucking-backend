@@ -1,9 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -14,14 +17,27 @@ import {
   BidState,
   Job,
 } from '../database/entities';
+import { ExcelExportService } from '../common/excel-export.service';
 import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
 import { CalculateBidDto, CreateBidDto, HandoffBidDto, PatchBidDto, SetOutcomeDto } from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingActivityService } from './bidding-activity.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
+import { ConnecteamChatService } from '../connecteam/connecteam-chat.service';
+import {
+  BID_LIST_EXCEL_COLUMNS,
+  bidListExcelRow,
+  canEditBid,
+  dashboardNotifications,
+  fillPlateGroups,
+  isNewBid,
+  plateForRole,
+  type BidEditor,
+} from './process/bid-plate';
 import {
   BidProcessError,
   absorbIntake,
@@ -103,6 +119,18 @@ const assertFiniteNumbers = (value: unknown, label: string): void => {
   }
 };
 
+type BidListQuery = {
+  status?: string;
+  entityId?: number;
+  search?: string;
+  processStage?: string;
+  workType?: string;
+  outcome?: string;
+  ownerProjectNumber?: string;
+  mechanicalEngineerProjectNumber?: string;
+  editor?: BidEditor;
+};
+
 @Injectable()
 export class BiddingService {
   constructor(
@@ -113,9 +141,13 @@ export class BiddingService {
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
     private readonly attachments: BiddingAttachmentsService,
+    @Inject(forwardRef(() => BiddingCommentsService))
+    private readonly comments: BiddingCommentsService,
     private readonly activity: BiddingActivityService,
     private readonly specs: SpecsService,
     private readonly lookups: BiddingLookupsService,
+    private readonly chat: ConnecteamChatService,
+    private readonly excelExport: ExcelExportService,
   ) {}
 
   /** Auto-fill Trimble project from bid.job → JobNumber match (unless client set trimble explicitly). */
@@ -130,16 +162,7 @@ export class BiddingService {
     if (resolved != null) bid.trimbleProjectId = resolved;
   }
 
-  async list(params: {
-    status?: string;
-    entityId?: number;
-    search?: string;
-    processStage?: string;
-    workType?: string;
-    outcome?: string;
-    ownerProjectNumber?: string;
-    mechanicalEngineerProjectNumber?: string;
-  }) {
+  async list(params: BidListQuery) {
     const qb = this.bidRepo
       .createQueryBuilder('b')
       .leftJoinAndSelect('b.ourEntity', 'e')
@@ -186,7 +209,76 @@ export class BiddingService {
         : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
     const attachmentCounts = await this.attachments.countByBidIds(rows.map((r) => r.id));
-    return rows.map((b) => this.toSummary(b, contentByBid.get(b.id), (attachmentCounts.get(b.id) ?? 0) > 0));
+    return rows.map((b) =>
+      this.toSummary(b, contentByBid.get(b.id), (attachmentCounts.get(b.id) ?? 0) > 0, params.editor),
+    );
+  }
+
+  /** Same rows/filters as `list()`. Full company list — not role-filtered. */
+  async exportList(params: BidListQuery): Promise<Buffer> {
+    const rows = await this.list(params);
+    const teams = await this.lookups.getTeams();
+    const teamName = new Map(teams.map((t) => [t.id, t.teamName]));
+    return this.excelExport.exportSheet(
+      BID_LIST_EXCEL_COLUMNS,
+      rows.map((r) => bidListExcelRow(r, r.teamId != null ? teamName.get(r.teamId) ?? null : null)),
+      'Bids',
+    );
+  }
+
+  /** Role home: due / upcoming / assigned for this login + chat unread. Full list stays on GET /bids. */
+  async myPlate(user: BidEditor) {
+    const plate = plateForRole(user.role);
+    const rows = await this.list({ editor: user });
+    const groups = fillPlateGroups(user.role, rows, { bidTeamId: user.bidTeamId ?? null });
+    const messages =
+      user.id != null
+        ? await this.chat.inboxPreview(user.id)
+        : { totalUnread: 0, items: [] };
+    const mentions =
+      user.id != null ? await this.comments.unreadMentions(user.id) : [];
+    const notifications = [
+      ...mentions.map((m) => ({
+        kind: 'comment_mention' as const,
+        title: m.title,
+        body: m.body,
+        bidId: String(m.bidId),
+        commentId: m.commentId,
+        at: m.at,
+      })),
+      ...dashboardNotifications(groups, messages.items),
+    ].slice(0, 15);
+    return {
+      role: plate.role,
+      plateId: plate.plateId,
+      title: plate.title,
+      hint: plate.hint,
+      teamId: user.bidTeamId ?? null,
+      counts: {
+        due: groups.find((g) => g.id === 'due')?.rows.length ?? 0,
+        upcoming: groups.find((g) => g.id === 'upcoming')?.rows.length ?? 0,
+        assigned: groups.find((g) => g.id === 'assigned')?.rows.length ?? 0,
+        unreadMessages: messages.totalUnread,
+        notifications: notifications.length,
+      },
+      groups,
+      messages,
+      notifications,
+    };
+  }
+
+  async assertUserCanEdit(bidId: number, editor?: BidEditor) {
+    if (!editor?.role) return;
+    const bid = await this.bidRepo.findOne({ where: { id: bidId, isDeleted: false } });
+    if (!bid) throw new NotFoundException(`Bid ${bidId} not found`);
+    const content = await this.contentRepo.findOne({ where: { bidId } });
+    if (!canEditBid(editor, this.teamIdFromContent(content))) {
+      throw new ForbiddenException('Only the assigned team can edit this bid');
+    }
+  }
+
+  private teamIdFromContent(content?: BidContent | null): number | null {
+    return parseProcess(parseJson(content?.processJson ?? null, null)).assignment.teamId;
   }
 
   async getCompanyInfoPrefillFromJob(jobId: number): Promise<Record<string, unknown>> {
@@ -294,7 +386,7 @@ export class BiddingService {
     }
   }
 
-  async getDetail(id: number) {
+  async getDetail(id: number, editor?: BidEditor, opts?: { skipSpecCodes?: boolean }) {
     const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false }, relations: ['ourEntity'] });
     if (!bid) throw new NotFoundException(`Bid ${id} not found`);
     const content = await this.contentRepo.findOne({ where: { bidId: id } });
@@ -308,10 +400,10 @@ export class BiddingService {
       (await this.snapshotRepo.findOne({ where: { bidId: id }, order: { id: 'DESC' } }));
 
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
-    await this.specs.applySpecSheetCodes(process);
+    if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
     const attachments = await this.attachments.listForBid(id);
     return {
-      ...this.toSummary(bid, content, attachments.length > 0),
+      ...this.toSummary(bid, content, attachments.length > 0, editor),
       jobId: bid.jobId,
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
@@ -367,19 +459,34 @@ export class BiddingService {
     let content = await this.contentRepo.findOne({ where: { bidId: id } });
     const contentBefore = content ? { ...content } : null;
     if (!content) content = this.contentRepo.create({ bidId: id });
+    const existingProcess = parseProcess(parseJson(content.processJson ?? null, null));
     const processNow =
       dto.process !== undefined
-        ? this.mergeProcessSafe(parseProcess(parseJson(content.processJson ?? null, null)), dto.process)
-        : parseProcess(parseJson(content.processJson ?? null, null));
+        ? this.mergeProcessSafe(existingProcess, dto.process)
+        : existingProcess;
+    const prevBidName = bid.bidName;
+    const prevEstimate = bid.estimateNumber;
     if (processNow.drawingName) bid.bidName = processNow.drawingName;
     else if (dto.bidName !== undefined) bid.bidName = dto.bidName ?? null;
-    await this.assertUniqueOpportunity({
-      excludeId: id,
-      estimateNumber: dto.estimateNumber ?? bid.estimateNumber,
-      bidName: bid.bidName,
-      ownerProjectNumber: processNow.ownerProjectNumber,
-      mechanicalEngineerProjectNumber: processNow.mechanicalEngineerProjectNumber,
-    });
+    const nextEstimate = dto.estimateNumber ?? bid.estimateNumber;
+    // Spec-sheet saves send process without changing bid # / name / title-block #s.
+    // Skip the JSON_VALUE scans on every Bid_Content row.
+    if (
+      (nextEstimate ?? '').trim().toLowerCase() !== (prevEstimate ?? '').trim().toLowerCase() ||
+      (bid.bidName ?? '').trim().toLowerCase() !== (prevBidName ?? '').trim().toLowerCase() ||
+      normalizeProjectNumber(processNow.ownerProjectNumber) !==
+        normalizeProjectNumber(existingProcess.ownerProjectNumber) ||
+      normalizeProjectNumber(processNow.mechanicalEngineerProjectNumber) !==
+        normalizeProjectNumber(existingProcess.mechanicalEngineerProjectNumber)
+    ) {
+      await this.assertUniqueOpportunity({
+        excludeId: id,
+        estimateNumber: nextEstimate,
+        bidName: bid.bidName,
+        ownerProjectNumber: processNow.ownerProjectNumber,
+        mechanicalEngineerProjectNumber: processNow.mechanicalEngineerProjectNumber,
+      });
+    }
     if (dto.bidDate !== undefined) bid.bidDate = dto.bidDate ? new Date(dto.bidDate) : null;
     if (dto.submitDate !== undefined) bid.submitDate = dto.submitDate ? new Date(dto.submitDate) : null;
     if (dto.timeEstimate !== undefined) {
@@ -395,7 +502,6 @@ export class BiddingService {
     }
     bid.updatedAt = new Date();
     bid.updatedByUserId = userId ?? null;
-    await this.bidRepo.save(bid);
 
     if (dto.baseBid !== undefined) {
       assertFiniteNumbers(dto.baseBid, 'baseBid');
@@ -412,16 +518,15 @@ export class BiddingService {
       content.companyInfoJson = JSON.stringify({ ...existing, ...dto.companyInfo });
     }
     if (dto.process !== undefined) {
-      const merged = processNow;
-      await this.specs.applySpecSheetCodes(merged);
-      content.processJson = JSON.stringify(merged);
+      await this.specs.applySpecSheetCodes(processNow);
+      content.processJson = JSON.stringify(processNow);
       content.inputsSchemaVer = Math.max(Number(content.inputsSchemaVer) || 1, 2);
-      bid.processStage = merged.stage;
-      bid.outcomeStatus = merged.outcome;
-      bid.workType = merged.workType;
-      await this.bidRepo.save(bid);
+      bid.processStage = processNow.stage;
+      bid.outcomeStatus = processNow.outcome;
+      bid.workType = processNow.workType;
     }
     content.updatedAt = new Date();
+    await this.bidRepo.save(bid);
     await this.contentRepo.save(content);
 
     if (dto.process !== undefined) await this.lookups.upsertFromProcess(processNow);
@@ -442,7 +547,7 @@ export class BiddingService {
       content,
     );
 
-    return this.getDetail(id);
+    return this.getDetail(id, undefined, { skipSpecCodes: dto.process !== undefined });
   }
 
   async handoff(id: number, dto: HandoffBidDto, userId?: number) {
@@ -615,11 +720,14 @@ export class BiddingService {
     return result;
   }
 
-  private toSummary(bid: Bid, content?: BidContent | null, hasAttachments = false) {
+  private toSummary(bid: Bid, content?: BidContent | null, hasAttachments = false, editor?: BidEditor) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     const ad = process.additionalDetails;
     const sa = process.salesActivities;
+    const createdAt = bid.createdAt instanceof Date ? bid.createdAt.toISOString() : bid.createdAt;
+    const updatedAt = bid.updatedAt instanceof Date ? bid.updatedAt.toISOString() : bid.updatedAt;
+    const teamId = process.assignment.teamId;
     return {
       id: String(bid.id),
       estimateNumber: bid.estimateNumber,
@@ -658,7 +766,6 @@ export class BiddingService {
       assistantEstimator: process.assignment?.assistantEstimator ?? null,
       /** PJ estimate grand total, mirrored from the latest client calc snapshot. */
       baseBidAmount: bid.baseBidAmount != null ? Number(bid.baseBidAmount) : null,
-      updatedAt: bid.updatedAt instanceof Date ? bid.updatedAt.toISOString() : bid.updatedAt,
 
       // --- FollowupCRM filter-parity fields (flattened from process.additionalDetails / .salesActivities) ---
       ownerName: process.owner?.name ?? null,
@@ -723,6 +830,16 @@ export class BiddingService {
       prequalificationPackage: sa?.prequalificationPackage ?? null,
       mandatoryPreBid: sa?.mandatoryPreBid ?? null,
       hasAttachments,
+      dueTime: process.dueTime,
+      takeoffAssigned: process.takeoffAssignments.length,
+      takeoffReceived: process.takeoffAssignments.filter(
+        (a) => (a.versions?.length ?? 0) > 0 || a.finalQuantity != null,
+      ).length,
+      teamId,
+      createdAt,
+      updatedAt,
+      isNew: isNewBid(updatedAt, createdAt),
+      canEdit: editor ? canEditBid(editor, teamId) : true,
     };
   }
 

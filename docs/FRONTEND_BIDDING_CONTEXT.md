@@ -1,12 +1,12 @@
 # Bidding frontend — context for the FE agent
 
 **Who:** Frontend (human or AI). Read this **before** any other bidding doc.  
-**Last updated:** 2026-08-25  
+**Last updated:** 2026-09-11  
 **Backend:** live NestJS. JWT on every call.
 
 You are building the **bidding UI**. Backend already computes Specs, production hours, and workflow gates. **Do not rebuild those engines.** Wrap existing screens in the PDF stage chrome. Incomplete save is allowed.
 
-**Hand FE these two files:** [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) (Setup cascade — 25 Aug) and [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md) (Stage 1).
+**Hand FE first:** [FRONTEND_BIDDING_DASHBOARD.md](./FRONTEND_BIDDING_DASHBOARD.md) (**dashboard ≠ Estimates list**). Then [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) and [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
 
 Repo of truth is this backend `docs/` folder — not an old chat, not FortuneSheet screenshots.
 
@@ -15,9 +15,10 @@ Repo of truth is this backend `docs/` folder — not an old chat, not FortuneShe
 ## Read in this order
 
 1. [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) — JWT on every call
-2. [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) **§0 first** — app shell, stages, handoff, outcome. This is the IA. Do not invent a second navigation.
-3. [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md) — `process` field dictionary only (not a second UI spec)
-4. Then the screen you are coding:
+2. [FRONTEND_BIDDING_DASHBOARD.md](./FRONTEND_BIDDING_DASHBOARD.md) — **`GET /dashboard`** vs Estimates **`GET /bids`**
+3. [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) **§0 first** — app shell, stages, handoff, outcome. This is the IA. Do not invent a second navigation.
+4. [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md) — `process` field dictionary only (not a second UI spec)
+5. Then the screen you are coding:
    - **Intake + Assignment (Stage 1):** [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)
    - Setup spec **rules:** [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)
    - Takeoff qty grid / Mike: [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md) + [FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)
@@ -25,6 +26,8 @@ Repo of truth is this backend `docs/` folder — not an old chat, not FortuneShe
    - Excel cell names for Estimate: [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) (client engine; `/calculate` is deprecated)
 
 Enums: `GET /lookups/bidding/process-meta`. Do not hardcode stage lists.
+
+**Estimates / bidding list** = `GET /bids` (full list + `canEdit`). **Dashboard** = `GET /dashboard` (widgets). Different pages. Do not swap them.
 
 ---
 
@@ -61,6 +64,32 @@ Do not mix these three.
 /bidding/[id]?stage=lost             only if workflow.showLost
 ```
 
+**Estimates (`/bidding`):** `GET /bids` — **full company list**. Each row has `canEdit`. Hide Edit / Save when `canEdit === false`. `admin` / `super_admin`: every bid, always `canEdit: true`. Do not filter that page by stage. Export button: `GET /bids/export` (same query params → `bids.xlsx`).
+
+**Dashboard (separate route `/dashboard`, not Estimates):** `GET /dashboard`. Widgets: `due`, `upcoming`, `assigned` + `messages`. Row click from either page → `/bidding/:id?stage=` + `row.processStage`.
+
+- `admin` / `super_admin`: always `canEdit: true`
+- Bid has no `teamId` yet: anyone may edit (intake)
+- Bid `assignment.teamId` set: only users on that team (`user.teamId` from login) + admins
+
+Assign a person to a crew: `PATCH /admin/users/:id` `{ "teamId": <Bid_Teams id> }` (`GET /lookups/bidding/teams`). Captain / AE plates filter to that team when `user.teamId` is set.
+
+Team label: `GET /lookups/bidding/teams` + `row.teamId`.
+
+### Role dashboard widgets (`GET /dashboard`)
+
+| Role | Due / upcoming | Assigned |
+|------|----------------|----------|
+| `bid_clerk` | Intake with a due date | Intake queue |
+| `admin` / `super_admin` | All bids with a due date | **All bids** (every stage / outcome) |
+| `captain` | Team setup / takeoff / proposal | Same + `takeoffAssigned` / `takeoffReceived` |
+| `assistant_estimator` / `user` | Team setup + takeoff | Same |
+| `project_manager` / `operations_manager` | Awarded jobs | Awarded list |
+
+`messages.totalUnread` + `messages.items[]` = Connecteam inbox (same source as `/connecteam/conversations`). `notifications[]` mixes unread chats, due bids, and `isNew` assigned rows. There is **no** separate email/inbox product — `process-meta.defaults.notifications` stays false (handoff emails).
+
+Empty widgets are OK. Do not replace the Estimates list with the dashboard.
+
 `GET /bids/:id` returns `process` + **`workflow`**. Trust `workflow` for buttons:
 
 | Field | Use |
@@ -82,9 +111,21 @@ Setup → Takeoff blocked until `process.technicalReview.approvedForTakeoff === 
 Outcome tab: `canComplete` is false. Change outcome there; do not hand off off that tab.  
 Assignment “no bid” jumps to Outcome with `no_bid` pre-selected; user can still change it.
 
-Mint unique `id`s on array items (`crypto.randomUUID()`). Do not keep template id `new-duct`.
+Mint unique `id`s on array items (`newId()` below — do **not** call `crypto.randomUUID()` raw; it throws on HTTP / non-secure origins). Do not keep template id `new-duct`.
 
-**Stage 1 (Intake + Assignment):** bid name **locked** to `drawingName`. Two project #s (`#` stripped). `bidKind` includes `budget`. Second invitation → `invitations[]` (plus `addenda` per inviter). One invite → `whoElseBidding.researched` required to hand off. Drawings attachment required for build-to-print / design-assist. Mistake second bid: `POST /bids/:id/link-duplicate`. Typeahead `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. Tiers on intake. Assignment: Nick + PJ, `assignment.teamId`. Party typeahead: `GET /lookups/bidding/parties?role=&q=`. Full contract: [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
+```ts
+function newId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+```
+
+**Stage 1 (Intake + Assignment):** bid name **locked** to `drawingName`. Two project #s (`#` stripped). `bidKind` includes `budget`. Second invitation → `invitations[]` (plus `addenda` per inviter). Paste invite email in `invitations[].inviteBody`. Preferred reach `contact.preferredContact`. Paste address in `projectAddress.line1` (city/state/zip fill on save). Owner/federal `documentLinks[].checkAddenda`. **No `jobId` until awarded.** One invite → `whoElseBidding.researched` required to hand off. Drawings attachment required for build-to-print / design-assist. Mistake second bid: `POST /bids/:id/link-duplicate`. Typeahead `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. Tiers on intake. Assignment: Nick + PJ + clerk, `assignment.teamId`. Party address book: `GET /lookups/bidding/parties?role=&q=&page=&pageSize=` → `{ items, total, page, pageSize }`. Full contract: [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md).
 
 ---
 

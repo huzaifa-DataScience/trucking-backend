@@ -43,6 +43,19 @@ export interface WageDecisionInput {
   fringe?: number | null;
 }
 
+type BidPartyItem = {
+  id: number;
+  name: string | null;
+  company: string | null;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  inactive: boolean;
+  doNotContact: boolean;
+  status: string | null;
+};
+
 export interface PayrollBurdenInput {
   code: string;
   label: string;
@@ -72,36 +85,53 @@ export class BiddingLookupsService {
     @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
   ) {}
 
-  async getParties(role?: string, q?: string) {
+  async getParties(
+    role?: string,
+    q?: string,
+    pageRaw?: string | number,
+    pageSizeRaw?: string | number,
+  ) {
+    const page = Math.max(1, Math.trunc(Number(pageRaw)) || 1);
+    const pageSize = Math.min(50, Math.max(1, Math.trunc(Number(pageSizeRaw)) || 10));
+    const empty = { items: [] as BidPartyItem[], total: 0, page, pageSize };
     const allowed = INTAKE_PARTY_ROLES as readonly string[];
-    if (!role || !allowed.includes(role)) return [];
+    if (!role || !allowed.includes(role)) return empty;
     try {
       await this.ensurePartiesReady();
     } catch (err: any) {
       this.logger.warn(`Bid_Parties lookup skipped: ${err?.message ?? err}`);
-      return [];
+      return empty;
     }
     const qb = this.partyRepo
       .createQueryBuilder('p')
       .where('p.role = :role', { role })
       .orderBy('p.name', 'ASC')
-      .take(50);
+      .addOrderBy('p.id', 'ASC');
     const needle = (q ?? '').trim().slice(0, 80).replace(/[%_]/g, '');
     if (needle) {
       qb.andWhere('(p.name LIKE :q OR p.company LIKE :q OR p.email LIKE :q)', {
         q: `%${needle}%`,
       });
     }
-    const rows = await qb.getMany();
-    return rows.map((p) => ({
-      id: p.id,
-      name: p.name || p.company || p.email,
-      company: p.company,
-      contactName: p.contactName,
-      email: p.email,
-      phone: p.phone,
-      role: p.role,
-    }));
+    const total = await qb.clone().getCount();
+    const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
+    return {
+      items: rows.map((p) => ({
+        id: p.id,
+        name: p.name || p.company || p.email,
+        company: p.company,
+        contactName: p.contactName,
+        email: p.email,
+        phone: p.phone,
+        role: p.role,
+        inactive: false,
+        doNotContact: false,
+        status: null as string | null,
+      })),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   /** PATCH / POST bid process → directory so the next dropdown hit finds them. */

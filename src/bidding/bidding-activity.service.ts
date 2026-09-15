@@ -8,6 +8,7 @@ import {
   BidActivityArea,
   BidContent,
 } from '../database/entities';
+import { cleanPersonName } from '../database/entities/user.entity';
 import type { PatchBidDto } from './dto/bidding.dto';
 
 export interface BidActivityItemDto {
@@ -18,6 +19,8 @@ export interface BidActivityItemDto {
   changedFields: string[];
   userId: number | null;
   userEmail: string | null;
+  userFirstName: string | null;
+  userLastName: string | null;
   createdAt: string;
 }
 
@@ -400,6 +403,8 @@ export class BiddingActivityService {
       changedFields,
       userId: row.userId,
       userEmail: row.user?.email ?? null,
+      userFirstName: cleanPersonName(row.user?.firstName),
+      userLastName: cleanPersonName(row.user?.lastName),
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     };
   }
