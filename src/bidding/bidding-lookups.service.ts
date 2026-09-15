@@ -11,6 +11,7 @@ import {
   BidProjectType,
   BidBuildingType,
   BidPreference,
+  BidOffice,
   BidPayrollBurden,
 } from '../database/entities';
 import { computeBurdenedRate, BurdenItem } from './bidding-calc/labor-burden';
@@ -78,6 +79,7 @@ export class BiddingLookupsService {
     @InjectRepository(BidProjectType) private readonly projectTypeRepo: Repository<BidProjectType>,
     @InjectRepository(BidBuildingType) private readonly buildingTypeRepo: Repository<BidBuildingType>,
     @InjectRepository(BidPreference) private readonly preferenceRepo: Repository<BidPreference>,
+    @InjectRepository(BidOffice) private readonly officeRepo: Repository<BidOffice>,
     @InjectRepository(BidPayrollBurden) private readonly burdenRepo: Repository<BidPayrollBurden>,
     @InjectRepository(BidParty) private readonly partyRepo: Repository<BidParty>,
     @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
@@ -358,6 +360,11 @@ export class BiddingLookupsService {
 
   async getPreferences() {
     const rows = await this.preferenceRepo.find({ order: { sortOrder: 'ASC' } });
+    return rows.map((r) => ({ id: r.id, name: r.name }));
+  }
+
+  async getOffices() {
+    const rows = await this.officeRepo.find({ order: { sortOrder: 'ASC' } });
     return rows.map((r) => ({ id: r.id, name: r.name }));
   }
 

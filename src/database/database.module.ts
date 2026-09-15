@@ -54,6 +54,7 @@ import {
   BidProjectType,
   BidBuildingType,
   BidPreference,
+  BidOffice,
   BidPayrollBurden,
   BidSpecSystem,
   BidSpecMaterial,
@@ -179,6 +180,7 @@ import {
             BidProjectType,
             BidBuildingType,
             BidPreference,
+  BidOffice,
             BidPayrollBurden,
             BidSpecSystem,
             BidSpecMaterial,
@@ -215,7 +217,8 @@ import {
             WfsStaticItem,
             WfsSnapshot,
           ],
-          synchronize: false,
+          // Local: set DB_SYNCHRONIZE=true so TypeORM creates missing tables.
+          synchronize: config.get('DB_SYNCHRONIZE', 'false') === 'true',
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
           logging: config.get('NODE_ENV') === 'development' ? ['error', 'warn', 'schema', 'migration'] : false,
           retryAttempts: 5,
@@ -287,6 +290,7 @@ import {
       BidProjectType,
       BidBuildingType,
       BidPreference,
+  BidOffice,
       BidPayrollBurden,
       BidSpecSystem,
       BidSpecMaterial,

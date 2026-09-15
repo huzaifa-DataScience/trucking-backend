@@ -68,6 +68,18 @@ const clientCompanyNameFrom = (companyInfo: Record<string, unknown>): string | n
   return trimmed || null;
 };
 
+const stringFieldFrom = (companyInfo: Record<string, unknown>, key: string): string | null => {
+  const v = companyInfo[key];
+  if (typeof v !== 'string') return null;
+  const trimmed = v.trim();
+  return trimmed || null;
+};
+
+const numberFieldFrom = (source: Record<string, unknown>, key: string): number | null => {
+  const v = source[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+};
+
 const assertCompanyInfo = (value: Record<string, unknown>): void => {
   assertFiniteNumbers(value, 'companyInfo');
   for (const [key, val] of Object.entries(value)) {
@@ -196,7 +208,10 @@ export class BiddingService {
         ? await this.contentRepo.find({ where: { bidId: In(rows.map((r) => r.id)) } })
         : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
-    return rows.map((b) => this.toSummary(b, contentByBid.get(b.id), params.editor));
+    const attachmentCounts = await this.attachments.countByBidIds(rows.map((r) => r.id));
+    return rows.map((b) =>
+      this.toSummary(b, contentByBid.get(b.id), (attachmentCounts.get(b.id) ?? 0) > 0, params.editor),
+    );
   }
 
   /** Same rows/filters as `list()`. Full company list — not role-filtered. */
@@ -363,6 +378,12 @@ export class BiddingService {
       computedJson,
     });
     await this.snapshotRepo.save(snapshot);
+
+    /** Mirror the PJ estimate grand total onto the bid row for list sort/filter/export. */
+    const pjEstimate = computed['baseBid.pjEstimate'];
+    if (typeof pjEstimate === 'number' && Number.isFinite(pjEstimate)) {
+      await this.bidRepo.update(bidId, { baseBidAmount: pjEstimate });
+    }
   }
 
   async getDetail(id: number, editor?: BidEditor, opts?: { skipSpecCodes?: boolean }) {
@@ -382,7 +403,7 @@ export class BiddingService {
     if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
     const attachments = await this.attachments.listForBid(id);
     return {
-      ...this.toSummary(bid, content, editor),
+      ...this.toSummary(bid, content, attachments.length > 0, editor),
       jobId: bid.jobId,
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
@@ -699,9 +720,11 @@ export class BiddingService {
     return result;
   }
 
-  private toSummary(bid: Bid, content?: BidContent | null, editor?: BidEditor) {
+  private toSummary(bid: Bid, content?: BidContent | null, hasAttachments = false, editor?: BidEditor) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
+    const ad = process.additionalDetails;
+    const sa = process.salesActivities;
     const createdAt = bid.createdAt instanceof Date ? bid.createdAt.toISOString() : bid.createdAt;
     const updatedAt = bid.updatedAt instanceof Date ? bid.updatedAt.toISOString() : bid.updatedAt;
     const teamId = process.assignment.teamId;
@@ -713,6 +736,17 @@ export class BiddingService {
       ourEntityId: bid.ourEntityId,
       companyName: bid.ourEntity?.name ?? null,
       clientCompanyName: clientCompanyNameFrom(companyInfo),
+      contactCell: stringFieldFrom(companyInfo, 'contactCell'),
+      contactFax: stringFieldFrom(companyInfo, 'contactFax'),
+      parentChild: stringFieldFrom(companyInfo, 'parentChild'),
+      address: stringFieldFrom(companyInfo, 'address'),
+      city: stringFieldFrom(companyInfo, 'city'),
+      state: stringFieldFrom(companyInfo, 'state'),
+      zip: stringFieldFrom(companyInfo, 'zip'),
+      contactName: stringFieldFrom(companyInfo, 'contactName'),
+      contactEmail: stringFieldFrom(companyInfo, 'contactEmail'),
+      contactPhone: stringFieldFrom(companyInfo, 'contactPhone'),
+      marginPercent: numberFieldFrom(parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}), 'marginPercent'),
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       bidDate: bid.bidDate instanceof Date ? bid.bidDate.toISOString().slice(0, 10) : bid.bidDate,
       submitDate:
@@ -727,6 +761,75 @@ export class BiddingService {
       relatedBidId: process.relatedBidId,
       bidKind: process.bidKind,
       dueDate: process.dueDate,
+      /** "Estimator" for list sorting/filtering — the assigned Captain leads the estimate. */
+      estimator: process.assignment?.captain ?? null,
+      assistantEstimator: process.assignment?.assistantEstimator ?? null,
+      /** PJ estimate grand total, mirrored from the latest client calc snapshot. */
+      baseBidAmount: bid.baseBidAmount != null ? Number(bid.baseBidAmount) : null,
+
+      // --- FollowupCRM filter-parity fields (flattened from process.additionalDetails / .salesActivities) ---
+      ownerName: process.owner?.name ?? null,
+      architectName: process.architect?.name ?? null,
+      mechanicalEngineerName: process.mechanicalEngineer?.name ?? null,
+      contractAmount: process.award?.finalContractAmount ?? null,
+      jobStartDate: process.schedule?.expectedStart ?? null,
+      jobEndDate: process.schedule?.expectedCompletion ?? null,
+      followUpDate: process.intelligence?.nextFollowUpDate ?? null,
+      technicalDate: process.technicalReview?.reviewDate ?? null,
+      coversGl: process.ocipCcip?.coversGl ?? null,
+      coversWc: process.ocipCcip?.coversWc ?? null,
+      bidNumber: ad?.bidNumber ?? null,
+      winningCompetitor: ad?.winningCompetitor ?? null,
+      mikeEstimateRef: ad?.mikeEstimateRef ?? null,
+      websiteForBiddingDocs: ad?.websiteForBiddingDocs ?? null,
+      wbdUsername: ad?.wbdUsername ?? null,
+      wbdPassword: ad?.wbdPassword ?? null,
+      wageRateCategory: ad?.wageRateCategory ?? null,
+      wageRateAmount: ad?.wageRateAmount ?? null,
+      grossSqFootage: ad?.grossSqFootage ?? null,
+      projectNumberIfAwarded: ad?.projectNumberIfAwarded ?? null,
+      usCitizenOnly: ad?.usCitizenOnly ?? null,
+      fringe: ad?.fringe ?? null,
+      costPerEstimate: ad?.costPerEstimate ?? null,
+      bidBondStatus: ad?.bidBondStatus ?? null,
+      bidBondAmountRequested: ad?.bidBondAmountRequested ?? null,
+      budgetBid: ad?.budgetBid ?? null,
+      takeOffPerson: ad?.takeOffPerson ?? null,
+      takeOffPerson2: ad?.takeOffPerson2 ?? null,
+      takeOffPerson3: ad?.takeOffPerson3 ?? null,
+      awl1Username: ad?.awl1Username ?? null,
+      awl1Password: ad?.awl1Password ?? null,
+      awl2Username: ad?.awl2Username ?? null,
+      awl2Password: ad?.awl2Password ?? null,
+      awl3Username: ad?.awl3Username ?? null,
+      awl3Password: ad?.awl3Password ?? null,
+      subBuildingType: ad?.subBuildingType ?? null,
+      source: ad?.source ?? null,
+      preBidDate: ad?.preBidDate ?? null,
+      salesStatus: ad?.salesStatus ?? null,
+      tradeBidType: ad?.tradeBidType ?? null,
+      ocipCcipStatus: ad?.ocipCcipStatus ?? null,
+      /** Existing top-level process fields, aliased here for FollowupCRM's "Bid Clerk" / "Construction Type" / "Building Type" / "PLA". */
+      bidClerk: process.assignment?.bidClerk ?? null,
+      constructionType: process.constructionType ?? null,
+      constructionSubtype: process.constructionSubtype ?? null,
+      pla: process.pla ?? null,
+      estimatorBidDate: ad?.estimatorBidDate ?? null,
+      rebid: ad?.rebid ?? null,
+      engineerProjectNumber: ad?.engineerProjectNumber ?? null,
+      contractDate: ad?.contractDate ?? null,
+      loginDate: ad?.loginDate ?? null,
+      deadDate: ad?.deadDate ?? null,
+      comments: ad?.comments ?? null,
+      initialContact: sa?.initialContact ?? null,
+      siteVisit: sa?.siteVisit ?? null,
+      bidDrafted: sa?.bidDrafted ?? null,
+      bidDelivered: sa?.bidDelivered ?? null,
+      frontEndDocs: sa?.frontEndDocs ?? null,
+      heatTracingSubPricing: sa?.heatTracingSubPricing ?? null,
+      prequalificationPackage: sa?.prequalificationPackage ?? null,
+      mandatoryPreBid: sa?.mandatoryPreBid ?? null,
+      hasAttachments,
       dueTime: process.dueTime,
       takeoffAssigned: process.takeoffAssignments.length,
       takeoffReceived: process.takeoffAssignments.filter(

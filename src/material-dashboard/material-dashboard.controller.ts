@@ -90,6 +90,9 @@ export class MaterialDashboardController {
     @Query('direction') direction?: 'Import' | 'Export' | 'Both',
     @Query('page', new DefaultValuePipe(1), new ParseIntPipe({ optional: true })) page?: number,
     @Query('pageSize', new DefaultValuePipe(50), new ParseIntPipe({ optional: true })) pageSize?: number,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: 'ASC' | 'DESC',
+    @Query('search') search?: string,
   ) {
     const filters: MaterialDashboardFiltersDto = {
       startDate: startDate || undefined,
@@ -99,7 +102,7 @@ export class MaterialDashboardController {
       entityId: entityId ? parseInt(entityId, 10) : undefined,
       direction: direction || undefined,
     };
-    return this.materialDashboard.getTicketGrid(filters, { page, pageSize });
+    return this.materialDashboard.getTicketGrid(filters, { page, pageSize, sortBy, sortDir, search });
   }
 
   @Get('tickets/export')

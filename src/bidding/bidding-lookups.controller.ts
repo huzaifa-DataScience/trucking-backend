@@ -224,6 +224,11 @@ export class BiddingLookupsController {
     return this.lookups.getPreferences();
   }
 
+  @Get('offices')
+  getOffices() {
+    return this.lookups.getOffices();
+  }
+
   /** Specs Plumb Insulation (H). Family required (or `code` / `q`). Bare GET → []. `?kind=` ignored. */
   @Get('spec-systems')
   getSpecSystems(@Query('kind') kind?: string) {

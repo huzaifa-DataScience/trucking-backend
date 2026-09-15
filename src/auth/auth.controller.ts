@@ -1,4 +1,23 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Post,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { AuthService, LoginResult } from './auth.service';
 import { CurrentUser, Public } from './decorators';
 import { JwtAuthGuard } from './guards';
@@ -6,6 +25,7 @@ import { JwtAuthGuard } from './guards';
 // import { Roles } from './decorators';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { User } from '../database/entities';
 
 @Controller('auth')
@@ -43,5 +63,56 @@ export class AuthController {
   @Get('admin')
   adminOnly() {
     return { message: 'Admin access granted.' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadAvatar(
+    @CurrentUser() user: User,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<LoginResult> {
+    if (!user) throw new BadRequestException('Not authenticated');
+    return this.authService.uploadAvatar(user.id, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('avatar')
+  async deleteAvatar(@CurrentUser() user: User): Promise<LoginResult> {
+    if (!user) throw new BadRequestException('Not authenticated');
+    return this.authService.deleteAvatar(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser() user: User,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    if (!user) throw new BadRequestException('Not authenticated');
+    await this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
+    return { message: 'Password updated.' };
+  }
+
+  /** Public so plain <img src> tags (no Authorization header) can load it. */
+  @Public()
+  @Get('avatar/:userId')
+  async getAvatar(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const path = await this.authService.getAvatarPath(userId);
+    if (!path) throw new NotFoundException('No avatar set');
+    const stream = this.authService.openAvatarStream(path);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(404).end();
+    });
+    const ext = path.split('.').pop()?.toLowerCase();
+    const contentType =
+      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    stream.pipe(res);
   }
 }

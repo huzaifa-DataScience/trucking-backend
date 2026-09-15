@@ -43,4 +43,13 @@ export class UsersService {
   async updateLastLogin(userId: number): Promise<void> {
     await this.userRepo.update(userId, { lastLoginAt: new Date() });
   }
+
+  async setAvatarPath(userId: number, avatarPath: string | null): Promise<void> {
+    await this.userRepo.update(userId, { avatarPath });
+  }
+
+  async updatePassword(userId: number, newPassword: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.userRepo.update(userId, { passwordHash });
+  }
 }
