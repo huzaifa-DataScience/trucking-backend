@@ -122,8 +122,9 @@ export class ConnecteamController {
     @Query('includeArchived') includeArchived?: string,
   ) {
     const q = (search ?? '').trim().toLowerCase();
+    const wantAll = String(pageSize ?? '').trim().toLowerCase() === 'all';
     const pageNum = Math.max(1, Math.floor(Number(page) || 1));
-    const pageSizeNum = Math.max(1, Math.min(200, Math.floor(Number(pageSize) || 50)));
+    const pageSizeNum = wantAll ? null : Math.max(1, Math.min(200, Math.floor(Number(pageSize) || 50)));
     const qb = this.users.createQueryBuilder('u');
     if (includeArchived !== 'true') qb.andWhere('u.isArchived = :archived', { archived: false });
     if (q) {
@@ -133,9 +134,14 @@ export class ConnecteamController {
       );
     }
     qb.orderBy('u.lastName', 'ASC').addOrderBy('u.firstName', 'ASC');
-    qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
+    if (pageSizeNum != null) qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
-    return { page: pageNum, pageSize: pageSizeNum, total, users: await this.display.enrichUserRows(rows) };
+    return {
+      page: wantAll ? 1 : pageNum,
+      pageSize: wantAll ? total : pageSizeNum,
+      total,
+      users: await this.display.enrichUserRows(rows),
+    };
   }
 
   @Get('jobs')

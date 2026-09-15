@@ -55,6 +55,10 @@ export class User {
 
   @Column({ name: 'LastLoginAt', type: 'datetime2', nullable: true })
   lastLoginAt: Date | null;
+
+  /** Relative path under UPLOAD_ROOT, e.g. `avatars/12.jpg`. */
+  @Column({ name: 'AvatarPath', type: 'nvarchar', length: 500, nullable: true })
+  avatarPath: string | null;
 }
 
 export type UserNameBits = {
@@ -78,4 +82,10 @@ export function userFullName(user: UserNameBits | null | undefined): string | nu
 /** First + last, else email, else `User {id}`. */
 export function userDisplayName(user: UserNameBits | null | undefined, fallback = 'Unknown'): string {
   return userFullName(user) || cleanPersonName(user?.email) || (user?.id ? `User ${user.id}` : fallback);
+}
+
+/** Relative path FE prepends with API_BASE. Null when no file. */
+export function userAvatarUrl(user: { id?: number; avatarPath?: string | null } | null | undefined): string | null {
+  if (!user?.id || !cleanPersonName(user.avatarPath)) return null;
+  return `/auth/avatar/${user.id}`;
 }

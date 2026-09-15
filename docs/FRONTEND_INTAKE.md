@@ -1,7 +1,7 @@
 # Stage 1 — Intake + Assignment
 
 **Give this file to FE** (with [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) for Setup).  
-**Last updated:** 2026-09-09  
+**Last updated:** 2026-09-16  
 **Source:** PJ + Amr (2026-08-20) + spec catch-up (2026-08-23) + PJ intake dry-run (2026-09). Locked pairs only.  
 **Chrome / handoff:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
 **Enums:** `GET /lookups/bidding/process-meta` → `bidKinds`, `tierRoles`, `intakeEditor`
@@ -9,6 +9,8 @@
 25 Aug extras: label **Engineer of Record — mechanical** (not “ME project”). Invitation **company first**, then contacts. Typeahead `GET /lookups/bidding/parties?role=&q=`. Activity = who / what / when.
 
 9 Sep extras (PJ): **no `jobId` on intake** — link the job when awarded. Paste a full US address in `projectAddress.line1` — backend fills city/state/zip if those are empty (keeps `line1`). Preferred reach: `contact.preferredContact` `email` | `phone`. Paste the invitation email in `invitations[].inviteBody` (not `notes`). Mark `documentLinks[].checkAddenda` on the owner/federal source. Bid clerk (John) may complete **Assignment** so the queue does not sit. `intakeEditor` flags: `jobIdOnIntake`, `hideJobIdOnIntake`, `fillAddressFromLine1`, `preferredContact`, `inviteBody`, `checkAddenda`, `assignmentOwners`.
+
+16 Sep extras (PJ review): **building type, project type, impacted GSF, company rule** on intake — not proposal. Proposal is **output + calculator**. `intakeEditor.constructionType` / `constructionSubtype` / `impactedGsf`. `process-meta.proposalEditor.isOutput`.
 
 Incomplete **save** is OK. **Complete & Hand Off** from Intake is gated — read `workflow.canComplete` / `completeBlockedReason`. Bid clerk on Intake. Estimator is **not** on this page.
 
@@ -50,7 +52,11 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 | Owner / architect / ME | `process.owner`, `.architect`, `.mechanicalEngineer` | From the title block. Typeahead: `GET /lookups/bidding/parties?role=owner\|architect\|mechanical&q=`. New names save on the bid; PATCH upserts the directory. |
 | Owner or architect # | `process.ownerProjectNumber` | Title-block number. **Duplicate key.** |
 | Engineer of Record — mechanical | `process.mechanicalEngineerProjectNumber` | Title-block number. **Not** “ME project”. **Duplicate key.** |
-| Work type | `process.workType` | Insulation / demo / … — this is the locked “kind of work.” Do **not** invent Division / Project type. |
+| Work type | `process.workType` | Insulation / demo / … — this is the locked “kind of work.” Do **not** invent Division. |
+| Building type | `process.constructionType` | `GET /lookups/bidding/building-types` (Followup buckets). **Not on proposal.** |
+| Project type | `process.constructionSubtype` | `GET /lookups/bidding/project-types`. **Not on proposal.** |
+| Impacted SF | `process.impactedGsf` | Life-safety **renovated / impacted** area — not whole-building GSF. `$/SF` later. |
+| Our company (first call) | header `ourEntityId` + `process.entityRule` | John picks from state/rules. `entityRule` only **suggests**. |
 | Contract chain | `process.contractTiers` | Sketch ~5 layers now. See below. |
 | GCs / mechanicals | `process.generalContractors`, `process.mechanicals` | Same opportunity. `hasTheJob` / `stillBidding` on each. |
 
@@ -178,11 +184,24 @@ Nick + PJ **and** the bid clerk (John). Queue must not sit if Nick/PJ are out. H
 | UI | Bind |
 |----|------|
 | Pursue? | `assignment.pursue` — `false` + Complete → Outcome `no_bid` |
-| Team | `assignment.teamId` ← `GET /lookups/bidding/teams` (team 1 / 2 / 3 today) |
-| Captain / AE / clerk | `assignment.captain`, `assistantEstimator`, `bidClerk` — copy from the team row after pick |
+| Captain | `assignment.captainUserId` ← `GET /lookups/bidding/captains` (`App_Users` `role=captain`). Team optional — **still show them**. Pick captain first; backend fills `assignment.teamId` when they have a crew |
+| Team | `assignment.teamId` — filled from the captain’s crew. Still shown; changing the team fills captain if empty |
+| AE / clerk | `assignment.assistantEstimator`, `bidClerk` — clerk copies from the team row; backend fills `bidClerk` when empty. AE picker: `GET /lookups/bidding/contacts?role=assistant_estimator` |
 | Takeoff who | `takeoffAssignments` — 1 or 2 people per scope |
 
 Then Complete → Estimating Setup.
+
+`teamId: null` means they have not saved Settings → My team yet. **Still pickable.** Assignment saves `captainUserId`; `teamId` fills later when they have a crew. Do **not** hide the row. Do **not** require them to be currently logged in.
+
+---
+
+## Proposal is **not** this form
+
+Later stage (`proposal`). **Output + calculator** (`process-meta.proposalEditor`).
+
+**Do not re-ask here** (read-only): company, estimate #, bid name · building / project type · impacted SF · state · team / captain / AE / crew.
+
+Calculator (first/mainly on Proposal): schedule/money, wage **rate**, lifts, parking, Mike grid. PLA / CCIP / MBE preference may also live on Setup — same flags, keep in sync. Do not move identity editors back onto Proposal.
 
 ---
 

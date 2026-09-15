@@ -27,6 +27,7 @@ import {
   takeoffComparisons,
   workflowChrome,
 } from '../src/bidding/process/bid-process';
+import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS } from '../src/bidding/process/bid-crew';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -435,7 +436,16 @@ assert(meta.specSheetEditor.mikeSizeMin === 0, 'size min 0');
 assert(meta.specSheetEditor.sizeRange.min === 0 && meta.specSheetEditor.sizeRange.max === 999, 'size/width 0–999');
 assert(meta.specSheetEditor.sizeRange.fields.includes('widthIn'), 'width uses same range');
 assert(meta.specSheetEditor.manufacturers.some((m: { value: string }) => m.value === 'certainteed'), 'CertainTeed');
-assert(meta.setupEditor.constructionType.lookup.includes('building-types'), 'setup construction type = Followup buckets');
+assert(TEAM_CREW_SLOTS.includes('duct1') && TEAM_CREW_SLOTS.includes('bidClerk'), 'crew slots');
+assert(parseCrewJson(null, null).duct1 === null, 'empty crew json');
+assert(!('constructionType' in meta.setupEditor), 'building type left setup');
+assert(meta.intakeEditor.constructionType.lookup.includes('building-types'), 'intake construction type = Followup buckets');
+assert(meta.intakeEditor.impactedGsf.bind === 'impactedGsf', 'GSF on intake');
+assert(meta.proposalEditor.firstHere.includes('marginPercent'), 'proposal firstHere margin');
+assert(meta.proposalEditor.firstHere.includes('systems'), 'proposal firstHere mike grid');
+assert(meta.proposalEditor.alsoOnSetup.includes('pla'), 'PLA also Setup');
+assert(meta.proposalEditor.readOnly.includes('assignment.captainUserId'), 'captain RO on proposal');
+assert(mergeProcess(emptyProcess(), { impactedGsf: 120000 }).impactedGsf === 120000, 'impactedGsf');
 assert(meta.defaults.equipmentAndVrfTeam === 'hydronic', 'VRF/equipment hydronic team');
 assert(meta.specSheetEditor.sizeModeByKind.duct === 'circumference', 'duct uses circumference');
 assert(Array.isArray(meta.specSheetEditor.sizes) && meta.specSheetEditor.sizes.length === 0, 'no global size list');
@@ -448,6 +458,9 @@ assert(meta.tierRoles.includes('lessee'), 'lessee tier');
 assert(meta.intakeEditor.budgetIsBidKind === true, 'budget is a bid kind');
 assert(meta.intakeEditor.bidNameFrom === 'drawingName', 'bid name from drawings');
 assert(meta.intakeEditor.teamField === 'assignment.teamId', 'team from teams lookup');
+assert(meta.intakeEditor.captainField === 'assignment.captainUserId', 'captain user id');
+assert(meta.intakeEditor.captainLookup.includes('/lookups/bidding/captains'), 'captains lookup');
+assert(meta.intakeEditor.captainSelectsTeam === true, 'captain pick fills team');
 assert(meta.intakeEditor.partiesLookup.includes('/lookups/bidding/parties'), 'parties lookup');
 assert(meta.intakeEditor.partiesLookup.includes('pageSize='), 'parties lookup paginated');
 assert(meta.intakeEditor.partyRoles.includes('invite_contact'), 'invite_contact role');
@@ -702,6 +715,52 @@ assert(excel.stage === 'Takeoff & Estimate', 'excel stage label');
 assert(excel.teamName === 'Team Wilder', 'excel team name');
 assert(excel.isNew === 'Yes', 'excel new flag');
 assert(BID_LIST_EXCEL_COLUMNS.every((c) => c.key in excel), 'excel columns covered');
+
+const captains = [
+  { userId: 12, name: 'Wilder Rodriguez', email: 'wilder@goel.com', teamId: 2 },
+  { userId: 13, name: 'Bil', email: 'bil@goel.com', teamId: null },
+];
+const teams = [
+  { id: 2, captain: 'Wilder Rodriguez', bidClerk: 'Hassan Riaz', captainUserId: 12 },
+  { id: 3, captain: 'Mike', bidClerk: 'John', captainUserId: null },
+];
+const blankCrew = emptyProcess().assignment;
+const fromCap = bindAssignmentCrew({ ...blankCrew, captainUserId: 12 }, captains, teams);
+assert(fromCap.teamId === 2 && fromCap.captain === 'Wilder Rodriguez', 'captainUserId fills team');
+const fromName = bindAssignmentCrew({ ...blankCrew, captain: 'wilder rodriguez' }, captains, teams);
+assert(fromName.teamId === 2 && fromName.captainUserId === 12, 'captain name fills team');
+const fromTeam = bindAssignmentCrew({ ...blankCrew, teamId: 2 }, captains, teams);
+assert(
+  fromTeam.captainUserId === 12 && fromTeam.captain === 'Wilder Rodriguez' && fromTeam.bidClerk === 'Hassan Riaz',
+  'team fills captain + clerk',
+);
+assert(bindAssignmentCrew({ ...blankCrew, captainUserId: 12, teamId: 3 }, captains, teams).teamId === 2, 'captain wins over teamId');
+assert(bindAssignmentCrew({ ...blankCrew, captain: 'Mike' }, captains, teams).teamId == null, 'excel name is not a captain');
+assert(bindAssignmentCrew({ ...blankCrew, teamId: 3 }, captains, teams).captainUserId == null, 'team without login captain stays empty');
+assert(EXCEL_BID_TEAMS.length === 3 && EXCEL_BID_TEAMS[0].captain === 'Wilder Rodriguez', 'excel roster in system');
+const peopleIdx = indexPeopleByName([
+  { firstName: 'Mike', lastName: 'Roberts', email: 'mike@goel.com' },
+  { firstName: 'John Carlo', lastName: 'Orpilla', email: 'jco@goel.com' },
+]);
+assert(lookupPersonByName(peopleIdx, 'Mike Robberts')?.email === 'mike@goel.com', 'excel Mike alias');
+assert(lookupPersonByName(peopleIdx, 'John Carlo Orpilla')?.email === 'jco@goel.com', 'full crew name');
+const roster = excelRosterContacts();
+assert(roster.some((p) => p.name === 'Hassan Riaz' && p.role === 'bid_clerk'), 'excel Hassan clerk');
+assert(roster.some((p) => p.name === 'John Carlo Orpilla' && p.role === 'assistant_estimator'), 'excel AE');
+const crewContacts = mergeBiddingContacts(
+  [{ appUserId: 9, connecteamUserId: null, name: 'Hassan Riaz', email: 'hassan@goel.com', firstName: 'Hassan', lastName: 'Riaz', role: 'assistant_estimator' }],
+  [{ appUserId: null, connecteamUserId: 100, name: 'John Carlo Orpilla', email: null, firstName: 'John Carlo', lastName: 'Orpilla' }],
+  roster,
+);
+assert(crewContacts.some((p) => p.name === 'Hassan Riaz' && p.role === 'assistant_estimator' && p.appUserId === 9), 'AE login wins roster');
+assert(crewContacts.some((p) => p.name === 'John Carlo Orpilla' && p.connecteamUserId === 100), 'connecteam AE in picker');
+assert(crewContacts.some((p) => p.name === 'Mark Tan'), 'excel clerk still listed');
+assert(resolveEstimatesTeamId({ role: 'captain', userTeamId: 2 }) === 2, 'captain estimates own team');
+assert(resolveEstimatesTeamId({ role: 'admin', userTeamId: 2 }) === null, 'admin estimates unfiltered');
+assert(resolveEstimatesTeamId({ queryTeamId: 'all', role: 'captain', userTeamId: 2 }) === null, 'teamId=all escape');
+assert(resolveEstimatesTeamId({ queryTeamId: 3, role: 'admin' }) === 3, 'explicit team filter');
+assert(resolveEstimatesTeamId({ role: 'captain', userTeamId: null }) === null, 'captain with no team sees all');
+assert(emptyProcess().assignment.captainUserId === null, 'empty captainUserId');
 
 assert(Array.isArray(meta.dashboardPlates) && meta.dashboardPlates.length === APP_ROLE_IDS.length, 'process-meta plates');
 assert(meta.dashboardPlates.some((p: { plateId: string }) => p.plateId === 'clerk'), 'meta clerk plate');

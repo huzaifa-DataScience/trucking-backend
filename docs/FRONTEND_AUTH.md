@@ -55,7 +55,9 @@ Content-Type: application/json
       "forensic:read",
       "admin:users",
       "admin:create_user"
-    ]
+    ],
+    "teamId": null,
+    "avatarUrl": "/auth/avatar/1"
   }
 }
 ```
@@ -132,7 +134,9 @@ Same shape as login: `access_token` and `user` (including profile fields and `pe
       "material_dashboard:read",
       "hauler_dashboard:read",
       "forensic:read"
-    ]
+    ],
+    "teamId": null,
+    "avatarUrl": null
   },
   "message": "Account created successfully. Your account is pending admin approval."
 }
@@ -195,6 +199,7 @@ export interface AuthUser {
   status: UserStatus;
   permissions: string[];
   teamId: number | null;
+  avatarUrl: string | null;
 }
 
 export interface LoginResponse {
@@ -296,17 +301,12 @@ Use this to restore the user after a page reload or to check the latest role.
 **Endpoint:** `GET /auth/profile`  
 **Protected:** requires `Authorization: Bearer <access_token>`.
 
-**Response (200):** Same `AuthUser` shape as login (includes profile fields and `permissions`).
+**Response (200):** Same `AuthUser` shape as login (includes `avatarUrl`, `permissions`).
 
 ```json
 {
   "id": 1,
-  "firstName": "Admin",
-  "lastName": "User",
   "email": "user@example.com",
-  "phone": "+15551234567",
-  "company": "Acme Trucking",
-  "displayName": "Admin User",
   "role": "admin",
   "status": "active",
   "permissions": [
@@ -316,9 +316,10 @@ Use this to restore the user after a page reload or to check the latest role.
     "material_dashboard:read",
     "hauler_dashboard:read",
     "forensic:read",
-    "admin:users",
-    "admin:create_user"
-  ]
+    "admin:users"
+  ],
+  "teamId": null,
+  "avatarUrl": "/auth/avatar/1"
 }
 ```
 
@@ -396,10 +397,67 @@ Build the register form with:
 - [ ] Optional: on app load, call `GET /auth/profile` to restore user (and handle 401).
 - [ ] Show admin-only UI when `user.role === 'admin' || user.role === 'super_admin'`.
 - [ ] Widen `AuthUser.role` to the 8 ids in [FRONTEND_RBAC.md](./FRONTEND_RBAC.md). Login/register/profile shape is unchanged.
+- [ ] Captain: **Settings → My team** — people picker from `GET /lookups/bidding/contacts` (or `GET /auth/team` → `people`), save `PATCH /auth/team` `{ slots }`. Replace stored `user` from `response.user`.
  
 ### Note on user profile fields
 
-This backend’s `AuthUser` currently includes: `id`, `email`, `role`, `status`, and `permissions`. It does **not** include `firstName`, `lastName`, `phone`, `company`, or `displayName`.
+This backend’s `AuthUser` currently includes: `id`, `email`, `role`, `status`, `permissions`, `teamId`, `avatarUrl`. It does **not** include `firstName`, `lastName`, `phone`, `company`, or `displayName`.
+
+---
+
+## Captain team (Settings module)
+
+**Not** a dropdown of pre-made Bid_Teams. Each captain **picks people** from the bidding contacts list (login AEs + clerks + captains + Connecteam + the old Excel crew).
+
+FE: new **Settings → My team** page (or profile sub-page). Captain only can save. AE may GET (read-only).
+
+```
+GET    /auth/team
+GET    /lookups/bidding/contacts
+PATCH  /auth/team
+```
+
+Slots (captain is always the logged-in user — do not send `captain`): `bidClerk`, `duct1`, `duct2`, `hydronic1`, `hydronic2`, `plumbing1`, `plumbing2`.
+
+```json
+{
+  "slots": {
+    "bidClerk": { "connecteamUserId": 9170357 },
+    "duct1": { "appUserId": 12 },
+    "duct2": null,
+    "hydronic1": { "name": "Jonathan Bruce" },
+    "hydronic2": null,
+    "plumbing1": null,
+    "plumbing2": null
+  }
+}
+```
+
+`GET /auth/team` → `{ teamId, teamName, contacts, people, slots }`. `people` is the dropdown (same as `GET /lookups/bidding/contacts`). Each slot is `{ appUserId, connecteamUserId, name, email, firstName, lastName }` or `null`.
+
+`PATCH` → `{ user, team }`. Replace stored AuthUser from `user` (`teamId` is now their crew). First save **creates** their Bid_Teams row (named after the captain).
+
+Picker: **`GET /lookups/bidding/contacts`** (or `people` on GET `/auth/team`). Full list, no paging. Do **not** use `GET /lookups/bidding/captains` here — that is assignment captains only, so AEs will be missing. Prefer `connecteamUserId`, else `appUserId`, else `{ "name" }` for Excel roster rows that have no login yet.
+
+Do **not** bind this screen to `GET /lookups/bidding/teams`. That list is bid labels / assignment, not the captain picker.
+
+Assignment captain dropdown is `GET /lookups/bidding/captains` — App_Users with `role=captain`. `teamId` may be null; still show them. Not “currently logged-in captains.”
+
+After `user.teamId` is set, `GET /bids` is that crew. Admin can still `PATCH /admin/users/:id` `{ "teamId" }`.
+
+---
+
+## Profile photo
+
+JWT on upload/remove. Field name **`file`**. jpeg / png / webp, max 2MB.
+
+```
+POST   /auth/avatar          multipart file=<image>  → AuthUser  (avatarUrl: "/auth/avatar/{id}")
+DELETE /auth/avatar                                  → AuthUser  (avatarUrl: null)
+GET    /auth/avatar/:userId                          → image bytes (public; img src = API_BASE + avatarUrl)
+```
+
+Login / register `user` and `GET /auth/profile` include `avatarUrl: string | null`. Relative path — prepend API base. No photo → `null`.
 
 For backend details (env, admin-only routes, adding new protected routes), see **AUTH.md**.  
 For the full list of API endpoints, see **FRONTEND_API_GUIDE.md**.

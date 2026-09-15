@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import {
   BidContent,
   BidParty,
@@ -12,7 +12,12 @@ import {
   BidBuildingType,
   BidPreference,
   BidPayrollBurden,
+  User,
+  UserStatus,
+  Role,
 } from '../database/entities';
+import { userDisplayName } from '../database/entities/user.entity';
+import { UsersService } from '../users/users.service';
 import { computeBurdenedRate, BurdenItem } from './bidding-calc/labor-burden';
 import {
   INTAKE_PARTY_ROLES,
@@ -81,6 +86,8 @@ export class BiddingLookupsService {
     @InjectRepository(BidPayrollBurden) private readonly burdenRepo: Repository<BidPayrollBurden>,
     @InjectRepository(BidParty) private readonly partyRepo: Repository<BidParty>,
     @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    private readonly users: UsersService,
   ) {}
 
   async getParties(
@@ -146,19 +153,64 @@ export class BiddingLookupsService {
   }
 
   async getTeams() {
-    const rows = await this.teamRepo.find({ where: { isActive: true }, order: { sortOrder: 'ASC' } });
-    return rows.map((t) => ({
-      id: t.id,
-      teamName: t.teamName,
-      captain: t.captain,
-      bidClerk: t.bidClerk,
-      duct1: t.duct1,
-      duct2: t.duct2,
-      hydronic1: t.hydronic1,
-      hydronic2: t.hydronic2,
-      plumbing1: t.plumbing1,
-      plumbing2: t.plumbing2,
+    const { teams, captainByTeam } = await this.crew();
+    return teams.map((t) => {
+      const cap = captainByTeam.get(t.id);
+      return {
+        id: t.id,
+        teamName: t.teamName,
+        captain: cap ? userDisplayName(cap) : null,
+        captainUserId: cap?.id ?? null,
+        bidClerk: t.bidClerk,
+        duct1: t.duct1,
+        duct2: t.duct2,
+        hydronic1: t.hydronic1,
+        hydronic2: t.hydronic2,
+        plumbing1: t.plumbing1,
+        plumbing2: t.plumbing2,
+      };
+    });
+  }
+
+  /** App_Users with role captain. Team optional — still listed. */
+  async getCaptains() {
+    const { teams, captains } = await this.crew();
+    const teamName = new Map(teams.map((t) => [t.id, t.teamName]));
+    return captains.map((u) => ({
+      userId: u.id,
+      name: userDisplayName(u),
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      status: u.status,
+      teamId: u.bidTeamId ?? null,
+      teamName: u.bidTeamId != null ? teamName.get(u.bidTeamId) ?? null : null,
     }));
+  }
+
+  /** Settings people picker. Captains + AEs + clerks + Connecteam + Excel roster. */
+  async getContacts(role?: string) {
+    const rows = await this.users.listCrewContacts();
+    const want = String(role ?? '').trim();
+    return want ? rows.filter((p) => p.role === want) : rows;
+  }
+
+  private async crew() {
+    const [teams, captains] = await Promise.all([
+      this.teamRepo.find({ where: { isActive: true }, order: { sortOrder: 'ASC' } }),
+      this.userRepo.find({
+        where: {
+          role: Role.Captain,
+          status: Not(In([UserStatus.Rejected, UserStatus.Inactive])),
+        },
+        order: { lastName: 'ASC', firstName: 'ASC', email: 'ASC' },
+      }),
+    ]);
+    const captainByTeam = new Map<number, User>();
+    for (const c of captains) {
+      if (c.bidTeamId != null && !captainByTeam.has(c.bidTeamId)) captainByTeam.set(c.bidTeamId, c);
+    }
+    return { teams, captains, captainByTeam };
   }
 
   /** Add a team (name only; crew roles optional, editable later). */

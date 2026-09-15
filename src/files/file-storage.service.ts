@@ -14,6 +14,8 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
 
 export const MAX_BID_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_BID_ATTACHMENTS_PER_BID = 20;
+export const AVATAR_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 @Injectable()
 export class FileStorageService implements OnModuleInit {
@@ -34,6 +36,19 @@ export class FileStorageService implements OnModuleInit {
 
   relativePathForBid(bidId: number, storedFileName: string): string {
     return join('bidding', String(bidId), storedFileName).replace(/\\/g, '/');
+  }
+
+  relativePathForAvatar(userId: number, mimeType: string): string {
+    const ext = ALLOWED_UPLOAD_MIMES[mimeType] ?? '.jpg';
+    return join('avatars', `${userId}${ext}`).replace(/\\/g, '/');
+  }
+
+  async writeAvatar(userId: number, buffer: Buffer, mimeType: string): Promise<string> {
+    const storagePath = this.relativePathForAvatar(userId, mimeType);
+    const absolute = this.absolutePath(storagePath);
+    await fs.mkdir(dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, buffer);
+    return storagePath;
   }
 
   absolutePath(relativePath: string): string {

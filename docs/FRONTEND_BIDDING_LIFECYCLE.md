@@ -1,6 +1,6 @@
 # Bid lifecycle — `process` field dictionary
 
-**Last updated:** 2026-08-23  
+**Last updated:** 2026-09-16  
 **UI (stages, handoff, award gate):** **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)** — that is the FE handoff. This file is **fields + API only**.  
 **Stage 1 screen:** **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**
 
@@ -55,11 +55,11 @@ Chrome: **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)**. Enums: `GE
 
 | Stage / screen | `process.stage` | Fields |
 |----------------|-----------------|--------|
-| Intake | `intake` | workType, bidKind, drawingName (= bid name), ownerProjectNumber, mechanicalEngineerProjectNumber, invitations, documentLinks, address, owner, architect, ME, contractTiers (sketch), GCs, mechanicals, relatedBidId, dueDate, dueTime. `budgetOnly` is derived from `bidKind=budget`. |
-| Assignment | `assignment` | assignment.* (`teamId` + pursue/captain/AE/clerk), takeoffAssignments (people/due) |
-| Estimating Setup | `estimating_setup` | construction type, mbePreference, entityRule, PLA, wageDecisionId, clearance, labor, OCIP, lifts, parking, schedule, insulationSpecs, **specSheets**, technicalReview |
+| Intake | `intake` | workType, bidKind, drawingName (= bid name), ownerProjectNumber, mechanicalEngineerProjectNumber, invitations, documentLinks, address, owner, architect, ME, **constructionType**, **constructionSubtype**, **impactedGsf**, **entityRule**, contractTiers (sketch), GCs, mechanicals, relatedBidId, dueDate, dueTime. `budgetOnly` is derived from `bidKind=budget`. |
+| Assignment | `assignment` | assignment.* (`captainUserId` fills `teamId`), takeoffAssignments (people/due) |
+| Estimating Setup | `estimating_setup` | mbePreference, PLA, wageDecisionId, clearance, labor, OCIP, lifts, parking, schedule, insulationSpecs, **specSheets**, technicalReview |
 | Takeoff | `takeoff` | Specs/Mike APIs + takeoffAssignments.versions |
-| Proposal | `proposal` | existing `baseBid`; estimateReview, proposalVersions, amendments, submission |
+| Proposal | `proposal` | **Calc first here:** schedule/money, wage **rate**, lifts, parking, Mike `systems[]`. **RO:** company / estimate # / bid name / building / project type / GSF / state / team / captain / AE / crew. PLA/CCIP/MBE also Setup. |
 | Post-Bid | `post_bid` | intelligence, stillBidding on GCs/mechanicals |
 | Awarded (**gated**) | `result` after `POST .../outcome` | award.*, startup.*, contractTiers — **only if `workflow.showAward`** (`outcome = awarded`) |
 | Lost (**gated**) | `result` after outcome | lost.* — **only if `workflow.showLost`** (lost / no_bid / cancelled / postponed) |
@@ -79,7 +79,7 @@ Handoff: `POST /bids/:id/handoff`. Setup → takeoff requires `technicalReview.a
 | Spec sheet images | same attachments API, `label=spec-sheet-image` — [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) |
 | Mike CSV versions | existing Mike upload — **never throw out old files** |
 | Specs grid (qty) | `GET /bids/:id/spec-lines` — Takeoff. Not the Setup spec **sheet** tables |
-| Team / Duct1–Plumbing2 names | `GET /lookups/bidding/teams` |
+| Team / Duct1–Plumbing2 names | `GET /lookups/bidding/teams` by `assignment.teamId` (Proposal **display**). Captain builds the roster in Settings (`GET /lookups/bidding/contacts`). |
 | Owner / architect / ME / invite contact | `GET /lookups/bidding/parties?role=&q=&page=&pageSize=` `{ items, total, page, pageSize }` (PATCH on the bid upserts) |
 
 **Wage decision ≠ wage rate.**  
@@ -140,17 +140,18 @@ Use `GET /lookups/bidding/process-meta` rather than hardcoding. Summary of new/c
   projectAddress, bidKind,   // built_to_print | design_build | design_assist | budget | unknown
   budgetOnly,   // derived when bidKind=budget — hide in UI
   relatedBidId, relatedBidNote, dueDate, dueTime, owner, architect, mechanicalEngineer,
+  constructionType, constructionSubtype, impactedGsf, entityRule,
   generalContractors, mechanicals,   // hasTheJob + stillBidding on each party
   contractTiers,   // sketch on intake; hasTheJob, invitedUs, isPaying; bonds at award
   // assignment
-  assignment: { pursue, priority, teamId, captain, assistantEstimator, bidClerk, internalEstimateDue, internalReviewDue },
+  assignment: { pursue, priority, teamId, captainUserId, captain, assistantEstimator, bidClerk, internalEstimateDue, internalReviewDue },
   takeoffAssignments: [{
     role: "duct1"|"duct2"|"hydronic1"|"hydronic2"|"plumbing1"|"plumbing2"|"vrf"|"equipment"|"other",
     assigneeName, assignedAt, dueAt, status, hoursSpent, notes, finalQuantity, reviewedBy,
     versions: [{ version, createdBy, createdAt, reason, quantity, hoursSpent, csvAttachmentId, pdfAttachmentId }]
   }],
   // estimating setup
-  constructionType, constructionSubtype, mbePreference, pla, wageDecisionId, clearance, entityRule,
+  mbePreference, pla, wageDecisionId, clearance,
   labor: { apprenticeship, certifiedPayroll, calculatedLaborRate },
   ocipCcip, buyAmerican, lifts, parking,
   schedule: { expectedStart, expectedDurationDays, expectedCompletion, salesTax, materialEscalation, liftPercent },
@@ -158,7 +159,7 @@ Use `GET /lookups/bidding/process-meta` rather than hardcoding. Summary of new/c
   specSheets: [{ id, kind, title, specNumber, rows, footerNote, imageAttachmentIds }],
   // kind: duct|hydronic|plumbing|equipment. row also: insulationFamily, sizeMode, ductShape, manufacturers*, accessories, specSection/Paragraph
   technicalReview: { preparedBy, reviewedBy, reviewDate, approvedForTakeoff, comments },
-  // proposal
+  // proposal — OUTPUT (calculator + versions). Do not re-edit intake identity.
   estimateReview: { materialCost, laborCost, equipmentCost, subcontractCost, otherCosts, totalCost, margin, bidAmount,
                     scopeIncluded, scopeExcluded, alternates, qualifications, notes },
   proposalVersions: [{ version, amount, date, preparedBy, reviewedBy, reason, bestAndFinal, valueEngineering, scopeChange, attachmentId }],
@@ -198,7 +199,7 @@ Until the business changes them, `process-meta.defaults`:
 
 | Question | Default |
 |----------|---------|
-| Who assigns after intake? | Nick + PJ + bid clerk (`assignment.teamId` from `GET /lookups/bidding/teams`) |
+| Who assigns after intake? | Nick + PJ + bid clerk (`assignment.captainUserId` from `GET /lookups/bidding/captains` fills `assignment.teamId`) |
 | Intake mandatory to hand off | Header `estimateNumber` + `ourEntityId` only; rest incomplete OK |
 | Specs / technical review / takeoff assign | Captain |
 | Proposal approval | Estimating review |

@@ -64,17 +64,22 @@ export class BiddingActivityService {
   ) {}
 
   async getSummary(bidId: number): Promise<BidActivitySummaryDto> {
-    await this.requireBid(bidId);
-    const rows = await this.logRepo.find({
-      where: { bidId },
-      relations: ['user'],
-      order: { id: 'DESC' },
-    });
-    const userIds = new Set(rows.map((r) => r.userId).filter((id): id is number => id != null));
-    const latest = rows[0];
+    const [raw, latest] = await Promise.all([
+      this.logRepo
+        .createQueryBuilder('l')
+        .select('COUNT(*)', 'changeCount')
+        .addSelect('COUNT(DISTINCT l.userId)', 'attendeeCount')
+        .where('l.bidId = :bidId', { bidId })
+        .getRawOne<{ changeCount?: string | number; attendeeCount?: string | number }>(),
+      this.logRepo.findOne({
+        where: { bidId },
+        relations: ['user'],
+        order: { id: 'DESC' },
+      }),
+    ]);
     return {
-      attendeeCount: userIds.size,
-      changeCount: rows.length,
+      attendeeCount: Number(raw?.attendeeCount ?? 0),
+      changeCount: Number(raw?.changeCount ?? 0),
       lastActivityAt: latest?.createdAt instanceof Date ? latest.createdAt.toISOString() : null,
       lastActivityByEmail: latest?.user?.email ?? null,
     };

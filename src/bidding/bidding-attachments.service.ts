@@ -39,8 +39,8 @@ export class BiddingAttachmentsService {
     private readonly activity: BiddingActivityService,
   ) {}
 
-  async listForBid(bidId: number): Promise<BidAttachmentDto[]> {
-    await this.requireBid(bidId);
+  async listForBid(bidId: number, opts?: { skipExistCheck?: boolean }): Promise<BidAttachmentDto[]> {
+    if (!opts?.skipExistCheck) await this.requireBid(bidId);
     const rows = await this.attachmentRepo.find({
       where: { bidId },
       relations: ['file'],
