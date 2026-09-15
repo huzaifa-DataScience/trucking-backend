@@ -115,6 +115,88 @@ export type LostReason = (typeof LOST_REASONS)[number];
 export const HANDOFF_ACTIONS = ['complete', 'return'] as const;
 export type HandoffAction = (typeof HANDOFF_ACTIONS)[number];
 
+/** FollowupCRM-parity "Additional details" — see docs/BIDDING_FRONTEND_API.md. Value lists are the reference CRM's actual dropdown contents. */
+export const BID_BOND_STATUSES = ['not_ordered', 'ordered_not_received', 'received'] as const;
+export type BidBondStatus = (typeof BID_BOND_STATUSES)[number];
+
+export const BUDGET_BID_OPTIONS = ['yes', 'no', 'unknown'] as const;
+export type BudgetBidOption = (typeof BUDGET_BID_OPTIONS)[number];
+
+export const WAGE_RATE_CATEGORIES = ['wage_rate_pw_dba', 'non_wage_scale'] as const;
+export type WageRateCategory = (typeof WAGE_RATE_CATEGORIES)[number];
+
+export const OCIP_CCIP_STATUSES = ['not_applicable', 'yes_gl_workmans_comp', 'yes_gl_only'] as const;
+export type OcipCcipStatus = (typeof OCIP_CCIP_STATUSES)[number];
+
+/** "Status" — the CRM's sales pipeline status, distinct from our own workflow `outcome`. */
+export const SALES_STATUSES = [
+  'evaluate_whether_to_bid',
+  'not_pursued',
+  'bid_in_process',
+  'no_bid',
+  'prospective_future_bid',
+  'post_bid',
+  'rebid_budget',
+  'long_shot',
+  'in_the_running_to_win',
+  'lost',
+  'won',
+] as const;
+export type SalesStatus = (typeof SALES_STATUSES)[number];
+
+export const SUB_BUILDING_TYPES = [
+  'other',
+  'parochial',
+  'private_college',
+  'public_college',
+  'public_elementary_school',
+  'public_high_school',
+  'public_middle_junior_high_school',
+] as const;
+export type SubBuildingType = (typeof SUB_BUILDING_TYPES)[number];
+
+/** "Bid Type" — the CRM's trade/scope classification, distinct from our own `bidKind` (built-to-print/design-build/…, which gates the intake workflow). */
+export const TRADE_BID_TYPES = [
+  'insulation_sub',
+  'demolition_sub',
+  'general_construction',
+  'demolition_prime',
+  'insulation_prime',
+  'concrete',
+  'masonry',
+  'wastewater',
+  'pass_thru',
+  'other_services',
+] as const;
+export type TradeBidType = (typeof TRADE_BID_TYPES)[number];
+
+export const LEAD_SOURCES = [
+  'dodge_data_analytics',
+  'the_blue_book',
+  'smartsheet',
+  'smartbid',
+  'procore',
+  'planhub',
+  'pipeline',
+  'pantera',
+  'isqft',
+  'government_construction_bids',
+  'email_invites_only',
+  'e_builder',
+  'bid_central_canadian_construction',
+  'construction_bid_source',
+  'coconstruct',
+  'cmd_group_construction_market',
+  'building_radar',
+  'buildingconnected',
+  'buildertrend',
+  'box_net',
+  'bonfire',
+  'bidtracer',
+  'bidclerk',
+] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+
 export const PROCESS_ATTACHMENT_LABELS = [
   'invitation',
   'drawings',
@@ -318,6 +400,73 @@ export type BondBlock = {
   notes: string | null;
 };
 
+/**
+ * FollowupCRM-parity fields with no home elsewhere in the workflow. Fields that already
+ * exist under a different name (Contract Amount = award.finalContractAmount, Job Start/End =
+ * schedule.expectedStart/expectedCompletion, Follow Up = intelligence.nextFollowUpDate,
+ * Technical = technicalReview.reviewDate, OCIP/CCIP = ocipCcip) are intentionally NOT
+ * duplicated here — they're aliased in the list summary / filter catalog instead.
+ */
+export type AdditionalDetails = {
+  bidNumber: string | null;
+  winningCompetitor: string | null;
+  mikeEstimateRef: string | null;
+  websiteForBiddingDocs: string | null;
+  altWebLocation1: string | null;
+  altWebLocation2: string | null;
+  altWebLocation3: string | null;
+  wbdUsername: string | null;
+  wbdPassword: string | null;
+  wageRateCategory: WageRateCategory | null;
+  wageRateAmount: number | null;
+  grossSqFootage: number | null;
+  projectNumberIfAwarded: string | null;
+  usCitizenOnly: boolean | null;
+  fringe: number | null;
+  costPerEstimate: number | null;
+  bidBondStatus: BidBondStatus | null;
+  bidBondAmountRequested: number | null;
+  budgetBid: BudgetBidOption | null;
+  takeOffPerson: string | null;
+  takeOffPerson2: string | null;
+  takeOffPerson3: string | null;
+  awl1Username: string | null;
+  awl1Password: string | null;
+  awl2Username: string | null;
+  awl2Password: string | null;
+  awl3Username: string | null;
+  awl3Password: string | null;
+  estimatorBidDate: string | null;
+  rebid: boolean | null;
+  engineerProjectNumber: string | null;
+  contractDate: string | null;
+  loginDate: string | null;
+  deadDate: string | null;
+  comments: string | null;
+  subBuildingType: SubBuildingType | null;
+  source: LeadSource | null;
+  /** "Pre Bid" (pre-bid conference/meeting date) in FollowupCRM. */
+  preBidDate: string | null;
+  /** Sales pipeline "Status" — distinct from our own workflow `outcome`. */
+  salesStatus: SalesStatus | null;
+  /** Trade/scope "Bid Type" — distinct from our own `bidKind` (gates the intake workflow). */
+  tradeBidType: TradeBidType | null;
+  /** Single-select OCIP/CCIP status, distinct from the existing coversGl/coversWc checkboxes on Estimating Setup. */
+  ocipCcipStatus: OcipCcipStatus | null;
+};
+
+/** Dates not already covered elsewhere (Follow Up / Technical / Job Start-End live on intelligence/technicalReview/schedule). */
+export type SalesActivities = {
+  initialContact: string | null;
+  siteVisit: string | null;
+  bidDrafted: string | null;
+  bidDelivered: string | null;
+  frontEndDocs: string | null;
+  heatTracingSubPricing: string | null;
+  prequalificationPackage: string | null;
+  mandatoryPreBid: string | null;
+};
+
 export type BidProcess = {
   stage: ProcessStage;
   outcome: OutcomeStatus;
@@ -502,6 +651,8 @@ export type BidProcess = {
   contractTiers: ContractTier[];
   bond: BondBlock;
   breadcrumbs: Array<{ at: string | null; text: string }>;
+  additionalDetails: AdditionalDetails;
+  salesActivities: SalesActivities;
 };
 
 export type WorkflowChrome = {
@@ -698,6 +849,59 @@ export function emptyProcess(): BidProcess {
       notes: null,
     },
     breadcrumbs: [],
+    additionalDetails: {
+      bidNumber: null,
+      winningCompetitor: null,
+      mikeEstimateRef: null,
+      websiteForBiddingDocs: null,
+      altWebLocation1: null,
+      altWebLocation2: null,
+      altWebLocation3: null,
+      wbdUsername: null,
+      wbdPassword: null,
+      wageRateCategory: null,
+      wageRateAmount: null,
+      grossSqFootage: null,
+      projectNumberIfAwarded: null,
+      usCitizenOnly: null,
+      fringe: null,
+      costPerEstimate: null,
+      bidBondStatus: null,
+      bidBondAmountRequested: null,
+      budgetBid: null,
+      takeOffPerson: null,
+      takeOffPerson2: null,
+      takeOffPerson3: null,
+      awl1Username: null,
+      awl1Password: null,
+      awl2Username: null,
+      awl2Password: null,
+      awl3Username: null,
+      awl3Password: null,
+      estimatorBidDate: null,
+      rebid: null,
+      engineerProjectNumber: null,
+      contractDate: null,
+      loginDate: null,
+      deadDate: null,
+      comments: null,
+      subBuildingType: null,
+      source: null,
+      preBidDate: null,
+      salesStatus: null,
+      tradeBidType: null,
+      ocipCcipStatus: null,
+    },
+    salesActivities: {
+      initialContact: null,
+      siteVisit: null,
+      bidDrafted: null,
+      bidDelivered: null,
+      frontEndDocs: null,
+      heatTracingSubPricing: null,
+      prequalificationPackage: null,
+      mandatoryPreBid: null,
+    },
   };
 }
 
@@ -731,15 +935,30 @@ export function ourTierIndex(tiers: ContractTier[]): number | null {
   return i < 0 ? null : i;
 }
 
+/**
+ * Parses already-stored process JSON for display (list/detail reads). Deliberately does NOT
+ * throw on values that fail current validation (e.g. an enum whose allowed values changed
+ * since the row was saved) — one legacy/edge-case bid must never break the whole list. Writes
+ * (mergeProcess called directly from create/patch) stay strictly validated.
+ */
 export function parseProcess(raw: unknown): BidProcess {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyProcess();
-  return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
+  try {
+    return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
+  } catch (e) {
+    if (!(e instanceof BidProcessError)) throw e;
+    return mergeProcess(emptyProcess(), raw as Record<string, unknown>, { skipValidation: true });
+  }
 }
 
 /**
  * Shallow-merge objects; arrays replace. Then fill suggested entity + bond claim date.
  */
-export function mergeProcess(existing: BidProcess, patch: Record<string, unknown>): BidProcess {
+export function mergeProcess(
+  existing: BidProcess,
+  patch: Record<string, unknown>,
+  opts?: { skipValidation?: boolean },
+): BidProcess {
   const next = structuredClone(existing) as BidProcess;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
@@ -757,7 +976,7 @@ export function mergeProcess(existing: BidProcess, patch: Record<string, unknown
   if (next.lost.winningPrice != null && next.lost.ourFinalPrice != null) {
     next.lost.difference = next.lost.winningPrice - next.lost.ourFinalPrice;
   }
-  assertProcess(next);
+  if (!opts?.skipValidation) assertProcess(next);
   return next;
 }
 
@@ -954,6 +1173,48 @@ function assertProcess(p: BidProcess): void {
   }
   if (p.lost.reason != null && !LOST_REASONS.includes(p.lost.reason)) {
     throw new BidProcessError(`Invalid process.lost.reason: ${p.lost.reason}`);
+  }
+  if (
+    p.additionalDetails.bidBondStatus != null &&
+    !BID_BOND_STATUSES.includes(p.additionalDetails.bidBondStatus)
+  ) {
+    throw new BidProcessError(`Invalid process.additionalDetails.bidBondStatus: ${p.additionalDetails.bidBondStatus}`);
+  }
+  if (p.additionalDetails.budgetBid != null && !BUDGET_BID_OPTIONS.includes(p.additionalDetails.budgetBid)) {
+    throw new BidProcessError(`Invalid process.additionalDetails.budgetBid: ${p.additionalDetails.budgetBid}`);
+  }
+  if (
+    p.additionalDetails.wageRateCategory != null &&
+    !WAGE_RATE_CATEGORIES.includes(p.additionalDetails.wageRateCategory)
+  ) {
+    throw new BidProcessError(
+      `Invalid process.additionalDetails.wageRateCategory: ${p.additionalDetails.wageRateCategory}`,
+    );
+  }
+  if (
+    p.additionalDetails.ocipCcipStatus != null &&
+    !OCIP_CCIP_STATUSES.includes(p.additionalDetails.ocipCcipStatus)
+  ) {
+    throw new BidProcessError(
+      `Invalid process.additionalDetails.ocipCcipStatus: ${p.additionalDetails.ocipCcipStatus}`,
+    );
+  }
+  if (p.additionalDetails.salesStatus != null && !SALES_STATUSES.includes(p.additionalDetails.salesStatus)) {
+    throw new BidProcessError(`Invalid process.additionalDetails.salesStatus: ${p.additionalDetails.salesStatus}`);
+  }
+  if (
+    p.additionalDetails.subBuildingType != null &&
+    !SUB_BUILDING_TYPES.includes(p.additionalDetails.subBuildingType)
+  ) {
+    throw new BidProcessError(
+      `Invalid process.additionalDetails.subBuildingType: ${p.additionalDetails.subBuildingType}`,
+    );
+  }
+  if (p.additionalDetails.tradeBidType != null && !TRADE_BID_TYPES.includes(p.additionalDetails.tradeBidType)) {
+    throw new BidProcessError(`Invalid process.additionalDetails.tradeBidType: ${p.additionalDetails.tradeBidType}`);
+  }
+  if (p.additionalDetails.source != null && !LEAD_SOURCES.includes(p.additionalDetails.source)) {
+    throw new BidProcessError(`Invalid process.additionalDetails.source: ${p.additionalDetails.source}`);
   }
   if (p.amendments.length > MAX_AMENDMENTS) {
     throw new BidProcessError(`process.amendments max ${MAX_AMENDMENTS}`);
