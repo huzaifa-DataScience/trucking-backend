@@ -22,6 +22,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards';
+import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 
@@ -98,7 +99,14 @@ export class BiddingLookupsController {
   constructor(
     private readonly lookups: BiddingLookupsService,
     private readonly specs: SpecsService,
+    private readonly comments: BiddingCommentsService,
   ) {}
+
+  /** Typeahead for @mentions. `q=a` → emails whose local part or address starts with a. */
+  @Get('mention-users')
+  mentionUsers(@Query('q') q?: string) {
+    return this.comments.mentionUsers(q);
+  }
 
   @Get('teams')
   getTeams() {
@@ -106,8 +114,13 @@ export class BiddingLookupsController {
   }
 
   @Get('parties')
-  getParties(@Query('role') role?: string, @Query('q') q?: string) {
-    return this.lookups.getParties(role, q);
+  getParties(
+    @Query('role') role?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.lookups.getParties(role, q, page, pageSize);
   }
 
   @Get('process-meta')

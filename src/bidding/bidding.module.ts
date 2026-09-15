@@ -24,7 +24,11 @@ import {
   BidItemCatalog,
   AppFile,
   BidAttachment,
+  BidComment,
+  BidCommentAttachment,
+  BidCommentMention,
   BidActivityLog,
+  User,
   Job,
 } from '../database/entities';
 import { ConnecteamModule } from '../connecteam/connecteam.module';
@@ -32,9 +36,11 @@ import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
 import { BiddingService } from './bidding.service';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
+import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingActivityService } from './bidding-activity.service';
 import { BiddingLookupsController } from './bidding-lookups.controller';
 import { BiddingLookupsService } from './bidding-lookups.service';
+import { RoleDashboardController } from './role-dashboard.controller';
 import { SpecsController } from './specs/specs.controller';
 import { SpecsService } from './specs/specs.service';
 
@@ -71,15 +77,20 @@ import { SpecsService } from './specs/specs.service';
       BidItemCatalog,
       AppFile,
       BidAttachment,
+      BidComment,
+      BidCommentAttachment,
+      BidCommentMention,
       BidActivityLog,
+      User,
       Job,
     ]),
   ],
-  controllers: [BiddingController, BiddingLookupsController, SpecsController],
+  controllers: [RoleDashboardController, BiddingController, BiddingLookupsController, SpecsController],
   providers: [
     BiddingService,
     BiddingLookupsService,
     BiddingAttachmentsService,
+    BiddingCommentsService,
     BiddingActivityService,
     SpecsService,
     FileStorageService,

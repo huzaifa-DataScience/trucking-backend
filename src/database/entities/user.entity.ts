@@ -31,11 +31,21 @@ export class User {
   @Column({ name: 'Email', type: 'nvarchar', length: 255, unique: true })
   email: string;
 
+  @Column({ name: 'FirstName', type: 'nvarchar', length: 200, nullable: true })
+  firstName: string | null;
+
+  @Column({ name: 'LastName', type: 'nvarchar', length: 200, nullable: true })
+  lastName: string | null;
+
   @Column({ name: 'PasswordHash', type: 'nvarchar', length: 255 })
   passwordHash: string;
 
   @Column({ name: 'Role', type: 'nvarchar', length: 50, default: Role.User })
   role: Role;
+
+  /** Bidding crew — `Bid_Teams.TeamId`. Null = not on a team yet. */
+  @Column({ name: 'BidTeamId', type: 'int', nullable: true })
+  bidTeamId: number | null;
 
   @Column({ name: 'Status', type: 'nvarchar', length: 50, default: UserStatus.Pending })
   status: UserStatus;
@@ -49,4 +59,27 @@ export class User {
   /** Relative storage path under UPLOAD_ROOT (e.g. avatars/12/uuid.jpg), not a public URL. */
   @Column({ name: 'AvatarPath', type: 'nvarchar', length: 500, nullable: true })
   avatarPath: string | null;
+}
+
+export type UserNameBits = {
+  id?: number;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export function cleanPersonName(v: unknown): string | null {
+  const t = String(v ?? '').trim();
+  return t || null;
+}
+
+/** `First Last`, or null if both missing. */
+export function userFullName(user: UserNameBits | null | undefined): string | null {
+  const parts = [cleanPersonName(user?.firstName), cleanPersonName(user?.lastName)].filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+/** First + last, else email, else `User {id}`. */
+export function userDisplayName(user: UserNameBits | null | undefined, fallback = 'Unknown'): string {
+  return userFullName(user) || cleanPersonName(user?.email) || (user?.id ? `User ${user.id}` : fallback);
 }

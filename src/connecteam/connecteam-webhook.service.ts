@@ -5,6 +5,19 @@ import { Repository } from 'typeorm';
 import { ConnecteamWebhookEvent } from '../database/entities';
 import { ConnecteamChatService } from './connecteam-chat.service';
 
+/** SQL CHECK `ISJSON(PayloadJson)=1`. Never mid-cut JSON.stringify (that failed CK_Connecteam_WebhookEvents_Payload). */
+export function webhookPayloadJson(body: unknown): string {
+  let raw: string;
+  try {
+    raw = JSON.stringify(body ?? {});
+  } catch {
+    return '{}';
+  }
+  if (!raw) return '{}';
+  if (raw.length <= 16_000) return raw;
+  return JSON.stringify({ truncated: true, preview: raw.slice(0, 14_000) });
+}
+
 export type ConnecteamWebhookPayload = {
   requestId?: string;
   company?: string;
@@ -40,7 +53,7 @@ export class ConnecteamWebhookService {
       eventType: payload.eventType ?? null,
       activityType: payload.activityType ?? null,
       eventTimestamp: payload.eventTimestamp != null ? String(payload.eventTimestamp) : null,
-      payloadJson: JSON.stringify(rawBody ?? payload).slice(0, 8000),
+      payloadJson: webhookPayloadJson(rawBody ?? payload),
       receivedAt: new Date(),
     });
     this.logger.log(

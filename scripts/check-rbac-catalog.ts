@@ -9,6 +9,8 @@ import {
   PERMISSION_CATALOG,
   PERMISSION_KEYS,
   ROLE_META,
+  SUPER_ADMIN_ONLY_KEYS,
+  hardcodedPermissionsForRole,
   isAppRoleId,
 } from '../src/auth/rbac-catalog';
 
@@ -41,9 +43,12 @@ assert(
   'clerk has write, no summary',
 );
 assert(
-  DEFAULT_PERMISSIONS_BY_ROLE.admin.length === PERMISSION_KEYS.length &&
-    DEFAULT_PERMISSIONS_BY_ROLE.admin.includes('admin:rbac'),
-  'IT admin has every key',
+  DEFAULT_PERMISSIONS_BY_ROLE.admin.includes('admin:rbac') &&
+    !DEFAULT_PERMISSIONS_BY_ROLE.admin.some((k) => SUPER_ADMIN_ONLY_KEYS.includes(k)),
+  'IT admin has every key except WFS',
 );
+assert(hardcodedPermissionsForRole('admin')?.includes('wfs:read') !== true, 'admin JWT has no WFS');
+assert(hardcodedPermissionsForRole('super_admin')?.includes('wfs:read') === true, 'super_admin JWT has WFS');
+assert(PERMISSION_CATALOG.filter((p) => p.locked).every((p) => p.key.startsWith('wfs:')), 'only WFS rows locked');
 
 console.log('check-rbac-catalog: ok', APP_ROLE_IDS.length, 'roles', PERMISSION_KEYS.length, 'permissions');

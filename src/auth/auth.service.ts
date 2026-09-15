@@ -110,6 +110,7 @@ export class AuthService {
       status: user.status,
       permissions: permissions ?? [],
       avatarUrl: user.avatarPath ? `/auth/avatar/${user.id}` : null,
+      teamId: user.bidTeamId ?? null,
     };
   }
 
@@ -186,4 +187,5 @@ export interface LoginResult {
   status: string;
   permissions: string[];
   avatarUrl: string | null;
+  teamId: number | null;
 }
