@@ -1,12 +1,14 @@
 # Spec sheet — Frontend Handoff
 
 **Give this file to FE.** It replaces last week’s spec-sheet cascade.  
-**Last updated:** 2026-08-25  
+**Last updated:** 2026-09-09  
 **Stage:** Estimating Setup (`estimating_setup`) — **before takeoff**  
 **Chrome:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
-**Source:** PJ catch-up 2026-08-23. Lock this cascade. Nick / Gino / captains vet later.
+**Source:** PJ catch-up 2026-08-23 + dry run 2026-09-05. Lock this cascade.
 
-Enums live in `GET /lookups/bidding/process-meta` → `specSheetEditor`. Do not hardcode if meta already has the list.
+Enums live in `GET /lookups/bidding/process-meta` → `specSheetEditor` + `setupEditor`. Do not hardcode if meta already has the list.
+
+9 Sep extras: **CertainTeed** in manufacturers. Preferred must be in `manufacturersAllowed`. Pipe **999 (and greater)** like Mike. Copy row / stack all sheets / confirm before delete — `specSheetEditor.copyRow`, `stackSheets`, `confirmDeleteSheet`. Paste spec image → `imageAttachmentIds`. Default one layer = jacket `none`. Construction type = `GET /lookups/bidding/building-types` (Followup buckets), subtype `project-types`, MBE `preferences`. VRF + equipment takeoff = hydronic team (`defaults.equipmentAndVrfTeam`).
 
 This is **not** a spreadsheet. Codes are **never a dropdown**. Estimators may **type the Mike code** (`FGA`) to fill the row. PMs go family → product. Column label is **Mike code**, not Skip.
 
@@ -45,6 +47,7 @@ Same Estimating Setup screen, **above** spec sheets, next to OCIP:
 | UI | Bind | Rule |
 |----|------|------|
 | Buy American? | `process.buyAmerican` | `true` / `false` / `null`. **Project-level.** Federal work. Not per row. |
+| **A+** | `process.aPlus` | `true` / `false` / `null`. **Setup page only — one checkbox for the bid.** Not a spec-sheet column. |
 
 Incomplete OK. Save with the rest of Setup.
 
@@ -69,7 +72,8 @@ Same list: `process-meta.specSheetEditor.cascade`.
 6. Factory jacket       GET spec-facings                            facing   (layer 1)
 7. Field covering       process-meta.specSheetEditor.coverings      jacket   (layer 2)
 8. Duct shape           only if kind=duct                           ductShape
-9. Size from / to       see sizeMode below                          sizeMin / sizeMax
+9. Size from / to       0–999 inches                                sizeMin / sizeMax
+9b. Width               0–999 inches (roll / board)                 widthIn
 10. Manufacturers       process-meta.specSheetEditor.manufacturers  allowed[] + preferred
 11. Accessories         free text                                   accessories
 12. Spec § / paragraph  e.g. 230700 / 2.6                           specSection / specParagraph
@@ -118,7 +122,7 @@ Insulation GET can take 10–20s (Trimble dims). Family / covering / shape are i
 
 ## What to build
 
-Setup → **Add spec** → Duct / HVAC pipe / Plumbing / **Equipment**. Clone `specSheetTemplates[].empty` (6 blank rows). New `id` on the sheet **and** each row (`crypto.randomUUID()`). Never keep `new-duct`.
+Setup → **Add spec** → Duct / HVAC pipe / Plumbing / **Equipment**. Clone `specSheetTemplates[].empty` (6 blank rows). New `id` on the sheet **and** each row (`newId()` — see [FRONTEND_BIDDING_CONTEXT.md](./FRONTEND_BIDDING_CONTEXT.md); raw `crypto.randomUUID()` throws on HTTP). Never keep `new-duct`.
 
 Sheet chrome: title, optional spec number (`230700`), footer note, images (`label=spec-sheet-image`).
 
@@ -155,7 +159,11 @@ Cache `GET /lookups/bidding/process-meta` once.
 
 **Manufacturers** (`manufacturersAllowed` / `manufacturerPreferred`):
 
-`owens_corning` · `johns_manville` · `knauf` · `manson` · `other`
+`owens_corning` · `johns_manville` · `certainteed` · `knauf` · `manson` · `other`
+
+`manufacturerPreferred` must be one of `manufacturersAllowed`. Backend drops it otherwise.
+
+**Size / width 0–999:** Number inputs for `sizeMin`, `sizeMax`, and `widthIn` are inches, **min 0 max 999**. 999 = Mike “and greater”. Dropdown lists include `0` and `999 (and greater)`. All sizes → `sizeMin: 0`, `sizeMax: 999`. `process-meta.specSheetEditor.sizeRange`.
 
 **Duct shapes:** `rectangular` · `square` · `round` · `oval`
 
@@ -230,6 +238,7 @@ type SpecSheetRow = {
   areaCode: string | null;
   sizeMin: number | null;
   sizeMax: number | null;
+  widthIn: number | null;
   sizeMode: 'nps' | 'circumference' | 'any' | null;
   ductShape: 'rectangular' | 'square' | 'round' | 'oval' | null;
   insulationFamily:
@@ -329,6 +338,7 @@ Duct row example (any size, two layers):
   "areaName": "Outdoor",
   "sizeMin": null,
   "sizeMax": null,
+  "widthIn": null,
   "sizeMode": "circumference",
   "ductShape": "rectangular",
   "insulationFamily": "fiberglass",
@@ -369,4 +379,5 @@ Duct row example (any size, two layers):
 - [ ] Manufacturer multi + preferred
 - [ ] Accessories, spec section, spec paragraph, `otherNote`
 - [ ] Setup **Buy American** above the table
+- [ ] Setup **A+** (`process.aPlus`) next to Buy American — bid-level, **not** on spec rows
 - [ ] PATCH full `specSheets` array; new UUIDs

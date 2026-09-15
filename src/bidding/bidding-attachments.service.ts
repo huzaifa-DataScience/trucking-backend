@@ -54,7 +54,7 @@ export class BiddingAttachmentsService {
   async upload(
     bidId: number,
     file: Express.Multer.File,
-    opts: { label?: string; userId?: number },
+    opts: { label?: string; userId?: number; skipActivity?: boolean },
   ): Promise<BidAttachmentDto> {
     const bid = await this.requireBid(bidId);
     if (bid.status === 'archived') {
@@ -107,7 +107,7 @@ export class BiddingAttachmentsService {
     );
     attachment.file = appFile;
     const dto = this.toDto(attachment);
-    await this.activity.recordAttachmentAdded(bidId, opts.userId, originalName);
+    if (!opts.skipActivity) await this.activity.recordAttachmentAdded(bidId, opts.userId, originalName);
     return dto;
   }
 

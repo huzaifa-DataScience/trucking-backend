@@ -3,7 +3,14 @@
  * Filter is the kind's Excel materials (not "skip accessory"). Units we scan:
  * Roll, Linear Foot / Foot, Square Foot (LF and SF treated the same).
  */
-import { classifyInsulationFamily, classifySpecLayer, specInchOption } from '../process/spec-sheet';
+import {
+  classifyInsulationFamily,
+  classifySpecLayer,
+  specInchOption,
+  withSizeBounds,
+  MIKE_SIZE_MIN,
+  MIKE_SIZE_MAX,
+} from '../process/spec-sheet';
 import {
   parseLineItemName,
   parseRollDims,
@@ -59,8 +66,6 @@ const SKIP_JACKET_TOKS = new Set(['pvc', 'canvas', 'aluminum', 'stainless', 'vic
 
 /** Roll width / length misparsed as insulation thickness. */
 const MAX_INSULATION_THICK_IN = 12;
-/** 96"/120" is roll width, not pipe NPS. 48" pipe covering exists. */
-const MAX_PIPE_SIZE_IN = 80;
 
 function nameLc(s: string): string {
   return String(s || '').toLowerCase();
@@ -177,14 +182,14 @@ export function companyItemMatchesExcel(
 function parsedDims(item: TrimbleCatalogRow, mode: CatalogMatchMode): { sizeIn: number | null; thicknessIn: number | null } {
   if (mode === 'roll' || trimbleUnitKind(item.units) === 'roll') {
     const dims = parseRollDims(item.itemName);
-    return { sizeIn: null, thicknessIn: dims.thickIn };
+    return { sizeIn: dims.widthIn, thicknessIn: dims.thickIn };
   }
   const p = parseLineItemName(item.itemName);
   return { sizeIn: p.sizeNum, thicknessIn: p.thickNum };
 }
 
 function keepSize(n: number | null): n is number {
-  return n != null && Number.isFinite(n) && n > 0 && n <= MAX_PIPE_SIZE_IN;
+  return n != null && Number.isFinite(n) && n >= MIKE_SIZE_MIN && n <= MIKE_SIZE_MAX;
 }
 
 function keepThick(n: number | null): n is number {
@@ -208,9 +213,10 @@ export function catalogDimsForMaterial(
     if (keepSize(dims.sizeIn)) sizes.push(dims.sizeIn);
     if (keepThick(dims.thicknessIn)) thicknesses.push(dims.thicknessIn);
   }
+  const sizeOpts = uniqueInches(sizes);
   return {
     skuCount,
-    sizes: uniqueInches(sizes),
+    sizes: withSizeBounds(sizeOpts),
     thicknesses: uniqueInches(thicknesses),
   };
 }

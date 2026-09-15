@@ -6,6 +6,7 @@
  * Award/startup and lost screens are gated by outcome — not a stage you hand off into.
  */
 
+import { dashboardPlatesMeta } from './bid-plate';
 import {
   normalizeSpecSheets,
   specSheetTemplatesMeta,
@@ -16,6 +17,8 @@ import {
   DUCT_SHAPES,
   SPEC_COVERINGS,
   SPEC_MANUFACTURERS,
+  MIKE_SIZE_MIN,
+  MIKE_SIZE_MAX,
   type SpecSheet,
 } from './spec-sheet';
 
@@ -232,6 +235,9 @@ const MAX_COMPETITORS = 40;
 const MAX_BREADCRUMBS = 200;
 const MAX_PROPOSAL_VERSIONS = 50;
 const MAX_TAKEOFF_VERSIONS = 40;
+const MAX_INVITE_BODY = 50_000;
+
+export type PreferredContact = 'email' | 'phone';
 
 export type PartyContact = {
   name: string | null;
@@ -239,6 +245,10 @@ export type PartyContact = {
   contactName: string | null;
   email: string | null;
   phone: string | null;
+  /** Dropdown: email | phone. FE label = Preferred contact (not “Contact”). */
+  preferredContact?: PreferredContact | null;
+  /** Derived — the email or phone for the selected option. Do not PATCH this. */
+  preferredContactValue?: string | null;
 };
 
 export const INTAKE_PARTY_ROLES = ['owner', 'architect', 'mechanical', 'invite_contact'] as const;
@@ -296,6 +306,8 @@ export type DocumentLink = {
   url: string | null;
   label: string | null;
   source: string | null;
+  /** Owner/federal public set — check here first for addenda. */
+  checkAddenda: boolean | null;
 };
 
 export type InviteAddendum = {
@@ -312,6 +324,8 @@ export type BidInvitation = {
   attachmentIds: number[];
   addenda: InviteAddendum[];
   notes: string | null;
+  /** Pasted invitation email / BuildingConnected dump. Not clerk notes. */
+  inviteBody: string | null;
 };
 
 /** Kinds that are 100% / detailed sets — PJ: nothing to bid without drawings. */
@@ -536,10 +550,14 @@ export type BidProcess = {
   ocipCcip: { coversGl: boolean | null; coversWc: boolean | null };
   /** Project-level. Federal work. Decide before the spec table. Not per product. */
   buyAmerican: boolean | null;
+  /** Estimating Setup page — one field for the bid, not a spec-sheet column. */
+  aPlus: boolean | null;
   lifts: { needed: boolean | null; addMoney: boolean | null };
   parking: { paidToWorkers: boolean | null; total: number | null };
   relatedBidId: number | null;
   relatedBidNote: string | null;
+  /** Bid-level sticky Notes pad. Not invitation paste (`invitations[].inviteBody`) or clerk invite notes. */
+  notes: string | null;
   whoElseBidding: {
     researched: boolean | null;
     notes: string | null;
@@ -672,7 +690,57 @@ export type WorkflowChrome = {
 };
 
 export function emptyParty(): PartyContact {
-  return { name: null, company: null, contactName: null, email: null, phone: null };
+  return {
+    name: null,
+    company: null,
+    contactName: null,
+    email: null,
+    phone: null,
+    preferredContact: null,
+    preferredContactValue: null,
+  };
+}
+
+const US_STATES = new Set([
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
+  'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM',
+  'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA',
+  'WV', 'WI', 'WY',
+]);
+
+/** Fill city/state/zip from a pasted US line when those fields are empty. Keeps line1. */
+export function fillProjectAddress(addr: {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}): typeof addr {
+  const parsed = parseUsAddress([addr.line1, addr.line2].filter(Boolean).join(', '));
+  return {
+    line1: addr.line1,
+    line2: addr.line2,
+    city: addr.city || parsed.city,
+    state: addr.state || parsed.state,
+    zip: addr.zip || parsed.zip,
+  };
+}
+
+export function parseUsAddress(raw: string): { city: string | null; state: string | null; zip: string | null } {
+  const s = raw.replace(/\s+/g, ' ').trim();
+  if (!s) return { city: null, state: null, zip: null };
+  const zipM = s.match(/\b(\d{5}(?:-\d{4})?)\s*$/);
+  const zip = zipM?.[1] ?? null;
+  let rest = zipM?.index != null ? s.slice(0, zipM.index).replace(/[,\s]+$/, '') : s;
+  const stM = rest.match(/(?:,|\s)\s*([A-Za-z]{2})\s*$/);
+  let state: string | null = null;
+  if (stM && US_STATES.has(stM[1].toUpperCase())) {
+    state = stM[1].toUpperCase();
+    rest = rest.slice(0, stM.index).replace(/[,\s]+$/, '');
+  }
+  const comma = rest.lastIndexOf(',');
+  const city = (comma >= 0 ? rest.slice(comma + 1) : rest).trim() || null;
+  return { city, state, zip };
 }
 
 export function emptyProcess(): BidProcess {
@@ -742,10 +810,12 @@ export function emptyProcess(): BidProcess {
     mechanicals: [],
     ocipCcip: { coversGl: null, coversWc: null },
     buyAmerican: null,
+    aPlus: null,
     lifts: { needed: null, addMoney: null },
     parking: { paidToWorkers: null, total: null },
     relatedBidId: null,
     relatedBidNote: null,
+    notes: null,
     whoElseBidding: { researched: null, notes: null },
     budgetOnly: null,
     proposalIteration: null,
@@ -1269,6 +1339,8 @@ function normalizeProcess(p: BidProcess): void {
   if (!OUTCOMES.includes(p.outcome)) p.outcome = 'open';
   p.wageDecisionId = numOrNull(p.wageDecisionId);
   p.relatedBidId = numOrNull(p.relatedBidId);
+  p.relatedBidNote = nullishStr(p.relatedBidNote);
+  p.notes = nullishStr(p.notes);
   p.ownerProjectNumber = normalizeProjectNumber(p.ownerProjectNumber);
   p.mechanicalEngineerProjectNumber = normalizeProjectNumber(p.mechanicalEngineerProjectNumber);
   if (p.assignment && typeof p.assignment === 'object') {
@@ -1307,18 +1379,31 @@ function normalizeProcess(p: BidProcess): void {
   if (!p.entityRule || typeof p.entityRule !== 'object') p.entityRule = nest.entityRule;
   if (!p.bond || typeof p.bond !== 'object') p.bond = nest.bond;
   if (!p.projectAddress || typeof p.projectAddress !== 'object') p.projectAddress = nest.projectAddress;
+  p.projectAddress = fillProjectAddress({
+    line1: nullishStr(p.projectAddress.line1),
+    line2: nullishStr(p.projectAddress.line2),
+    city: nullishStr(p.projectAddress.city),
+    state: nullishStr(p.projectAddress.state),
+    zip: nullishStr(p.projectAddress.zip),
+  });
   if (!p.inviteContact || typeof p.inviteContact !== 'object') p.inviteContact = emptyParty();
+  else p.inviteContact = normalizeContact(p.inviteContact);
   if (!p.whoElseBidding || typeof p.whoElseBidding !== 'object') {
     p.whoElseBidding = nest.whoElseBidding;
   }
   if (!Array.isArray(p.invitations)) p.invitations = [];
   if (!Array.isArray(p.documentLinks)) p.documentLinks = [];
   if (!p.owner || typeof p.owner !== 'object') p.owner = emptyParty();
+  else p.owner = normalizeContact(p.owner);
   if (!p.architect || typeof p.architect !== 'object') p.architect = emptyParty();
+  else p.architect = normalizeContact(p.architect);
   if (!p.mechanicalEngineer || typeof p.mechanicalEngineer !== 'object') {
     p.mechanicalEngineer = emptyParty();
+  } else {
+    p.mechanicalEngineer = normalizeContact(p.mechanicalEngineer);
   }
   if (!p.ocipCcip || typeof p.ocipCcip !== 'object') p.ocipCcip = nest.ocipCcip;
+  p.aPlus = triBool(p.aPlus);
   if (!p.lifts || typeof p.lifts !== 'object') p.lifts = nest.lifts;
   if (!p.parking || typeof p.parking !== 'object') p.parking = nest.parking;
   if (!p.insulationSpecs || typeof p.insulationSpecs !== 'object') p.insulationSpecs = nest.insulationSpecs;
@@ -1375,13 +1460,7 @@ function normalizeProcess(p: BidProcess): void {
   p.documentLinks = p.documentLinks.map(normalizeDocumentLink);
   p.invitations = p.invitations.map((inv) => ({
     receivedAt: nullishStr(inv?.receivedAt),
-    contact: {
-      name: nullishStr(inv?.contact?.name),
-      company: nullishStr(inv?.contact?.company),
-      contactName: nullishStr(inv?.contact?.contactName),
-      email: nullishStr(inv?.contact?.email),
-      phone: nullishStr(inv?.contact?.phone),
-    },
+    contact: normalizeContact(inv?.contact),
     links: Array.isArray(inv?.links) ? inv.links.map(normalizeDocumentLink) : [],
     attachmentIds: Array.isArray(inv?.attachmentIds)
       ? inv.attachmentIds.map(numOrNull).filter((n): n is number => n != null)
@@ -1397,6 +1476,7 @@ function normalizeProcess(p: BidProcess): void {
         }))
       : [],
     notes: nullishStr(inv?.notes),
+    inviteBody: clipStr(inv?.inviteBody, MAX_INVITE_BODY),
   }));
   if (p.invitations.length === 0 && invitationSeed(p)) {
     p.invitations = [
@@ -1407,6 +1487,7 @@ function normalizeProcess(p: BidProcess): void {
         attachmentIds: [],
         addenda: [],
         notes: null,
+        inviteBody: null,
       },
     ];
   } else if (p.invitations.length > 0) {
@@ -1452,13 +1533,33 @@ function normalizeProcess(p: BidProcess): void {
   }));
 }
 
+function preferredOf(v: unknown): PreferredContact | null {
+  return v === 'email' || v === 'phone' ? v : null;
+}
+
+function clipStr(v: unknown, max: number): string | null {
+  const s = nullishStr(v);
+  return s && s.length > max ? s.slice(0, max) : s;
+}
+
+function normalizeContact(c: PartyContact | null | undefined): PartyContact {
+  const email = nullishStr(c?.email);
+  const phone = nullishStr(c?.phone);
+  const preferredContact = preferredOf(c?.preferredContact);
+  return {
+    name: nullishStr(c?.name),
+    company: nullishStr(c?.company),
+    contactName: nullishStr(c?.contactName),
+    email,
+    phone,
+    preferredContact,
+    preferredContactValue: preferredContact === 'email' ? email : preferredContact === 'phone' ? phone : null,
+  };
+}
+
 function normalizeParty(p: BidParty): BidParty {
   return {
-    name: nullishStr(p?.name),
-    company: nullishStr(p?.company),
-    contactName: nullishStr(p?.contactName),
-    email: nullishStr(p?.email),
-    phone: nullishStr(p?.phone),
+    ...normalizeContact(p),
     hasTheJob: p?.hasTheJob ?? null,
     receivedProposalBy: nullishStr(p?.receivedProposalBy),
     stillBidding: p?.stillBidding ?? null,
@@ -1470,6 +1571,7 @@ function normalizeDocumentLink(l: DocumentLink): DocumentLink {
     url: nullishStr(l?.url),
     label: nullishStr(l?.label),
     source: nullishStr(l?.source),
+    checkAddenda: l?.checkAddenda ?? null,
   };
 }
 
@@ -1490,6 +1592,15 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function triBool(v: unknown): boolean | null {
+  if (v === true || v === false) return v;
+  if (v == null || v === '') return null;
+  const s = String(v).trim().toLowerCase();
+  if (s === 'true' || s === 'yes' || s === '1' || s === 'a+') return true;
+  if (s === 'false' || s === 'no' || s === '0') return false;
+  return null;
+}
+
 function nullishStr(v: unknown): string | null {
   if (v == null) return null;
   const s = String(v).trim();
@@ -1502,11 +1613,12 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 function walkStrings(value: unknown, path = 'process'): void {
   if (typeof value === 'string') {
-    const max =
-      path.endsWith('notes') ||
-      path.endsWith('text') ||
-      path.endsWith('comments') ||
-      path.endsWith('footerNote')
+    const max = path.endsWith('inviteBody')
+      ? MAX_INVITE_BODY
+      : path.endsWith('notes') ||
+          path.endsWith('text') ||
+          path.endsWith('comments') ||
+          path.endsWith('footerNote')
         ? NOTE_MAX
         : STRING_MAX;
     if (value.length > max) throw new BidProcessError(`${path} exceeds ${max} characters`);
@@ -1551,7 +1663,9 @@ export function processMeta() {
     clearance: CLEARANCE_OPTIONS,
     tierRoles: TIER_ROLES,
     intakeEditor: INTAKE_EDITOR,
+    setupEditor: SETUP_EDITOR,
     takeoffRoles: TAKEOFF_ROLES,
+    dashboardPlates: dashboardPlatesMeta(),
     lostReasons: LOST_REASONS,
     attachmentLabels: PROCESS_ATTACHMENT_LABELS,
     specSheetTemplates: specSheetTemplatesMeta(),
@@ -1651,6 +1765,21 @@ export function processMeta() {
       families: insulationFamiliesMeta(),
       coverings: SPEC_COVERINGS,
       manufacturers: SPEC_MANUFACTURERS,
+      copyRow: true,
+      stackSheets: true,
+      confirmDeleteSheet: true,
+      preferredFromAllowedOnly: true,
+      defaultJacket: 'none',
+      mikeSizeMin: MIKE_SIZE_MIN,
+      mikeSizeMax: MIKE_SIZE_MAX,
+      sizeRange: {
+        min: MIKE_SIZE_MIN,
+        max: MIKE_SIZE_MAX,
+        fields: ['sizeMin', 'sizeMax', 'widthIn'],
+        note: 'Size and width number inputs — 0 to 999. 999 = Mike and greater.',
+      },
+      sizeAll: { sizeMin: MIKE_SIZE_MIN, sizeMax: MIKE_SIZE_MAX, note: 'All pipe sizes — skip the size pick; 0–999 like Mike' },
+      pasteSpecImage: 'specSheets[].imageAttachmentIds + POST /bids/:id/attachments label=spec-sheet-image',
       buyAmericanBeforeSheet: true,
       systemKindHints: SPEC_KIND_SYSTEM_HINTS,
       why: 'Family then product. Layer 1 insulation + factory jacket, layer 2 field cover. Duct uses circumference not pipe NPS. Equipment is its own kind. Manufacturer is who, not cheapest.',
@@ -1659,8 +1788,8 @@ export function processMeta() {
     fields: PROCESS_FIELDS,
     hqExampleTiers: HQ_EXAMPLE_TIERS,
     defaults: {
-      assignmentOwner: 'nick_and_pj',
-      assignmentOwnerLabel: 'Nick + PJ (estimating management)',
+      assignmentOwner: 'nick_pj_and_clerk',
+      assignmentOwnerLabel: 'Nick + PJ + bid clerk (John) — queue must not sit',
       intakeMandatoryForHandoff: [
         'estimateNumber',
         'ourEntityId',
@@ -1672,6 +1801,7 @@ export function processMeta() {
       specsPreparedBy: 'captain',
       technicalReviewBy: 'captain',
       takeoffAssignedBy: 'captain',
+      equipmentAndVrfTeam: 'hydronic',
       proposalApproval: 'estimating_review',
       postBidOwner: 'follow_up_owner',
       awardRequiresOutcomeFirst: true,
@@ -1690,11 +1820,11 @@ export function processMeta() {
       production: 'existing production APIs — after awarded',
       teams: 'GET /lookups/bidding/teams',
     },
-    notNow: ['bond auto-notice at day 89', 'Follow Up CRM import', 'replace Mike', 'handoff email notifications'],
+    notNow: ['bond auto-notice at day 89', 'notifications', 'replace Mike', 'handoff email notifications'],
   };
 }
 
-const STAGE_LABELS: Record<ProcessStage, string> = {
+export const STAGE_LABELS: Record<ProcessStage, string> = {
   intake: 'Bid Intake',
   assignment: 'Bid Assignment',
   estimating_setup: 'Estimating Setup',
@@ -1706,7 +1836,7 @@ const STAGE_LABELS: Record<ProcessStage, string> = {
 
 const STAGE_WHO: Record<ProcessStage, string> = {
   intake: 'Bid clerk — invitation info only; incomplete OK',
-  assignment: 'Nick + PJ — bid/no-bid, team (1/2/3), takeoff plan',
+  assignment: 'Nick + PJ + bid clerk — bid/no-bid, team (1/2/3), takeoff plan',
   estimating_setup: 'Captain / estimator — wage, spec sheets, approve for takeoff',
   takeoff: 'Assigned takeoff — Mike/Specs; versions never overwritten',
   proposal: 'Estimating review — calculator, proposal versions, submit',
@@ -1723,14 +1853,19 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'mechanicalEngineerProjectNumber', phase: 'intake', note: 'Engineer of Record — mechanical. Title-block # (second duplicate key)' },
   { path: 'invitationReceivedAt', phase: 'intake', note: 'Mirrored from invitations[0]. Multiple vendors → invitations[]' },
   { path: 'inviteContact', phase: 'intake', note: 'Mirrored from invitations[0]. Use invitations[] for more than one.' },
-  { path: 'invitations', phase: 'intake', note: 'Add another invitation to THIS bid. Do not create a second bid.' },
+  { path: 'invitations', phase: 'intake', note: 'Add another invitation to THIS bid. Do not create a second bid. First mechanical+invite can match; later invites are extra mechanicals.' },
+  { path: 'invitations.inviteBody', phase: 'intake', note: 'Paste the full invitation email / portal dump' },
+  { path: 'invitations.contact.preferredContact', phase: 'intake', note: 'email | phone' },
+  { path: 'owner.preferredContact', phase: 'intake', note: 'email | phone — same on architect / ME / invite contact' },
+  { path: 'documentLinks.checkAddenda', phase: 'intake', note: 'True on the owner/federal link clerks should check for addenda' },
   { path: 'invitations.addenda', phase: 'intake', note: 'Which inviter sent addendum 2/3 — one of three may not tell us' },
   { path: 'whoElseBidding', phase: 'intake', note: 'Required to hand off when invitations.length < 2. Do not ask the inviter.' },
-  { path: 'documentLinks', phase: 'intake', note: 'More than one: owner/federal public set + extras' },
-  { path: 'projectAddress', phase: 'intake', note: 'From drawings — city/state required when known' },
+  { path: 'documentLinks', phase: 'intake', note: 'Owner/federal public set + extras. checkAddenda on the source-of-truth link.' },
+  { path: 'projectAddress', phase: 'intake', note: 'Paste full line in line1 — city/state/zip fill if empty' },
   { path: 'bidKind', phase: 'intake', note: 'Mandatory. Budget is a kind — not a separate checkbox.' },
   { path: 'budgetOnly', phase: 'intake', note: 'Derived: true when bidKind=budget. Do not show as its own field.' },
   { path: 'relatedBidId', phase: 'intake', note: 'Rebid / prior job — click through. Do not duplicate the project.' },
+  { path: 'notes', phase: 'later', note: 'Deprecated pad. Notes drawer is GET/POST /bids/:id/comments. Invite paste is invitations[].inviteBody.' },
   { path: 'dueDate', phase: 'intake', note: '' },
   { path: 'dueTime', phase: 'intake', note: '' },
   { path: 'owner', phase: 'intake', note: 'From drawings' },
@@ -1739,11 +1874,11 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'contractTiers', phase: 'intake', note: 'Sketch ~5 layers on intake. hasTheJob / invitedUs / isPaying. Bonds confirm at award.' },
   { path: 'generalContractors', phase: 'intake', note: 'Multiple GCs on the same opportunity; hasTheJob / stillBidding' },
   { path: 'mechanicals', phase: 'intake', note: 'Multiple mechanicals on the same opportunity; hasTheJob / stillBidding' },
-  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ. teamId from /lookups/bidding/teams. pursue false = no-bid on complete' },
-  { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check' },
-  { path: 'constructionType', phase: 'estimating_setup', note: '' },
-  { path: 'constructionSubtype', phase: 'estimating_setup', note: '' },
-  { path: 'mbePreference', phase: 'estimating_setup', note: '' },
+  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+clerk. teamId from /lookups/bidding/teams. pursue false = no-bid on complete' },
+  { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. VRF + equipment = hydronic team' },
+  { path: 'constructionType', phase: 'estimating_setup', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name' },
+  { path: 'constructionSubtype', phase: 'estimating_setup', note: 'GET /lookups/bidding/project-types' },
+  { path: 'mbePreference', phase: 'estimating_setup', note: 'GET /lookups/bidding/preferences' },
   { path: 'entityRule', phase: 'estimating_setup', note: 'Suggests Goel DC / DCB / Goel Services' },
   { path: 'pla', phase: 'estimating_setup', note: 'Also on baseBid.pla — keep in sync in UI' },
   { path: 'wageDecisionId', phase: 'estimating_setup', note: 'Lookup Bid_WageDecisions — not Bid_WageRates' },
@@ -1751,6 +1886,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'labor', phase: 'estimating_setup', note: '' },
   { path: 'ocipCcip', phase: 'estimating_setup', note: 'GL = no price impact; WC = downward' },
   { path: 'buyAmerican', phase: 'estimating_setup', note: 'Project-level, before spec sheet. Federal work. Filters manufacturers.' },
+  { path: 'aPlus', phase: 'estimating_setup', note: 'Setup page checkbox. Bid-level, not a spec-sheet column.' },
   { path: 'lifts', phase: 'estimating_setup', note: 'Reuse baseBid.liftsNeeded for money math' },
   { path: 'parking', phase: 'estimating_setup', note: 'Reuse baseBid.parking* for money math' },
   { path: 'schedule', phase: 'estimating_setup', note: '' },
@@ -1818,18 +1954,34 @@ const INTAKE_EDITOR = {
   inviteCompanyFirst: true,
   eorLabel: 'Engineer of Record — mechanical',
   eorField: 'mechanicalEngineerProjectNumber',
-  documentLinks: 'documentLinks[] — owner/federal public set plus extras (more than one)',
+  documentLinks: 'documentLinks[] — owner/federal public set plus extras; mark checkAddenda for addendum source',
   relatedBid: 'relatedBidId — click through to the prior bid',
   linkDuplicate: 'POST /bids/:id/link-duplicate { keepBidId } — merge invites onto keep, close this one',
-  whoElseBidding: 'whoElseBidding.researched required when invitations.length < 2',
+  whoElseBidding: 'whoElseBidding.researched required when invitations.length < 2. Call GC — not the inviter.',
   drawingsRequiredFor: ['built_to_print', 'design_assist'] as const,
   bidNameLockedToDrawingName: true,
   projectNumberStripsHash: true,
+  jobIdOnIntake: 'skip_until_awarded',
+  hideJobIdOnIntake: true,
+  fillAddressFromLine1: true,
+  preferredContact: {
+    replaceUi: 'Contact',
+    label: 'Preferred contact',
+    ui: 'dropdown',
+    bind: 'contact.preferredContact',
+    options: [
+      { value: 'email', label: 'Email', show: 'contact.email' },
+      { value: 'phone', label: 'Phone', show: 'contact.phone' },
+    ],
+    showSelected: 'contact.preferredContactValue',
+  },
+  inviteBody: 'invitations[].inviteBody — paste the email',
+  checkAddenda: 'documentLinks[].checkAddenda',
   tiersOnIntake: true,
-  assignmentOwners: 'Nick + PJ',
+  assignmentOwners: 'Nick + PJ + bid clerk',
   teamField: 'assignment.teamId',
   teamLookup: 'GET /lookups/bidding/teams',
-  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=',
+  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=&page=1&pageSize=10',
   partyRoles: INTAKE_PARTY_ROLES,
   sketchTiers: [
     { sortOrder: 0, role: 'owner', note: 'Who owns the property' },
@@ -1844,5 +1996,28 @@ const INTAKE_EDITOR = {
     'Show budget as a checkbox next to bid type',
     'Ask the inviter who else is bidding',
     'Put Division / Project type fields — values were not locked; use workType',
+    'Require jobId / linked job on intake — wait until awarded',
+    'Clear line1 after filling city/state/zip from a pasted address',
   ],
+};
+
+/** Estimating Setup — Followup buckets already in Bid_BuildingTypes / Bid_ProjectTypes / Bid_Preferences. */
+const SETUP_EDITOR = {
+  constructionType: {
+    bind: 'constructionType',
+    lookup: 'GET /lookups/bidding/building-types',
+    note: 'Followup CRM building buckets. Save the name. Do not invent new ones.',
+  },
+  constructionSubtype: {
+    bind: 'constructionSubtype',
+    lookup: 'GET /lookups/bidding/project-types',
+  },
+  mbePreference: {
+    bind: 'mbePreference',
+    lookup: 'GET /lookups/bidding/preferences',
+  },
+  pla: 'process.pla',
+  buyAmerican: 'process.buyAmerican',
+  aPlus: 'process.aPlus',
+  specSheet: 'FRONTEND_SPEC_SHEET.md',
 };

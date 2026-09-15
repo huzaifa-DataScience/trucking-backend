@@ -193,6 +193,73 @@ export class ConnecteamChatService implements OnModuleInit {
     return qb.getCount();
   }
 
+  /** Last conversations + unread total for a role dashboard. Empty if chat tables are missing. */
+  async inboxPreview(
+    appUserId: number,
+    limit = 8,
+  ): Promise<{
+    totalUnread: number;
+    items: Array<{
+      conversationId: string;
+      title: string | null;
+      type: string | null;
+      lastMessageAt: string | null;
+      lastMessagePreview: string | null;
+      lastMessageSenderName: string | null;
+      unreadCount: number;
+    }>;
+  }> {
+    try {
+      const totalUnread = await this.totalUnreadForUser(appUserId);
+      const skipTitles = [...this.skippedTitles()];
+      const qb = this.conversations.createQueryBuilder('c').where('c.isDeleted = 0');
+      if (skipTitles.length) {
+        qb.andWhere(
+          `(c.title IS NULL OR LOWER(LTRIM(RTRIM(c.title))) NOT IN (${skipTitles
+            .map((_, i) => `:st${i}`)
+            .join(',')}))`,
+          Object.fromEntries(skipTitles.map((t, i) => [`st${i}`, t])),
+        );
+      }
+      qb.orderBy('c.lastMessageAt', 'DESC').take(Math.max(1, Math.min(20, limit)));
+      const rows = await qb.getMany();
+      const withUnread = await this.withUnreadCounts(
+        appUserId,
+        rows.map((c) => ({
+          conversationId: c.conversationId,
+          title: c.title,
+          type: c.type,
+          lastMessageAt: c.lastMessageAt,
+          lastMessagePreview: c.lastMessagePreview,
+          lastMessageSenderName: c.lastMessageSenderName,
+        })),
+      );
+      withUnread.sort((a, b) => {
+        const ur = (b.unreadCount > 0 ? 1 : 0) - (a.unreadCount > 0 ? 1 : 0);
+        if (ur) return ur;
+        const at = a.lastMessageAt instanceof Date ? a.lastMessageAt.getTime() : 0;
+        const bt = b.lastMessageAt instanceof Date ? b.lastMessageAt.getTime() : 0;
+        return bt - at;
+      });
+      return {
+        totalUnread,
+        items: withUnread.map((c) => ({
+          conversationId: c.conversationId,
+          title: c.title,
+          type: c.type,
+          lastMessageAt:
+            c.lastMessageAt instanceof Date ? c.lastMessageAt.toISOString() : (c.lastMessageAt as string | null),
+          lastMessagePreview: c.lastMessagePreview,
+          lastMessageSenderName: c.lastMessageSenderName,
+          unreadCount: c.unreadCount,
+        })),
+      };
+    } catch (e) {
+      this.logger.warn(`inboxPreview failed: ${(e as Error).message}`);
+      return { totalUnread: 0, items: [] };
+    }
+  }
+
   async markConversationRead(
     appUserId: number,
     conversationId: string,

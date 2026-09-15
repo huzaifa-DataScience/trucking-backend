@@ -8,7 +8,9 @@ import {
   PERMISSION_CATALOG,
   PERMISSION_KEYS,
   ROLE_META,
+  hardcodedPermissionsForRole,
   isAppRoleId,
+  isSuperAdminOnlyKey,
   type AppRoleId,
 } from './rbac-catalog';
 
@@ -113,8 +115,8 @@ export class RbacService implements OnModuleInit {
 
   async getPermissionNamesForRole(roleName: string): Promise<string[]> {
     await this.ensureSeed();
-    // IT admin + Nick/PJ: full chrome. Matrix still edits other roles.
-    if (roleName === 'super_admin' || roleName === 'admin') return [...PERMISSION_KEYS];
+    const hardcoded = hardcodedPermissionsForRole(roleName);
+    if (hardcoded) return hardcoded;
     const role = await this.roleRepo.findOne({
       where: { name: roleName },
       relations: ['permissions'],
@@ -128,10 +130,8 @@ export class RbacService implements OnModuleInit {
     const roles = await this.roleRepo.find({ relations: ['permissions'] });
     const out: Record<string, string[]> = {};
     for (const r of roles) {
-      out[r.name] =
-        r.name === 'super_admin' || r.name === 'admin'
-          ? [...PERMISSION_KEYS]
-          : (r.permissions ?? []).map((p) => p.name);
+      const hardcoded = hardcodedPermissionsForRole(r.name);
+      out[r.name] = hardcoded ?? (r.permissions ?? []).map((p) => p.name);
     }
     return out;
   }
@@ -165,7 +165,7 @@ export class RbacService implements OnModuleInit {
     if (roleName === 'super_admin') {
       throw new BadRequestException('super_admin always has every permission');
     }
-    const uniq = [...new Set(keys)];
+    const uniq = [...new Set(keys)].filter((k) => !isSuperAdminOnlyKey(k));
     const unknown = uniq.filter((k) => !PERMISSION_KEYS.includes(k));
     if (unknown.length) throw new BadRequestException(`Unknown permissions: ${unknown.join(', ')}`);
     const role = await this.roleRepo.findOne({

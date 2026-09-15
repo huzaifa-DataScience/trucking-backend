@@ -96,6 +96,9 @@ export class AppController {
           externalSites: 'GET /lookups/external-sites',
           truckTypes: 'GET /lookups/truck-types',
         },
+        dashboard: {
+          home: 'GET /dashboard (role due/upcoming/assigned + messages; not GET /bids)',
+        },
         jobDashboard: {
           kpis: 'GET /job-dashboard/kpis?startDate=&endDate=&jobId=&entityId=&direction=',
           vendorSummary: 'GET /job-dashboard/summary/vendor',
