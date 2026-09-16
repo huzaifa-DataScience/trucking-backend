@@ -48,6 +48,7 @@ import {
   mergeProcess,
   normalizeProjectNumber,
   parseProcess,
+  processValidationError,
   workflowChrome,
   type BidProcess,
   type HandoffAction,
@@ -563,8 +564,14 @@ export class BiddingService {
     try {
       next = applyOutcome(current, dto.outcome as OutcomeStatus);
     } catch (e) {
-      if (e instanceof BidProcessError) throw new BadRequestException(e.message);
-      throw e;
+      if (!(e instanceof BidProcessError)) throw e;
+      // A violation that already existed before this change is legacy data, not something
+      // this save introduced — don't let it block unrelated outcome changes.
+      if (processValidationError(current) === e.message) {
+        next = applyOutcome(current, dto.outcome as OutcomeStatus, { skipValidation: true });
+      } else {
+        throw new BadRequestException(e.message);
+      }
     }
     return this.persistProcess(bid, content, next, userId, async () => {
       await this.activity.recordOutcome(id, userId, current.outcome, next.outcome);
@@ -606,8 +613,13 @@ export class BiddingService {
     try {
       return applyHandoff(current, action, notes, ctx);
     } catch (e) {
-      if (e instanceof BidProcessError) throw new ConflictException(e.message);
-      throw e;
+      if (!(e instanceof BidProcessError)) throw e;
+      // A violation that already existed before this handoff is legacy data, not something
+      // this save introduced — don't let it block unrelated stage changes.
+      if (processValidationError(current) === e.message) {
+        return applyHandoff(current, action, notes, ctx, { skipValidation: true });
+      }
+      throw new ConflictException(e.message);
     }
   }
 
@@ -753,8 +765,13 @@ export class BiddingService {
     try {
       return mergeProcess(existing, patch);
     } catch (e) {
-      if (e instanceof BidProcessError) throw new BadRequestException(e.message);
-      throw e;
+      if (!(e instanceof BidProcessError)) throw e;
+      // A violation that already existed before this patch is legacy data, not something
+      // this save introduced — don't let it block unrelated edits to the same bid.
+      if (processValidationError(existing) === e.message) {
+        return mergeProcess(existing, patch, { skipValidation: true });
+      }
+      throw new BadRequestException(e.message);
     }
   }
 

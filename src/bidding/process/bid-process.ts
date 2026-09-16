@@ -806,15 +806,30 @@ export function ourTierIndex(tiers: ContractTier[]): number | null {
   return i < 0 ? null : i;
 }
 
+/**
+ * Reads must never throw: a legacy value that fails validation under a since-tightened
+ * rule (e.g. an enum whose allowed values changed since the row was saved) would otherwise
+ * break every read of that bid — one bad/edge-case row must never take down the whole list.
+ * Writes (mergeProcess called directly from create/patch) stay strictly validated.
+ */
 export function parseProcess(raw: unknown): BidProcess {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyProcess();
-  return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
+  try {
+    return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
+  } catch (e) {
+    if (!(e instanceof BidProcessError)) throw e;
+    return mergeProcess(emptyProcess(), raw as Record<string, unknown>, { skipValidation: true });
+  }
 }
 
 /**
  * Shallow-merge objects; arrays replace. Then fill suggested entity + bond claim date.
  */
-export function mergeProcess(existing: BidProcess, patch: Record<string, unknown>): BidProcess {
+export function mergeProcess(
+  existing: BidProcess,
+  patch: Record<string, unknown>,
+  opts?: { skipValidation?: boolean },
+): BidProcess {
   const next = structuredClone(existing) as BidProcess;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
@@ -832,7 +847,7 @@ export function mergeProcess(existing: BidProcess, patch: Record<string, unknown
   if (next.lost.winningPrice != null && next.lost.ourFinalPrice != null) {
     next.lost.difference = next.lost.winningPrice - next.lost.ourFinalPrice;
   }
-  assertProcess(next);
+  if (!opts?.skipValidation) assertProcess(next);
   return next;
 }
 
@@ -840,6 +855,17 @@ export class BidProcessError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'BidProcessError';
+  }
+}
+
+/** Validation message for a process, or null if it's valid — lets callers tell a pre-existing (legacy) violation apart from one a new write would introduce. */
+export function processValidationError(p: BidProcess): string | null {
+  try {
+    assertProcess(p);
+    return null;
+  } catch (e) {
+    if (e instanceof BidProcessError) return e.message;
+    throw e;
   }
 }
 
@@ -894,6 +920,7 @@ export function applyHandoff(
   action: HandoffAction,
   notes?: string | null,
   ctx?: HandoffCtx,
+  opts?: { skipValidation?: boolean },
 ): BidProcess {
   const next = structuredClone(p) as BidProcess;
   if (action === 'return') {
@@ -901,7 +928,7 @@ export function applyHandoff(
     if (!prev) throw new BidProcessError('Already at intake; cannot return');
     next.stage = prev;
     pushBreadcrumb(next, notes || `Returned to ${STAGE_LABELS[prev]}`);
-    assertProcess(next);
+    if (!opts?.skipValidation) assertProcess(next);
     return next;
   }
   if (next.stage === 'intake') {
@@ -912,7 +939,7 @@ export function applyHandoff(
     if (next.outcome === 'open') next.outcome = 'no_bid';
     next.stage = 'result';
     pushBreadcrumb(next, notes || 'No-bid — jumped to Outcome tab (still changeable)');
-    assertProcess(next);
+    if (!opts?.skipValidation) assertProcess(next);
     return next;
   }
   if (next.stage === 'estimating_setup' && next.technicalReview.approvedForTakeoff !== true) {
@@ -924,18 +951,22 @@ export function applyHandoff(
   }
   next.stage = nxt;
   pushBreadcrumb(next, notes || `Handed off to ${STAGE_LABELS[nxt]}`);
-  assertProcess(next);
+  if (!opts?.skipValidation) assertProcess(next);
   return next;
 }
 
-export function applyOutcome(p: BidProcess, outcome: OutcomeStatus): BidProcess {
+export function applyOutcome(
+  p: BidProcess,
+  outcome: OutcomeStatus,
+  opts?: { skipValidation?: boolean },
+): BidProcess {
   if (!OUTCOMES.includes(outcome)) throw new BidProcessError(`Invalid outcome: ${outcome}`);
   const next = structuredClone(p) as BidProcess;
   const from = next.outcome;
   next.outcome = outcome;
   if (next.stage !== 'result') next.stage = 'result';
   pushBreadcrumb(next, from === outcome ? `Outcome ${outcome}` : `Outcome ${from} → ${outcome}`);
-  assertProcess(next);
+  if (!opts?.skipValidation) assertProcess(next);
   return next;
 }
 
