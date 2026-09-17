@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import {
@@ -28,6 +28,7 @@ import {
   type IntakePartyRole,
   type PartyContact,
 } from './process/bid-process';
+import { TEAM_CREW_SLOTS, type TeamCrewSlot } from './process/bid-crew';
 
 export interface WageRateInput {
   rateLabel: string;
@@ -162,6 +163,7 @@ export class BiddingLookupsService {
         captain: cap ? userDisplayName(cap) : null,
         captainUserId: cap?.id ?? null,
         bidClerk: t.bidClerk,
+        assistantManager: t.assistantManager,
         duct1: t.duct1,
         duct2: t.duct2,
         hydronic1: t.hydronic1,
@@ -235,6 +237,23 @@ export class BiddingLookupsService {
     team.isActive = false;
     await this.teamRepo.save(team);
     return { ok: true };
+  }
+
+  /**
+   * Admin-set crew slot names (bidClerk, duct1/2, hydronic1/2, plumbing1/2) — plain text,
+   * same columns a captain's own My Team save writes. Lets an admin assign someone (e.g. a
+   * shared bid clerk) to a team without needing to be that team's captain.
+   */
+  async updateTeamCrew(id: number, slots: Partial<Record<TeamCrewSlot, string | null>>) {
+    const team = await this.teamRepo.findOne({ where: { id } });
+    if (!team) throw new NotFoundException(`Team ${id} not found`);
+    const unknown = Object.keys(slots).filter((k) => !(TEAM_CREW_SLOTS as readonly string[]).includes(k));
+    if (unknown.length) throw new BadRequestException(`Unknown slots: ${unknown.join(', ')}`);
+    for (const slot of TEAM_CREW_SLOTS) {
+      if (slot in slots) team[slot] = slots[slot]?.trim() || null;
+    }
+    await this.teamRepo.save(team);
+    return { id: team.id, teamName: team.teamName };
   }
 
   async getWageRates() {

@@ -15,6 +15,9 @@ export class BidTeam {
   @Column({ name: 'BidClerk', type: 'nvarchar', length: 100, nullable: true })
   bidClerk!: string | null;
 
+  @Column({ name: 'AssistantManager', type: 'nvarchar', length: 100, nullable: true })
+  assistantManager!: string | null;
+
   @Column({ name: 'Duct1', type: 'nvarchar', length: 100, nullable: true })
   duct1!: string | null;
 

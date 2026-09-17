@@ -112,7 +112,7 @@ export class BiddingController {
 
   @Post()
   async create(@Body() dto: CreateBidDto, @CurrentUser() user?: User) {
-    return this.bidding.create(dto, user?.id);
+    return this.bidding.create(dto, user?.id, user);
   }
 
   @Get('prefill/company-from-job/:jobId')

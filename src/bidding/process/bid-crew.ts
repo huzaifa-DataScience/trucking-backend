@@ -133,6 +133,7 @@ function fillFromTeam(
 /** Captain Settings roster — pick people, not a pre-made Bid_Teams row. */
 export const TEAM_CREW_SLOTS = [
   'bidClerk',
+  'assistantManager',
   'duct1',
   'duct2',
   'hydronic1',
@@ -159,6 +160,7 @@ export function emptyCrewSlots(captain: TeamCrewPerson | null = null): TeamCrewS
   return {
     captain,
     bidClerk: null,
+    assistantManager: null,
     duct1: null,
     duct2: null,
     hydronic1: null,
@@ -192,6 +194,7 @@ export const EXCEL_BID_TEAMS: ExcelBidTeamSeed[] = [
     teamName: 'Wilder Rodriguez',
     captain: 'Wilder Rodriguez',
     bidClerk: 'Hassan Riaz',
+    assistantManager: null,
     duct1: 'John Carlo Orpilla',
     duct2: null,
     hydronic1: 'Jonathan Bruce',
@@ -203,6 +206,7 @@ export const EXCEL_BID_TEAMS: ExcelBidTeamSeed[] = [
     teamName: 'Bil Shams',
     captain: 'Bil Shams',
     bidClerk: 'Mark Tan',
+    assistantManager: null,
     duct1: 'Marc Maniago',
     duct2: 'Oliver Crucero',
     hydronic1: 'Maristella Malamug',
@@ -214,6 +218,7 @@ export const EXCEL_BID_TEAMS: ExcelBidTeamSeed[] = [
     teamName: 'Mike Robberts',
     captain: 'Mike Roberts',
     bidClerk: 'Rhal Dumol',
+    assistantManager: null,
     duct1: 'Wesley Morris',
     duct2: 'Gerald Ordonez',
     hydronic1: 'Jeremee Camat',

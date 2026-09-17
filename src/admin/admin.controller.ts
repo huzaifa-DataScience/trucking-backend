@@ -108,7 +108,15 @@ export class AdminController {
   @Patch(':id')
   async updateUser(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updates: { role?: Role; status?: UserStatus; permissions?: string[]; teamId?: number | null },
+    @Body()
+    updates: {
+      role?: Role;
+      status?: UserStatus;
+      permissions?: string[];
+      teamId?: number | null;
+      firstName?: string | null;
+      lastName?: string | null;
+    },
     @CurrentUser() admin?: User,
   ) {
     const user = await this.adminService.updateUser(id, updates, admin?.id ?? 0);
