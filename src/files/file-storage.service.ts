@@ -78,6 +78,16 @@ export class FileStorageService implements OnModuleInit {
     return createReadStream(this.absolutePath(relativePath));
   }
 
+  /** Check before streaming — `createReadStream` only fails asynchronously on the stream itself, which NestJS logs as a raw unhandled error instead of a clean 404. */
+  async fileExists(relativePath: string): Promise<boolean> {
+    try {
+      await fs.access(this.absolutePath(relativePath));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async deleteFile(relativePath: string): Promise<void> {
     try {
       await fs.unlink(this.absolutePath(relativePath));

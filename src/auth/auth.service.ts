@@ -137,6 +137,12 @@ export class AuthService {
   async openAvatar(userId: number): Promise<{ stream: ReturnType<FileStorageService['openReadStream']>; mimeType: string }> {
     const target = await this.usersService.findById(userId);
     if (!target?.avatarPath) throw new NotFoundException('avatar not found');
+    // The stored path can outlive the file (e.g. lost on a different environment's disk) —
+    // check first so a missing file is a clean 404, not a raw stream error NestJS logs and
+    // can't recover from once the response has started.
+    if (!(await this.storage.fileExists(target.avatarPath))) {
+      throw new NotFoundException('avatar file not found');
+    }
     const mime =
       target.avatarPath.endsWith('.png') ? 'image/png'
       : target.avatarPath.endsWith('.webp') ? 'image/webp'

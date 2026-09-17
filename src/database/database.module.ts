@@ -220,15 +220,18 @@ import {
           logging: config.get('NODE_ENV') === 'development' ? ['error', 'warn', 'schema', 'migration'] : false,
           retryAttempts: 5,
           retryDelay: 3000,
+          // TypeORM's mssql driver reads `pool` off the top-level options object
+          // (SqlServerDriver.js: `pool: this.options.pool`), NOT off `extra` —
+          // a pool block nested inside `extra` is silently ignored.
+          pool: {
+            max: 30,
+            min: 2,
+            idleTimeoutMillis: 30000,
+          },
           extra: {
             trustServerCertificate: trustCert,
             connectionTimeout: 30000,
             requestTimeout: 120000,
-            pool: {
-              max: 10,
-              min: 1,
-              idleTimeoutMillis: 30000,
-            },
           },
         };
       },

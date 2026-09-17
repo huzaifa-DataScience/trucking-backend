@@ -30,6 +30,17 @@ class CreateTeamDto {
   @IsString() @MinLength(1) @MaxLength(100) teamName!: string;
 }
 
+class UpdateTeamCrewDto {
+  @IsOptional() @IsString() @MaxLength(100) bidClerk?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) assistantManager?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) duct1?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) duct2?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) hydronic1?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) hydronic2?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) plumbing1?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) plumbing2?: string | null;
+}
+
 class CreateWageRateDto {
   @IsString() @MinLength(1) @MaxLength(100) rateLabel!: string;
   @IsNumber() @Min(0) wage!: number;
@@ -166,6 +177,11 @@ export class BiddingLookupsController {
   @Delete('teams/:id')
   deleteTeam(@Param('id', ParseIntPipe) id: number) {
     return this.lookups.deleteTeam(id);
+  }
+
+  @Patch('teams/:id')
+  updateTeamCrew(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateTeamCrewDto) {
+    return this.lookups.updateTeamCrew(id, dto);
   }
 
   @Get('wage-rates')

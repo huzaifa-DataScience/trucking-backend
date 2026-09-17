@@ -295,10 +295,25 @@ export class BiddingService {
     };
   }
 
-  async create(dto: CreateBidDto, userId?: number) {
+  async create(
+    dto: CreateBidDto,
+    userId?: number,
+    creator?: { role?: string; bidTeamId?: number | null },
+  ) {
     const process = dto.process
       ? this.mergeProcessSafe(emptyProcess(), dto.process)
       : null;
+    // Captains creating their own bid should see it in their team-scoped list right
+    // away, instead of it sitting unassigned until someone runs Assignment.
+    if (
+      process &&
+      creator?.role === 'captain' &&
+      userId != null &&
+      process.assignment.captainUserId == null &&
+      process.assignment.teamId == null
+    ) {
+      process.assignment.captainUserId = userId;
+    }
     if (process) await this.applyAssignmentCrew(process);
     if (process) await this.specs.applySpecSheetCodes(process);
     await this.assertUniqueOpportunity({

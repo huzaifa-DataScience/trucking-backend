@@ -91,7 +91,14 @@ export class AdminService {
 
   async updateUser(
     userId: number,
-    updates: { role?: Role; status?: UserStatus; permissions?: string[]; teamId?: number | null },
+    updates: {
+      role?: Role;
+      status?: UserStatus;
+      permissions?: string[];
+      teamId?: number | null;
+      firstName?: string | null;
+      lastName?: string | null;
+    },
     currentAdminId: number,
   ): Promise<User> {
     if (updates.permissions) {
@@ -113,6 +120,12 @@ export class AdminService {
         throw new BadRequestException(`Unknown role: ${updates.role}`);
       }
       user.role = updates.role;
+    }
+    if (updates.firstName !== undefined) {
+      user.firstName = updates.firstName?.trim() || null;
+    }
+    if (updates.lastName !== undefined) {
+      user.lastName = updates.lastName?.trim() || null;
     }
     if (updates.status !== undefined) {
       if (
