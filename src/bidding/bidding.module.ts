@@ -32,12 +32,14 @@ import {
 } from '../database/entities';
 import { ConnecteamModule } from '../connecteam/connecteam.module';
 import { UsersModule } from '../users/users.module';
+import { EmailTemplateModule } from '../email/email-template.module';
 import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
 import { BiddingService } from './bidding.service';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingActivityService } from './bidding-activity.service';
+import { BiddingAssignmentNotificationsService } from './bidding-assignment-notifications.service';
 import { BiddingLookupsController } from './bidding-lookups.controller';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { RoleDashboardController } from './role-dashboard.controller';
@@ -54,6 +56,7 @@ import { SpecsService } from './specs/specs.service';
   imports: [
     ConnecteamModule,
     UsersModule,
+    EmailTemplateModule,
     TypeOrmModule.forFeature([
       Bid,
       BidContent,
@@ -92,6 +95,7 @@ import { SpecsService } from './specs/specs.service';
     BiddingAttachmentsService,
     BiddingCommentsService,
     BiddingActivityService,
+    BiddingAssignmentNotificationsService,
     SpecsService,
     FileStorageService,
   ],
