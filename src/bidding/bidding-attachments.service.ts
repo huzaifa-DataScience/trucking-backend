@@ -69,7 +69,7 @@ export class BiddingAttachmentsService {
     const mimeType = file.mimetype?.trim() || '';
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       throw new BadRequestException(
-        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF`,
+        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx)`,
       );
     }
 
