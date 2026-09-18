@@ -24,6 +24,7 @@ import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingActivityService } from './bidding-activity.service';
+import { BiddingAssignmentNotificationsService } from './bidding-assignment-notifications.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
@@ -134,6 +135,7 @@ export class BiddingService {
     @Inject(forwardRef(() => BiddingCommentsService))
     private readonly comments: BiddingCommentsService,
     private readonly activity: BiddingActivityService,
+    private readonly assignmentNotifications: BiddingAssignmentNotificationsService,
     private readonly specs: SpecsService,
     private readonly lookups: BiddingLookupsService,
     private readonly chat: ConnecteamChatService,
@@ -367,6 +369,15 @@ export class BiddingService {
 
     await this.activity.recordCreated(saved.id, userId, dto.estimateNumber);
 
+    if (process) {
+      void this.assignmentNotifications.notify(
+        saved.id,
+        this.bidEmailLabel(saved.estimateNumber, saved.bidName),
+        emptyProcess(),
+        process,
+      );
+    }
+
     return this.getDetail(saved.id, undefined, { skipSpecCodes: true });
   }
 
@@ -549,6 +560,15 @@ export class BiddingService {
       contentBefore,
       content,
     );
+
+    if (dto.process !== undefined) {
+      void this.assignmentNotifications.notify(
+        id,
+        this.bidEmailLabel(bid.estimateNumber, bid.bidName),
+        existingProcess,
+        processNow,
+      );
+    }
 
     return this.getDetail(id, undefined, { skipSpecCodes: true });
   }
@@ -771,6 +791,10 @@ export class BiddingService {
       if (e instanceof BidProcessError) throw new BadRequestException(e.message);
       throw e;
     }
+  }
+
+  private bidEmailLabel(estimateNumber: string, bidName: string | null): string {
+    return bidName ? `${estimateNumber} — ${bidName}` : estimateNumber;
   }
 
   private async applyAssignmentCrew(process: BidProcess): Promise<void> {
