@@ -10,6 +10,8 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'image/png': '.png',
   'image/webp': '.webp',
   'application/pdf': '.pdf',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
 };
 
 export const MAX_BID_ATTACHMENT_BYTES = 10 * 1024 * 1024;
