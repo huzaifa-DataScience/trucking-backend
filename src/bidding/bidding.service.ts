@@ -170,8 +170,20 @@ export class BiddingService {
     if (params.processStage) qb.andWhere('b.processStage = :ps', { ps: params.processStage });
     if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
     if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
-    if (params.bidDateFrom) qb.andWhere('b.bidDate >= :bdf', { bdf: params.bidDateFrom });
-    if (params.bidDateTo) qb.andWhere('b.bidDate <= :bdt', { bdt: params.bidDateTo });
+    // Intake bids may not have a bid date yet. For list date filters, use the
+    // last update as their effective date so recent captain work is discoverable.
+    if (params.bidDateFrom) {
+      qb.andWhere(
+        '(b.bidDate >= :bdf OR (b.bidDate IS NULL AND b.updatedAt >= :bdf))',
+        { bdf: params.bidDateFrom },
+      );
+    }
+    if (params.bidDateTo) {
+      qb.andWhere(
+        '(b.bidDate <= :bdt OR (b.bidDate IS NULL AND b.updatedAt < DATEADD(day, 1, :bdt)))',
+        { bdt: params.bidDateTo },
+      );
+    }
     if (params.submitDateFrom) qb.andWhere('b.submitDate >= :sdf', { sdf: params.submitDateFrom });
     if (params.submitDateTo) qb.andWhere('b.submitDate <= :sdt', { sdt: params.submitDateTo });
     const opn = normalizeProjectNumber(params.ownerProjectNumber);
