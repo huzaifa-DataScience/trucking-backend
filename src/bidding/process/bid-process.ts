@@ -6,6 +6,7 @@
  * Award/startup and lost screens are gated by outcome — not a stage you hand off into.
  */
 
+import { randomUUID } from 'crypto';
 import { dashboardPlatesMeta } from './bid-plate';
 import {
   normalizeSpecSheets,
@@ -94,8 +95,10 @@ export type TierRole = (typeof TIER_ROLES)[number];
 export const TAKEOFF_ROLES = [
   'duct1',
   'duct2',
+  'duct3',
   'hydronic1',
   'hydronic2',
+  'hydronic3',
   'plumbing1',
   'plumbing2',
   'vrf',
@@ -138,6 +141,30 @@ export const PROCESS_ATTACHMENT_LABELS = [
   'spec-sheet-image',
 ] as const;
 
+/** Drawings tab — design/revision phase. Percent = design completeness at issuance. */
+export const DRAWING_CATEGORIES = ['sd', 'dd', 'ifb', 'ifp', 'ifc', 'ifr'] as const;
+export type DrawingCategory = (typeof DRAWING_CATEGORIES)[number];
+export const DRAWING_CATEGORY_LABELS: Record<DrawingCategory, string> = {
+  sd: 'Schematic Design (SD) / Conceptual',
+  dd: 'Design Development (DD)',
+  ifb: 'Issued for Bid',
+  ifp: 'Issued for Permit (IFP)',
+  ifc: 'Issued for Construction (IFC)',
+  ifr: 'Issued for Review (IFR)',
+};
+export const DRAWING_CATEGORY_PERCENTS: Record<DrawingCategory, string> = {
+  sd: '10–30%',
+  dd: '30–60%',
+  ifb: '60–90%',
+  ifp: '90–99%',
+  ifc: '100%',
+  ifr: '60–90%',
+};
+
+/** Attachments tab bucket (not the "Drawings" tab, which uses label='drawings' instead). */
+export const ATTACHMENT_CATEGORIES = ['project_documents', 'proposal'] as const;
+export type AttachmentCategory = (typeof ATTACHMENT_CATEGORIES)[number];
+
 export const BOND_CLAIM_DAYS = 90;
 
 const STRING_MAX = 500;
@@ -150,6 +177,8 @@ const MAX_INVITATIONS = 40;
 const MAX_DOCUMENT_LINKS = 40;
 const MAX_INVITE_ADDENDA = 40;
 const MAX_COMPETITORS = 40;
+const MAX_FOLLOWUP_COMPANIES = 10;
+const MAX_FOLLOWUP_CALL_ATTEMPTS = 5;
 const MAX_BREADCRUMBS = 200;
 const MAX_PROPOSAL_VERSIONS = 50;
 const MAX_TAKEOFF_VERSIONS = 40;
@@ -199,10 +228,26 @@ export function intakePartiesFromProcess(p: {
   return out;
 }
 
+export const CONTRACTOR_STATUSES = [
+  'invited',
+  'bidding',
+  'declined_to_bid',
+  'no_response',
+  'awarded',
+  'not_awarded',
+] as const;
+export type ContractorStatus = (typeof CONTRACTOR_STATUSES)[number];
+
+export const PROPOSAL_STATUSES = ['not_submitted', 'submitted', 'revised', 'accepted', 'rejected'] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
 export type BidParty = PartyContact & {
   hasTheJob: boolean | null;
   receivedProposalBy: string | null;
   stillBidding: boolean | null;
+  bidPrice: number | null;
+  contractorStatus: ContractorStatus | null;
+  proposalStatus: ProposalStatus | null;
 };
 
 export type Amendment = {
@@ -314,6 +359,21 @@ export type CompetitorIntel = {
   atBid: boolean | null;
 };
 
+/** One dated attempt to reach a follow-up company — ordinal is its position (1st..5th), not user-typed. */
+export type FollowUpCallAttempt = {
+  ordinal: number;
+  dateOfCall: string | null;
+  remarks: string | null;
+};
+
+export type FollowUpCompany = {
+  id: string;
+  companyName: string | null;
+  contactName: string | null;
+  phone: string | null;
+  callAttempts: FollowUpCallAttempt[];
+};
+
 export type EntityRule = {
   jurisdiction: 'dc' | 'md' | 'other' | null;
   isGovernment: boolean | null;
@@ -338,6 +398,7 @@ export type BidProcess = {
   workType: WorkType | null;
   bidKind: BidKind | null;
   drawingName: string | null;
+  drawingCategory: DrawingCategory | null;
   ownerProjectNumber: string | null;
   mechanicalEngineerProjectNumber: string | null;
   invitationReceivedAt: string | null;
@@ -476,6 +537,8 @@ export type BidProcess = {
     customerFeedback: string | null;
     currentProjectStatus: string | null;
     competitors: CompetitorIntel[];
+    /** Up to MAX_FOLLOWUP_COMPANIES companies, each with up to MAX_FOLLOWUP_CALL_ATTEMPTS dated calls. */
+    followUpCalls: FollowUpCompany[];
     notes: string | null;
   };
   award: {
@@ -522,6 +585,62 @@ export type BidProcess = {
   };
   contractTiers: ContractTier[];
   bond: BondBlock;
+  /** FollowupCRM-parity fields with no home elsewhere (FE: ProcessAdditionalDetails). */
+  additionalDetails: {
+    bidNumber: string | null;
+    cashExpense: number | null;
+    winningCompetitor: string | null;
+    mikeEstimateRef: string | null;
+    websiteForBiddingDocs: string | null;
+    altWebLocation1: string | null;
+    altWebLocation2: string | null;
+    altWebLocation3: string | null;
+    wbdUsername: string | null;
+    wbdPassword: string | null;
+    wageRateCategory: string | null;
+    wageRateAmount: number | null;
+    grossSqFootage: number | null;
+    projectNumberIfAwarded: string | null;
+    usCitizenOnly: boolean | null;
+    fringe: number | null;
+    costPerEstimate: number | null;
+    bidBondStatus: string | null;
+    bidBondAmountRequested: number | null;
+    budgetBid: string | null;
+    takeOffPerson: string | null;
+    takeOffPerson2: string | null;
+    takeOffPerson3: string | null;
+    awl1Username: string | null;
+    awl1Password: string | null;
+    awl2Username: string | null;
+    awl2Password: string | null;
+    awl3Username: string | null;
+    awl3Password: string | null;
+    estimatorBidDate: string | null;
+    rebid: boolean | null;
+    engineerProjectNumber: string | null;
+    contractDate: string | null;
+    loginDate: string | null;
+    deadDate: string | null;
+    comments: string | null;
+    subBuildingType: string | null;
+    source: string | null;
+    preBidDate: string | null;
+    salesStatus: string | null;
+    tradeBidType: string | null;
+    ocipCcipStatus: string | null;
+  };
+  /** Dates not already covered by intelligence/technicalReview/schedule (FE: ProcessSalesActivities). */
+  salesActivities: {
+    initialContact: string | null;
+    siteVisit: string | null;
+    bidDrafted: string | null;
+    bidDelivered: string | null;
+    frontEndDocs: string | null;
+    heatTracingSubPricing: string | null;
+    prequalificationPackage: string | null;
+    mandatoryPreBid: string | null;
+  };
   breadcrumbs: Array<{ at: string | null; text: string }>;
 };
 
@@ -602,6 +721,7 @@ export function emptyProcess(): BidProcess {
     workType: null,
     bidKind: null,
     drawingName: null,
+    drawingCategory: null,
     ownerProjectNumber: null,
     mechanicalEngineerProjectNumber: null,
     invitationReceivedAt: null,
@@ -720,6 +840,7 @@ export function emptyProcess(): BidProcess {
       customerFeedback: null,
       currentProjectStatus: null,
       competitors: [],
+      followUpCalls: [],
       notes: null,
     },
     award: {
@@ -771,6 +892,60 @@ export function emptyProcess(): BidProcess {
       billed100Percent: null,
       claimDueDate: null,
       notes: null,
+    },
+    additionalDetails: {
+      bidNumber: null,
+      cashExpense: null,
+      winningCompetitor: null,
+      mikeEstimateRef: null,
+      websiteForBiddingDocs: null,
+      altWebLocation1: null,
+      altWebLocation2: null,
+      altWebLocation3: null,
+      wbdUsername: null,
+      wbdPassword: null,
+      wageRateCategory: null,
+      wageRateAmount: null,
+      grossSqFootage: null,
+      projectNumberIfAwarded: null,
+      usCitizenOnly: null,
+      fringe: null,
+      costPerEstimate: null,
+      bidBondStatus: null,
+      bidBondAmountRequested: null,
+      budgetBid: null,
+      takeOffPerson: null,
+      takeOffPerson2: null,
+      takeOffPerson3: null,
+      awl1Username: null,
+      awl1Password: null,
+      awl2Username: null,
+      awl2Password: null,
+      awl3Username: null,
+      awl3Password: null,
+      estimatorBidDate: null,
+      rebid: null,
+      engineerProjectNumber: null,
+      contractDate: null,
+      loginDate: null,
+      deadDate: null,
+      comments: null,
+      subBuildingType: null,
+      source: null,
+      preBidDate: null,
+      salesStatus: null,
+      tradeBidType: null,
+      ocipCcipStatus: null,
+    },
+    salesActivities: {
+      initialContact: null,
+      siteVisit: null,
+      bidDrafted: null,
+      bidDelivered: null,
+      frontEndDocs: null,
+      heatTracingSubPricing: null,
+      prequalificationPackage: null,
+      mandatoryPreBid: null,
     },
     breadcrumbs: [],
   };
@@ -1027,6 +1202,9 @@ function assertProcess(p: BidProcess): void {
   if (p.clearance != null && !CLEARANCE_OPTIONS.includes(p.clearance)) {
     throw new BidProcessError(`Invalid process.clearance: ${p.clearance}`);
   }
+  if (p.drawingCategory != null && !DRAWING_CATEGORIES.includes(p.drawingCategory)) {
+    throw new BidProcessError(`Invalid process.drawingCategory: ${p.drawingCategory}`);
+  }
   if (p.lost.reason != null && !LOST_REASONS.includes(p.lost.reason)) {
     throw new BidProcessError(`Invalid process.lost.reason: ${p.lost.reason}`);
   }
@@ -1047,6 +1225,9 @@ function assertProcess(p: BidProcess): void {
   }
   if (p.intelligence.competitors.length > MAX_COMPETITORS) {
     throw new BidProcessError(`process.intelligence.competitors max ${MAX_COMPETITORS}`);
+  }
+  if (p.intelligence.followUpCalls.length > MAX_FOLLOWUP_COMPANIES) {
+    throw new BidProcessError(`process.intelligence.followUpCalls max ${MAX_FOLLOWUP_COMPANIES}`);
   }
   if (p.proposalVersions.length > MAX_PROPOSAL_VERSIONS) {
     throw new BidProcessError(`process.proposalVersions max ${MAX_PROPOSAL_VERSIONS}`);
@@ -1124,6 +1305,70 @@ function normalizeProcess(p: BidProcess): void {
   else p.submission.attachmentId = numOrNull(p.submission.attachmentId);
   if (!p.entityRule || typeof p.entityRule !== 'object') p.entityRule = nest.entityRule;
   if (!p.bond || typeof p.bond !== 'object') p.bond = nest.bond;
+  if (!p.additionalDetails || typeof p.additionalDetails !== 'object') {
+    p.additionalDetails = nest.additionalDetails;
+  } else {
+    const ad = p.additionalDetails;
+    p.additionalDetails = {
+      bidNumber: nullishStr(ad.bidNumber),
+      cashExpense: numOrNull(ad.cashExpense),
+      winningCompetitor: nullishStr(ad.winningCompetitor),
+      mikeEstimateRef: nullishStr(ad.mikeEstimateRef),
+      websiteForBiddingDocs: nullishStr(ad.websiteForBiddingDocs),
+      altWebLocation1: nullishStr(ad.altWebLocation1),
+      altWebLocation2: nullishStr(ad.altWebLocation2),
+      altWebLocation3: nullishStr(ad.altWebLocation3),
+      wbdUsername: nullishStr(ad.wbdUsername),
+      wbdPassword: nullishStr(ad.wbdPassword),
+      wageRateCategory: nullishStr(ad.wageRateCategory),
+      wageRateAmount: numOrNull(ad.wageRateAmount),
+      grossSqFootage: numOrNull(ad.grossSqFootage),
+      projectNumberIfAwarded: nullishStr(ad.projectNumberIfAwarded),
+      usCitizenOnly: ad.usCitizenOnly ?? null,
+      fringe: numOrNull(ad.fringe),
+      costPerEstimate: numOrNull(ad.costPerEstimate),
+      bidBondStatus: nullishStr(ad.bidBondStatus),
+      bidBondAmountRequested: numOrNull(ad.bidBondAmountRequested),
+      budgetBid: nullishStr(ad.budgetBid),
+      takeOffPerson: nullishStr(ad.takeOffPerson),
+      takeOffPerson2: nullishStr(ad.takeOffPerson2),
+      takeOffPerson3: nullishStr(ad.takeOffPerson3),
+      awl1Username: nullishStr(ad.awl1Username),
+      awl1Password: nullishStr(ad.awl1Password),
+      awl2Username: nullishStr(ad.awl2Username),
+      awl2Password: nullishStr(ad.awl2Password),
+      awl3Username: nullishStr(ad.awl3Username),
+      awl3Password: nullishStr(ad.awl3Password),
+      estimatorBidDate: nullishStr(ad.estimatorBidDate),
+      rebid: ad.rebid ?? null,
+      engineerProjectNumber: nullishStr(ad.engineerProjectNumber),
+      contractDate: nullishStr(ad.contractDate),
+      loginDate: nullishStr(ad.loginDate),
+      deadDate: nullishStr(ad.deadDate),
+      comments: nullishStr(ad.comments),
+      subBuildingType: nullishStr(ad.subBuildingType),
+      source: nullishStr(ad.source),
+      preBidDate: nullishStr(ad.preBidDate),
+      salesStatus: nullishStr(ad.salesStatus),
+      tradeBidType: nullishStr(ad.tradeBidType),
+      ocipCcipStatus: nullishStr(ad.ocipCcipStatus),
+    };
+  }
+  if (!p.salesActivities || typeof p.salesActivities !== 'object') {
+    p.salesActivities = nest.salesActivities;
+  } else {
+    const sa = p.salesActivities;
+    p.salesActivities = {
+      initialContact: nullishStr(sa.initialContact),
+      siteVisit: nullishStr(sa.siteVisit),
+      bidDrafted: nullishStr(sa.bidDrafted),
+      bidDelivered: nullishStr(sa.bidDelivered),
+      frontEndDocs: nullishStr(sa.frontEndDocs),
+      heatTracingSubPricing: nullishStr(sa.heatTracingSubPricing),
+      prequalificationPackage: nullishStr(sa.prequalificationPackage),
+      mandatoryPreBid: nullishStr(sa.mandatoryPreBid),
+    };
+  }
   if (!p.projectAddress || typeof p.projectAddress !== 'object') p.projectAddress = nest.projectAddress;
   p.projectAddress = fillProjectAddress({
     line1: nullishStr(p.projectAddress.line1),
@@ -1169,7 +1414,30 @@ function normalizeProcess(p: BidProcess): void {
   if (!Array.isArray(p.proposalVersions)) p.proposalVersions = [];
   if (!Array.isArray(p.breadcrumbs)) p.breadcrumbs = [];
   if (!p.intelligence || typeof p.intelligence !== 'object') p.intelligence = nest.intelligence;
-  if (!Array.isArray(p.intelligence.competitors)) p.intelligence.competitors = [];
+  p.intelligence.competitors = (Array.isArray(p.intelligence.competitors) ? p.intelligence.competitors : [])
+    .slice(0, MAX_COMPETITORS)
+    .map((c) => ({
+      name: nullishStr(c?.name),
+      amount: numOrNull(c?.amount),
+      source: nullishStr(c?.source),
+      confidence: nullishStr(c?.confidence),
+      atBid: c?.atBid ?? null,
+    }));
+  p.intelligence.followUpCalls = (Array.isArray(p.intelligence.followUpCalls) ? p.intelligence.followUpCalls : [])
+    .slice(0, MAX_FOLLOWUP_COMPANIES)
+    .map((f) => ({
+      id: typeof f?.id === 'string' && f.id ? f.id : randomUUID(),
+      companyName: nullishStr(f?.companyName),
+      contactName: nullishStr(f?.contactName),
+      phone: nullishStr(f?.phone),
+      callAttempts: (Array.isArray(f?.callAttempts) ? f.callAttempts : [])
+        .slice(0, MAX_FOLLOWUP_CALL_ATTEMPTS)
+        .map((a, i) => ({
+          ordinal: i + 1,
+          dateOfCall: nullishStr(a?.dateOfCall),
+          remarks: nullishStr(a?.remarks),
+        })),
+    }));
   p.amendments = p.amendments.map((a, i) => ({
     number: Number(a?.number) || i + 1,
     date: nullishStr(a?.date),
@@ -1303,12 +1571,23 @@ function normalizeContact(c: PartyContact | null | undefined): PartyContact {
   };
 }
 
+function contractorStatusOf(v: unknown): ContractorStatus | null {
+  return (CONTRACTOR_STATUSES as readonly string[]).includes(v as string) ? (v as ContractorStatus) : null;
+}
+
+function proposalStatusOf(v: unknown): ProposalStatus | null {
+  return (PROPOSAL_STATUSES as readonly string[]).includes(v as string) ? (v as ProposalStatus) : null;
+}
+
 function normalizeParty(p: BidParty): BidParty {
   return {
     ...normalizeContact(p),
     hasTheJob: p?.hasTheJob ?? null,
     receivedProposalBy: nullishStr(p?.receivedProposalBy),
     stillBidding: p?.stillBidding ?? null,
+    bidPrice: numOrNull(p?.bidPrice),
+    contractorStatus: contractorStatusOf(p?.contractorStatus),
+    proposalStatus: proposalStatusOf(p?.proposalStatus),
   };
 }
 
@@ -1415,6 +1694,12 @@ export function processMeta() {
     dashboardPlates: dashboardPlatesMeta(),
     lostReasons: LOST_REASONS,
     attachmentLabels: PROCESS_ATTACHMENT_LABELS,
+    attachmentCategories: ATTACHMENT_CATEGORIES,
+    drawingCategories: DRAWING_CATEGORIES,
+    drawingCategoryLabels: DRAWING_CATEGORY_LABELS,
+    drawingCategoryPercents: DRAWING_CATEGORY_PERCENTS,
+    contractorStatuses: CONTRACTOR_STATUSES,
+    proposalStatuses: PROPOSAL_STATUSES,
     specSheetTemplates: specSheetTemplatesMeta(),
     specSheetEditor: {
       ui: 'dependent-dropdowns',

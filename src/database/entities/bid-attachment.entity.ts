@@ -24,6 +24,14 @@ export class BidAttachment {
   @Column({ name: 'Label', type: 'nvarchar', length: 200, nullable: true })
   label!: string | null;
 
+  /** Attachments tab bucket: 'project_documents' | 'proposal'. Null = project_documents. */
+  @Column({ name: 'Category', type: 'nvarchar', length: 30, nullable: true })
+  category!: string | null;
+
+  /** Drawings tab only: 'sd' | 'dd' | 'ifb' | 'ifp' | 'ifc' | 'ifr'. */
+  @Column({ name: 'DrawingCategory', type: 'nvarchar', length: 10, nullable: true })
+  drawingCategory!: string | null;
+
   @Column({ name: 'SortOrder', type: 'int', default: 0 })
   sortOrder!: number;
 
