@@ -96,6 +96,8 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
       role: user.role,
       status: user.status,
       permissions: permissions ?? [],
@@ -120,6 +122,15 @@ export class AuthService {
   async removeAvatar(user: User): Promise<LoginResult> {
     if (user.avatarPath) await this.storage.deleteFile(user.avatarPath);
     const saved = await this.usersService.setAvatarPath(user.id, null);
+    const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
+    return this.toLoginResult(saved, permissions);
+  }
+
+  async updateProfile(
+    user: User,
+    updates: { firstName?: string | null; lastName?: string | null },
+  ): Promise<LoginResult> {
+    const saved = await this.usersService.setName(user.id, updates);
     const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
     return this.toLoginResult(saved, permissions);
   }
@@ -154,6 +165,8 @@ export class AuthService {
 export interface LoginResult {
   id: number;
   email: string;
+  firstName: string | null;
+  lastName: string | null;
   role: string;
   status: string;
   permissions: string[];

@@ -24,6 +24,7 @@ import { JwtAuthGuard } from './guards';
 import { LoginDto } from './dto/login.dto';
 import { PatchTeamDto } from './dto/patch-team.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { User } from '../database/entities';
 import { MAX_AVATAR_BYTES } from '../files/file-storage.service';
 
@@ -54,6 +55,16 @@ export class AuthController {
     if (!user) return { message: 'Not authenticated (auth disabled or no token)' };
     const permissions = await this.authService.getPermissionsForRole(user.role);
     return this.authService.toLoginResult(user, permissions);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile')
+  @HttpCode(HttpStatus.OK)
+  async updateProfile(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<LoginResult> {
+    return this.authService.updateProfile(user, dto);
   }
 
   @UseGuards(JwtAuthGuard)

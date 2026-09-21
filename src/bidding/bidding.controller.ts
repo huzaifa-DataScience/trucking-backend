@@ -56,6 +56,11 @@ export class BiddingController {
     @Query('ownerProjectNumber') ownerProjectNumber?: string,
     @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
     @Query('teamId') teamId?: string,
+    @Query('bidDateFrom') bidDateFrom?: string,
+    @Query('bidDateTo') bidDateTo?: string,
+    @Query('submitDateFrom') submitDateFrom?: string,
+    @Query('submitDateTo') submitDateTo?: string,
+    @Query('clientCompanyName') clientCompanyName?: string,
     @CurrentUser() user?: User,
   ) {
     return this.bidding.list({
@@ -68,6 +73,11 @@ export class BiddingController {
       ownerProjectNumber,
       mechanicalEngineerProjectNumber,
       teamId: parseTeamIdQuery(teamId),
+      bidDateFrom,
+      bidDateTo,
+      submitDateFrom,
+      submitDateTo,
+      clientCompanyName,
       editor: user,
     });
   }
@@ -92,6 +102,11 @@ export class BiddingController {
     @Query('ownerProjectNumber') ownerProjectNumber?: string,
     @Query('mechanicalEngineerProjectNumber') mechanicalEngineerProjectNumber?: string,
     @Query('teamId') teamId?: string,
+    @Query('bidDateFrom') bidDateFrom?: string,
+    @Query('bidDateTo') bidDateTo?: string,
+    @Query('submitDateFrom') submitDateFrom?: string,
+    @Query('submitDateTo') submitDateTo?: string,
+    @Query('clientCompanyName') clientCompanyName?: string,
     @CurrentUser() user?: User,
   ) {
     const buffer = await this.bidding.exportList({
@@ -104,6 +119,11 @@ export class BiddingController {
       ownerProjectNumber,
       mechanicalEngineerProjectNumber,
       teamId: parseTeamIdQuery(teamId),
+      bidDateFrom,
+      bidDateTo,
+      submitDateFrom,
+      submitDateTo,
+      clientCompanyName,
       editor: user,
     });
     res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
@@ -226,10 +246,25 @@ export class BiddingController {
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
     @Body('label') label?: string,
+    @Body('category') category?: string,
+    @Body('drawingCategory') drawingCategory?: string,
     @CurrentUser() user?: User,
   ) {
     await this.bidding.assertUserCanEdit(id, user);
-    return this.attachments.upload(id, file, { label, userId: user?.id });
+    return this.attachments.upload(id, file, { label, category, drawingCategory, userId: user?.id });
+  }
+
+  @Patch(':id/attachments/:attachmentId')
+  async updateAttachment(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @Body('label') label: string | null | undefined,
+    @Body('category') category: string | null | undefined,
+    @Body('drawingCategory') drawingCategory: string | null | undefined,
+    @CurrentUser() user?: User,
+  ) {
+    await this.bidding.assertUserCanEdit(id, user);
+    return this.attachments.update(id, attachmentId, { label, category, drawingCategory });
   }
 
   @Get(':id/attachments/:attachmentId/download')
