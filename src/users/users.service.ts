@@ -98,6 +98,15 @@ export class UsersService implements OnModuleInit {
     return this.userRepo.save(user);
   }
 
+  /** Self-service name edit (Account page) — same trim/null rule as the admin panel's. */
+  async setName(userId: number, updates: { firstName?: string | null; lastName?: string | null }): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) throw new Error(`User ${userId} not found`);
+    if (updates.firstName !== undefined) user.firstName = updates.firstName?.trim() || null;
+    if (updates.lastName !== undefined) user.lastName = updates.lastName?.trim() || null;
+    return this.userRepo.save(user);
+  }
+
   /** Captain / AE / clerk pick their Bid_Teams row. Login `user.teamId`. */
   async setBidTeamId(userId: number, teamId: number | null, opts?: { self?: boolean }): Promise<User> {
     const user = await this.findById(userId);

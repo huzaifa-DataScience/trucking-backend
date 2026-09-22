@@ -16,6 +16,7 @@ import {
   MAX_BID_ATTACHMENT_BYTES,
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
+import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES } from './process/bid-process';
 
 export interface BidAttachmentDto {
   id: number;
@@ -24,6 +25,8 @@ export interface BidAttachmentDto {
   mimeType: string;
   sizeBytes: number;
   label: string | null;
+  category: string | null;
+  drawingCategory: string | null;
   sortOrder: number;
   downloadPath: string;
   createdAt: string;
@@ -54,7 +57,7 @@ export class BiddingAttachmentsService {
   async upload(
     bidId: number,
     file: Express.Multer.File,
-    opts: { label?: string; userId?: number; skipActivity?: boolean },
+    opts: { label?: string; category?: string; drawingCategory?: string; userId?: number; skipActivity?: boolean },
   ): Promise<BidAttachmentDto> {
     const bid = await this.requireBid(bidId);
     if (bid.status === 'archived') {
@@ -71,6 +74,12 @@ export class BiddingAttachmentsService {
       throw new BadRequestException(
         `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx)`,
       );
+    }
+    if (opts.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(opts.category)) {
+      throw new BadRequestException(`Invalid category: ${opts.category}`);
+    }
+    if (opts.drawingCategory != null && !(DRAWING_CATEGORIES as readonly string[]).includes(opts.drawingCategory)) {
+      throw new BadRequestException(`Invalid drawingCategory: ${opts.drawingCategory}`);
     }
 
     const count = await this.attachmentRepo.count({ where: { bidId } });
@@ -102,6 +111,8 @@ export class BiddingAttachmentsService {
         bidId,
         fileId: appFile.id,
         label: opts.label?.trim() || null,
+        category: opts.category ?? null,
+        drawingCategory: opts.drawingCategory ?? null,
         sortOrder: count,
       }),
     );
@@ -109,6 +120,40 @@ export class BiddingAttachmentsService {
     const dto = this.toDto(attachment);
     if (!opts.skipActivity) await this.activity.recordAttachmentAdded(bidId, opts.userId, originalName);
     return dto;
+  }
+
+  /** Move an attachment between category/drawingCategory buckets, or edit its label. */
+  async update(
+    bidId: number,
+    attachmentId: number,
+    patch: { label?: string | null; category?: string | null; drawingCategory?: string | null },
+  ): Promise<BidAttachmentDto> {
+    const bid = await this.requireBid(bidId);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${bidId} is archived; cannot edit attachments`);
+    }
+    const attachment = await this.attachmentRepo.findOne({ where: { id: attachmentId, bidId }, relations: ['file'] });
+    if (!attachment?.file) {
+      throw new NotFoundException(`Attachment ${attachmentId} not found for bid ${bidId}`);
+    }
+    if (patch.category !== undefined) {
+      if (patch.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(patch.category)) {
+        throw new BadRequestException(`Invalid category: ${patch.category}`);
+      }
+      attachment.category = patch.category;
+    }
+    if (patch.drawingCategory !== undefined) {
+      if (
+        patch.drawingCategory != null &&
+        !(DRAWING_CATEGORIES as readonly string[]).includes(patch.drawingCategory)
+      ) {
+        throw new BadRequestException(`Invalid drawingCategory: ${patch.drawingCategory}`);
+      }
+      attachment.drawingCategory = patch.drawingCategory;
+    }
+    if (patch.label !== undefined) attachment.label = patch.label?.trim() || null;
+    await this.attachmentRepo.save(attachment);
+    return this.toDto(attachment);
   }
 
   async openDownload(
@@ -168,6 +213,8 @@ export class BiddingAttachmentsService {
       mimeType: f.mimeType,
       sizeBytes: Number(f.sizeBytes),
       label: row.label,
+      category: row.category,
+      drawingCategory: row.drawingCategory,
       sortOrder: row.sortOrder,
       downloadPath: `/bids/${row.bidId}/attachments/${row.id}/download`,
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
