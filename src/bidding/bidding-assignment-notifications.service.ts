@@ -9,8 +9,10 @@ import { TAKEOFF_ROLES, type BidProcess, type TakeoffRole } from './process/bid-
 const TAKEOFF_ROLE_LABELS: Record<TakeoffRole, string> = {
   duct1: 'Duct 1',
   duct2: 'Duct 2',
+  duct3: 'Duct 3',
   hydronic1: 'Hydronic 1',
   hydronic2: 'Hydronic 2',
+  hydronic3: 'Hydronic 3',
   plumbing1: 'Plumbing 1',
   plumbing2: 'Plumbing 2',
   vrf: 'VRF',

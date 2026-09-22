@@ -119,6 +119,11 @@ type BidListQuery = {
   ownerProjectNumber?: string;
   mechanicalEngineerProjectNumber?: string;
   teamId?: number | 'all';
+  bidDateFrom?: string;
+  bidDateTo?: string;
+  submitDateFrom?: string;
+  submitDateTo?: string;
+  clientCompanyName?: string;
   editor?: BidEditor;
 };
 
@@ -165,6 +170,22 @@ export class BiddingService {
     if (params.processStage) qb.andWhere('b.processStage = :ps', { ps: params.processStage });
     if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
     if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
+    // Intake bids may not have a bid date yet. For list date filters, use the
+    // last update as their effective date so recent captain work is discoverable.
+    if (params.bidDateFrom) {
+      qb.andWhere(
+        '(b.bidDate >= :bdf OR (b.bidDate IS NULL AND b.updatedAt >= :bdf))',
+        { bdf: params.bidDateFrom },
+      );
+    }
+    if (params.bidDateTo) {
+      qb.andWhere(
+        '(b.bidDate <= :bdt OR (b.bidDate IS NULL AND b.updatedAt < DATEADD(day, 1, :bdt)))',
+        { bdt: params.bidDateTo },
+      );
+    }
+    if (params.submitDateFrom) qb.andWhere('b.submitDate >= :sdf', { sdf: params.submitDateFrom });
+    if (params.submitDateTo) qb.andWhere('b.submitDate <= :sdt', { sdt: params.submitDateTo });
     const opn = normalizeProjectNumber(params.ownerProjectNumber);
     const mepn = normalizeProjectNumber(params.mechanicalEngineerProjectNumber);
     const teamId = resolveEstimatesTeamId({
@@ -172,7 +193,7 @@ export class BiddingService {
       role: params.editor?.role,
       userTeamId: params.editor?.bidTeamId ?? null,
     });
-    const needProcess = !!(params.search || opn || mepn || teamId != null);
+    const needProcess = !!(params.search || opn || mepn || teamId != null || params.clientCompanyName);
     if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
     if (params.search) {
       const q = params.search.replace(/#/g, '').trim();
@@ -202,6 +223,11 @@ export class BiddingService {
         `TRY_CONVERT(int, JSON_VALUE(cnt.ProcessJson, '$.assignment.teamId')) = :teamId`,
         { teamId },
       );
+    }
+    if (params.clientCompanyName) {
+      qb.andWhere(`JSON_VALUE(cnt.CompanyInfoJson, '$.companyName') = :ccn`, {
+        ccn: params.clientCompanyName,
+      });
     }
     qb.orderBy('b.updatedAt', 'DESC');
 
@@ -777,6 +803,11 @@ export class BiddingService {
         (a) => (a.versions?.length ?? 0) > 0 || a.finalQuantity != null,
       ).length,
       teamId,
+      jobStartDate: process.schedule.expectedStart,
+      jobEndDate: process.schedule.expectedCompletion,
+      contractAmount: process.award.finalContractAmount,
+      grossSqFootage: process.additionalDetails.grossSqFootage,
+      cashExpense: process.additionalDetails.cashExpense,
       createdAt,
       updatedAt,
       isNew: isNewBid(updatedAt, createdAt),
