@@ -89,7 +89,8 @@ export class BiddingAttachmentsService {
 
     const originalName = this.sanitizeOriginalName(file.originalname);
     const { storagePath, sizeBytes } = await this.storage.writeBidFile(
-      bidId,
+      bid.estimateNumber,
+      bid.bidName,
       file.buffer,
       originalName,
       mimeType,
