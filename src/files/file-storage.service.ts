@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, promises as fs } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join } from 'path';
 import { randomUUID } from 'crypto';
 import type { ReadStream } from 'fs';
 
@@ -14,7 +14,7 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
 };
 
-export const MAX_BID_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_BID_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 export const MAX_BID_ATTACHMENTS_PER_BID = 20;
 export const AVATAR_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
@@ -32,12 +32,34 @@ export class FileStorageService implements OnModuleInit {
     return raw;
   }
 
-  async ensureRoot(): Promise<void> {
-    await fs.mkdir(this.getRoot(), { recursive: true });
+  /** Network drive root for per-project document folders (bid attachments) — see writeBidFile. */
+  getProjectDocsRoot(): string {
+    const raw = this.config.get<string>('PROJECT_DOCS_ROOT', 'N:\\')?.trim() || 'N:\\';
+    return raw;
   }
 
-  relativePathForBid(bidId: number, storedFileName: string): string {
-    return join('bidding', String(bidId), storedFileName).replace(/\\/g, '/');
+  async ensureRoot(): Promise<void> {
+    await fs.mkdir(this.getRoot(), { recursive: true });
+    // Not ensured eagerly: getProjectDocsRoot() is a network share that may not be
+    // mapped in every environment (e.g. local dev) — only touched lazily on upload,
+    // so a missing/unmapped N drive doesn't block the whole app from starting.
+  }
+
+  /** Strip characters Windows folder/file names can't contain, trim trailing dots/spaces. */
+  private sanitizeFolderName(name: string): string {
+    const cleaned = name
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[. ]+$/, '');
+    return cleaned.slice(0, 150) || 'Untitled';
+  }
+
+  /** One folder per project, named "{Estimate #} - {Project name}" so it's both human-readable and collision-proof. */
+  projectFolderName(estimateNumber: string | null, bidName: string | null): string {
+    const est = this.sanitizeFolderName(estimateNumber?.trim() || 'Unknown');
+    const name = bidName?.trim() ? this.sanitizeFolderName(bidName) : null;
+    return name ? `${est} - ${name}` : est;
   }
 
   relativePathForAvatar(userId: number, mimeType: string): string {
@@ -53,7 +75,10 @@ export class FileStorageService implements OnModuleInit {
     return storagePath;
   }
 
+  /** Bid attachment storagePaths are stored as full absolute paths (N drive, project-named
+   *  folder) and pass through unchanged; older/avatar paths stay relative to getRoot(). */
   absolutePath(relativePath: string): string {
+    if (isAbsolute(relativePath)) return relativePath;
     return join(this.getRoot(), relativePath);
   }
 
@@ -62,18 +87,20 @@ export class FileStorageService implements OnModuleInit {
     return `${randomUUID()}${ext}`;
   }
 
+  /** Each bid's documents land in their own project-named folder on the shared N drive. */
   async writeBidFile(
-    bidId: number,
+    estimateNumber: string | null,
+    bidName: string | null,
     buffer: Buffer,
     originalName: string,
     mimeType: string,
   ): Promise<{ storagePath: string; sizeBytes: number }> {
     const storedName = this.storedFileName(originalName, mimeType);
-    const storagePath = this.relativePathForBid(bidId, storedName);
-    const absolute = this.absolutePath(storagePath);
+    const folder = this.projectFolderName(estimateNumber, bidName);
+    const absolute = join(this.getProjectDocsRoot(), folder, storedName);
     await fs.mkdir(dirname(absolute), { recursive: true });
     await fs.writeFile(absolute, buffer);
-    return { storagePath, sizeBytes: buffer.length };
+    return { storagePath: absolute, sizeBytes: buffer.length };
   }
 
   openReadStream(relativePath: string): ReadStream {
