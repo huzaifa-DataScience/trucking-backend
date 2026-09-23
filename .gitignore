@@ -48,3 +48,5 @@ docs/.backend-design-slides/
 # One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
 /*.sql
 *.bak
+.gitignore
+branch_structure.json
