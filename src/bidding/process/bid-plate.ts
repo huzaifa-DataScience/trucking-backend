@@ -258,6 +258,9 @@ export type DashboardMessage = {
   unreadCount: number;
 };
 
+/** Cap for the header bell / dashboard alert feed. */
+export const NOTIFICATION_LIMIT = 50;
+
 export type DashboardNotification = {
   kind: 'message' | 'due' | 'new_bid' | 'comment_mention';
   title: string;
@@ -306,7 +309,7 @@ export function dashboardNotifications<
       bidId: r.id,
     });
   }
-  return out.slice(0, 15);
+  return out.slice(0, NOTIFICATION_LIMIT);
 }
 
 /** Mirrors `STAGE_LABELS` in bid-process — kept here to avoid a circular import. */

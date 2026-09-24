@@ -14,6 +14,7 @@ import { Bid, BidComment, BidCommentAttachment, BidCommentMention, User, UserSta
 import { isAdminPanelRole } from '../database/entities/user.entity';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingService } from './bidding.service';
+import { NOTIFICATION_LIMIT } from './process/bid-plate';
 import { cleanPersonName, userDisplayName } from '../database/entities/user.entity';
 import {
   COMMENT_IMAGE_MIMES,
@@ -120,7 +121,7 @@ export class BiddingCommentsService implements OnModuleInit {
       where: { userId, readAt: IsNull() },
       relations: ['comment', 'comment.user', 'comment.bid'],
       order: { commentId: 'DESC' },
-      take: 15,
+      take: NOTIFICATION_LIMIT,
     });
     return rows
       .filter((r) => r.comment && !r.comment.deletedAt)
