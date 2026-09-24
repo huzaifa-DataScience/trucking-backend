@@ -35,6 +35,7 @@ import {
   bidListExcelRow,
   canEditBid,
   dashboardNotifications,
+  NOTIFICATION_LIMIT,
   fillPlateGroups,
   isNewBid,
   plateForRole,
@@ -273,7 +274,7 @@ export class BiddingService {
         at: m.at,
       })),
       ...dashboardNotifications(groups, messages.items),
-    ].slice(0, 15);
+    ].slice(0, NOTIFICATION_LIMIT);
     return {
       role: plate.role,
       plateId: plate.plateId,
