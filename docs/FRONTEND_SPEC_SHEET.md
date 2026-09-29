@@ -10,6 +10,8 @@ Enums live in `GET /lookups/bidding/process-meta` → `specSheetEditor` + `setup
 
 9 Sep extras: **CertainTeed** in manufacturers. Preferred must be in `manufacturersAllowed`. Pipe **999 (and greater)** like Mike. Copy row / stack all sheets / confirm before delete — `specSheetEditor.copyRow`, `stackSheets`, `confirmDeleteSheet`. Paste spec image → `imageAttachmentIds`. Default one layer = jacket `none`. MBE `preferences` stay on Setup. **Building type / project type / GSF are intake** (`intakeEditor`) — do not put them on this page. VRF + equipment takeoff = hydronic team (`defaults.equipmentAndVrfTeam`).
 
+29 Sep: Team 3 **Master Scan** → `POST /bids/:id/attachments` `label=master-scan` (in `process-meta.attachmentLabels`). Drawings type **CD** = `drawingCategory: "cd"`. Technical review is **Assignment**, not this page. Max file **50 MB** (`process-meta.attachmentMaxBytes`) — not Drive yet.
+
 This is **not** a spreadsheet. Codes are **never a dropdown**. Estimators may **type the Mike code** (`FGA`) to fill the row. PMs go family → product. Column label is **Mike code**, not Skip.
 
 This is **not** the Specs / Mike **qty** grid.

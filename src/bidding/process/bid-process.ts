@@ -139,14 +139,19 @@ export const PROCESS_ATTACHMENT_LABELS = [
   'takeoff-pdf',
   'startup',
   'spec-sheet-image',
+  'master-scan',
 ] as const;
 
+/** Keep in sync with `MAX_BID_ATTACHMENT_BYTES` in file-storage.service.ts */
+export const BID_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+
 /** Drawings tab — design/revision phase. Percent = design completeness at issuance. */
-export const DRAWING_CATEGORIES = ['sd', 'dd', 'ifb', 'ifp', 'ifc', 'ifr'] as const;
+export const DRAWING_CATEGORIES = ['sd', 'dd', 'cd', 'ifb', 'ifp', 'ifc', 'ifr'] as const;
 export type DrawingCategory = (typeof DRAWING_CATEGORIES)[number];
 export const DRAWING_CATEGORY_LABELS: Record<DrawingCategory, string> = {
   sd: 'Schematic Design (SD) / Conceptual',
   dd: 'Design Development (DD)',
+  cd: 'Construction Documents (CD)',
   ifb: 'Issued for Bid',
   ifp: 'Issued for Permit (IFP)',
   ifc: 'Issued for Construction (IFC)',
@@ -155,6 +160,7 @@ export const DRAWING_CATEGORY_LABELS: Record<DrawingCategory, string> = {
 export const DRAWING_CATEGORY_PERCENTS: Record<DrawingCategory, string> = {
   sd: '10–30%',
   dd: '30–60%',
+  cd: '90–100%',
   ifb: '60–90%',
   ifp: '90–99%',
   ifc: '100%',
@@ -398,6 +404,8 @@ export type BidProcess = {
   workType: WorkType | null;
   bidKind: BidKind | null;
   drawingName: string | null;
+  /** Sheet / set number on the drawings — search key, not bidName. */
+  drawingNumber: string | null;
   drawingCategory: DrawingCategory | null;
   ownerProjectNumber: string | null;
   mechanicalEngineerProjectNumber: string | null;
@@ -585,7 +593,7 @@ export type BidProcess = {
   };
   contractTiers: ContractTier[];
   bond: BondBlock;
-  /** FollowupCRM-parity fields with no home elsewhere (FE: ProcessAdditionalDetails). */
+  /** Legacy FollowupCRM blob. GET still returns it; client PATCH cannot change it. */
   additionalDetails: {
     bidNumber: string | null;
     cashExpense: number | null;
@@ -630,7 +638,7 @@ export type BidProcess = {
     tradeBidType: string | null;
     ocipCcipStatus: string | null;
   };
-  /** Dates not already covered by intelligence/technicalReview/schedule (FE: ProcessSalesActivities). */
+  /** Legacy FollowupCRM dates. GET still returns it; client PATCH cannot change it. */
   salesActivities: {
     initialContact: string | null;
     siteVisit: string | null;
@@ -721,6 +729,7 @@ export function emptyProcess(): BidProcess {
     workType: null,
     bidKind: null,
     drawingName: null,
+    drawingNumber: null,
     drawingCategory: null,
     ownerProjectNumber: null,
     mechanicalEngineerProjectNumber: null,
@@ -986,14 +995,23 @@ export function parseProcess(raw: unknown): BidProcess {
   return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
 }
 
+/** Intake FollowupCRM editors are gone — PATCH must not write or null-wipe these. */
+export const CLIENT_PROCESS_LOCKED = ['additionalDetails', 'salesActivities'] as const;
+
 /**
  * Shallow-merge objects; arrays replace. Then fill suggested entity + bond claim date.
+ * `fromClient`: skip additionalDetails / salesActivities so an echo or all-null form cannot wipe stored JSON.
  */
-export function mergeProcess(existing: BidProcess, patch: Record<string, unknown>): BidProcess {
+export function mergeProcess(
+  existing: BidProcess,
+  patch: Record<string, unknown>,
+  opts?: { fromClient?: boolean },
+): BidProcess {
   const next = structuredClone(existing) as BidProcess;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (!(key in next)) continue;
+    if (opts?.fromClient && (CLIENT_PROCESS_LOCKED as readonly string[]).includes(key)) continue;
     const cur = (next as Record<string, unknown>)[key];
     if (isPlainObject(cur) && isPlainObject(value) && !Array.isArray(value)) {
       (next as Record<string, unknown>)[key] = { ...(cur as object), ...(value as object) };
@@ -1052,7 +1070,95 @@ export function intakeCompleteBlocked(p: BidProcess, hasDrawings: boolean): stri
   return null;
 }
 
-/** Move a mistaken second bid's invites onto the keeper. */
+export function assignmentCompleteBlocked(p: BidProcess): string | null {
+  if (p.assignment.pursue === false) return null;
+  if (p.technicalReview.approvedForTakeoff !== true) {
+    return 'Approved for takeoff is required before leaving Assignment';
+  }
+  return null;
+}
+
+const TEAM_TAKEOFF_SLOTS: Array<[TakeoffRole, 'duct1' | 'duct2' | 'hydronic1' | 'hydronic2' | 'plumbing1' | 'plumbing2']> = [
+  ['duct1', 'duct1'],
+  ['duct2', 'duct2'],
+  ['hydronic1', 'hydronic1'],
+  ['hydronic2', 'hydronic2'],
+  ['plumbing1', 'plumbing1'],
+  ['plumbing2', 'plumbing2'],
+  ['vrf', 'hydronic1'],
+  ['equipment', 'hydronic1'],
+];
+
+function emptyTakeoffRow(role: TakeoffRole, assigneeName: string): TakeoffAssignment {
+  return {
+    role,
+    assigneeName,
+    assignedAt: new Date().toISOString(),
+    dueAt: null,
+    status: null,
+    hoursSpent: null,
+    notes: null,
+    finalQuantity: null,
+    reviewedBy: null,
+    versions: [],
+  };
+}
+
+/** When captain/team changes, takeoff names follow that crew. Versions stay. */
+export function fillTakeoffAssignmentsFromTeam(
+  p: BidProcess,
+  team:
+    | {
+        duct1?: string | null;
+        duct2?: string | null;
+        hydronic1?: string | null;
+        hydronic2?: string | null;
+        plumbing1?: string | null;
+        plumbing2?: string | null;
+      }
+    | null
+    | undefined,
+): void {
+  if (!team) return;
+  const byRole = new Map(p.takeoffAssignments.map((a) => [a.role, a]));
+  for (const [role, slot] of TEAM_TAKEOFF_SLOTS) {
+    const name = String(team[slot] ?? '').trim();
+    if (!name) continue;
+    const cur = byRole.get(role);
+    if (cur) cur.assigneeName = name;
+    else byRole.set(role, emptyTakeoffRow(role, name));
+  }
+  p.takeoffAssignments = [...byRole.values()];
+}
+
+/** Leaf paths that actually changed. Skips FollowupCRM blobs the client cannot write. */
+export function diffProcessChangePaths(before: BidProcess, after: BidProcess): string[] {
+  const paths: string[] = [];
+  const skip = new Set<string>(CLIENT_PROCESS_LOCKED);
+  const walk = (a: unknown, b: unknown, prefix: string) => {
+    if (Object.is(a, b)) return;
+    const last = prefix.split('.').pop();
+    if (last && skip.has(last)) return;
+    const aObj = a != null && typeof a === 'object' && !Array.isArray(a);
+    const bObj = b != null && typeof b === 'object' && !Array.isArray(b);
+    if (aObj && bObj) {
+      const keys = new Set([...Object.keys(a as object), ...Object.keys(b as object)]);
+      for (const k of keys) {
+        if (skip.has(k)) continue;
+        walk((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${prefix}.${k}`);
+      }
+      return;
+    }
+    if (JSON.stringify(a) !== JSON.stringify(b)) paths.push(prefix);
+  };
+  walk(before, after, 'process');
+  return paths.slice(0, 24);
+}
+
+export function humanizeProcessPath(path: string): string {
+  const leaf = path.replace(/^process\./, '').replace(/\.\d+\./g, ' ').replace(/\./g, ' ');
+  return leaf.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+}
 export function absorbIntake(keep: BidProcess, from: BidProcess): BidProcess {
   return mergeProcess(keep, {
     invitations: [...keep.invitations, ...from.invitations].slice(0, MAX_INVITATIONS),
@@ -1061,6 +1167,7 @@ export function absorbIntake(keep: BidProcess, from: BidProcess): BidProcess {
     mechanicalEngineerProjectNumber:
       keep.mechanicalEngineerProjectNumber || from.mechanicalEngineerProjectNumber,
     drawingName: keep.drawingName || from.drawingName,
+    drawingNumber: keep.drawingNumber || from.drawingNumber,
   });
 }
 
@@ -1089,6 +1196,10 @@ export function applyHandoff(
     pushBreadcrumb(next, notes || 'No-bid — jumped to Outcome tab (still changeable)');
     assertProcess(next);
     return next;
+  }
+  if (next.stage === 'assignment') {
+    const reason = assignmentCompleteBlocked(next);
+    if (reason) throw new BidProcessError(reason);
   }
   if (next.stage === 'estimating_setup' && next.technicalReview.approvedForTakeoff !== true) {
     throw new BidProcessError('Approved for takeoff is required before handing off to takeoff');
@@ -1151,8 +1262,11 @@ export function workflowChrome(p: BidProcess, ctx?: HandoffCtx): WorkflowChrome 
   let completeBlockedReason: string | null = null;
   let canComplete = false;
   const intakeBlock = p.stage === 'intake' ? intakeCompleteBlocked(p, ctx?.hasDrawings === true) : null;
+  const assignmentBlock = p.stage === 'assignment' ? assignmentCompleteBlocked(p) : null;
   if (intakeBlock) {
     completeBlockedReason = intakeBlock;
+  } else if (assignmentBlock) {
+    completeBlockedReason = assignmentBlock;
   } else if (p.stage === 'estimating_setup' && p.technicalReview.approvedForTakeoff !== true) {
     completeBlockedReason = 'Approved for takeoff is required before handing off to takeoff';
   } else if (!nxt) {
@@ -1266,6 +1380,7 @@ function normalizeProcess(p: BidProcess): void {
   p.relatedBidId = numOrNull(p.relatedBidId);
   p.relatedBidNote = nullishStr(p.relatedBidNote);
   p.notes = nullishStr(p.notes);
+  p.drawingNumber = nullishStr(p.drawingNumber);
   p.ownerProjectNumber = normalizeProjectNumber(p.ownerProjectNumber);
   p.mechanicalEngineerProjectNumber = normalizeProjectNumber(p.mechanicalEngineerProjectNumber);
   if (p.assignment && typeof p.assignment === 'object') {
@@ -1688,12 +1803,15 @@ export function processMeta() {
     clearance: CLEARANCE_OPTIONS,
     tierRoles: TIER_ROLES,
     intakeEditor: INTAKE_EDITOR,
+    assignmentEditor: ASSIGNMENT_EDITOR,
     setupEditor: SETUP_EDITOR,
     proposalEditor: PROPOSAL_EDITOR,
+    estimatesListEditor: ESTIMATES_LIST_EDITOR,
     takeoffRoles: TAKEOFF_ROLES,
     dashboardPlates: dashboardPlatesMeta(),
     lostReasons: LOST_REASONS,
     attachmentLabels: PROCESS_ATTACHMENT_LABELS,
+    attachmentMaxBytes: BID_ATTACHMENT_MAX_BYTES,
     attachmentCategories: ATTACHMENT_CATEGORIES,
     drawingCategories: DRAWING_CATEGORIES,
     drawingCategoryLabels: DRAWING_CATEGORY_LABELS,
@@ -1821,7 +1939,7 @@ export function processMeta() {
     hqExampleTiers: HQ_EXAMPLE_TIERS,
     defaults: {
       assignmentOwner: 'nick_pj_and_clerk',
-      assignmentOwnerLabel: 'Nick + PJ + bid clerk (John) — queue must not sit',
+      assignmentOwnerLabel: 'Nick + PJ + Gino (approve) — assistant estimator may complete so the queue does not sit',
       intakeMandatoryForHandoff: [
         'estimateNumber',
         'ourEntityId',
@@ -1868,8 +1986,8 @@ export const STAGE_LABELS: Record<ProcessStage, string> = {
 
 const STAGE_WHO: Record<ProcessStage, string> = {
   intake: 'Bid clerk — invitation info only; incomplete OK',
-  assignment: 'Nick + PJ + bid clerk — bid/no-bid, team (1/2/3), takeoff plan',
-  estimating_setup: 'Captain / estimator — wage, spec sheets, approve for takeoff',
+  assignment: 'Nick + PJ + Gino — approve for takeoff + team. Assistant estimator may complete so the queue does not sit.',
+  estimating_setup: 'Captain / assistant estimator — wage, OSIP, spec sheets. Not technical review.',
   takeoff: 'Assigned takeoff — Mike/Specs; versions never overwritten',
   proposal: 'Estimating review — calculator + totals + versions. Do not re-edit intake identity',
   post_bid: 'Follow-up — competitors, BAFO',
@@ -1881,6 +1999,7 @@ type EntryPhase = ProcessStage | 'awarded' | 'lost' | 'later' | 'reuse';
 const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> = [
   { path: 'workType', phase: 'intake', note: 'Insulation / Demo / GC / Masonry / Other' },
   { path: 'drawingName', phase: 'intake', note: 'Architect project name on drawings — this IS bidName. Not invitation subject.' },
+  { path: 'drawingNumber', phase: 'intake', note: 'Drawing / sheet set number. Searchable. Not bidName.' },
   { path: 'ownerProjectNumber', phase: 'intake', note: 'Owner or architect project # on title block (duplicate key)' },
   { path: 'mechanicalEngineerProjectNumber', phase: 'intake', note: 'Engineer of Record — mechanical. Title-block # (second duplicate key)' },
   { path: 'invitationReceivedAt', phase: 'intake', note: 'Mirrored from invitations[0]. Multiple vendors → invitations[]' },
@@ -1906,8 +2025,8 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'contractTiers', phase: 'intake', note: 'Sketch ~5 layers on intake. hasTheJob / invitedUs / isPaying. Bonds confirm at award.' },
   { path: 'generalContractors', phase: 'intake', note: 'Multiple GCs on the same opportunity; hasTheJob / stillBidding' },
   { path: 'mechanicals', phase: 'intake', note: 'Multiple mechanicals on the same opportunity; hasTheJob / stillBidding' },
-  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+clerk. captainUserId from /lookups/bidding/captains fills teamId. pursue false = no-bid on complete' },
-  { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. VRF + equipment = hydronic team' },
+  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+Gino. captainUserId from /lookups/bidding/captains fills teamId. Hide bidClerk — Assistant Estimator only. pursue false = no-bid on complete' },
+  { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. Names fill from the captain’s crew when team changes. VRF + equipment = hydronic team' },
   { path: 'constructionType', phase: 'intake', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name. Not on proposal.' },
   { path: 'constructionSubtype', phase: 'intake', note: 'GET /lookups/bidding/project-types. Not on proposal.' },
   { path: 'impactedGsf', phase: 'intake', note: 'Life-safety impacted / renovated SF. Not whole-building GSF. Proposal shows read-only; calc may copy to baseBid.gsfOfBuilding' },
@@ -1925,7 +2044,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'schedule', phase: 'estimating_setup', note: '' },
   { path: 'insulationSpecs', phase: 'estimating_setup', note: 'Which spec types apply (flags). Tables are specSheets.' },
   { path: 'specSheets', phase: 'estimating_setup', note: 'Spec rules rows (dropdowns). Before takeoff. Not the qty grid.' },
-  { path: 'technicalReview', phase: 'estimating_setup', note: 'approvedForTakeoff required to hand off' },
+  { path: 'technicalReview', phase: 'assignment', note: 'Nick/PJ/Gino. approvedForTakeoff required to leave Assignment (and still to leave Setup). Not a Setup editor.' },
   { path: 'takeoffAssignments.versions', phase: 'takeoff', note: 'Never overwrite; new version each revision' },
   { path: 'amendments', phase: 'proposal', note: '+ Add; arrays replace on PATCH. Output stage — do not put building type / GSF here' },
   { path: 'estimateReview', phase: 'proposal', note: 'Totals / scope notes. Identity fields are intake — show read-only' },
@@ -1978,6 +2097,8 @@ const BID_KIND_LABELS: Record<BidKind, string> = {
 
 const INTAKE_EDITOR = {
   bidNameFrom: 'drawingName',
+  drawingNumber: 'drawingNumber — sheet/set number; searchable on GET /bids?search=',
+  hideBidClerk: true,
   bidNameNote: 'Architect name on the drawings. Not the invitation subject. Not a nickname.',
   budgetIsBidKind: true,
   hideBudgetOnlyField: true,
@@ -2026,7 +2147,7 @@ const INTAKE_EDITOR = {
     note: 'Life-safety impacted / renovated SF. Not whole-building GSF.',
   },
   entityRule: 'process.entityRule — suggests ourEntityId. John makes the first company call.',
-  assignmentOwners: 'Nick + PJ + bid clerk',
+  assignmentOwners: 'Nick + PJ + Gino',
   teamField: 'assignment.teamId',
   teamLookup: 'GET /lookups/bidding/teams',
   captainField: 'assignment.captainUserId',
@@ -2041,6 +2162,14 @@ const INTAKE_EDITOR = {
     { sortOrder: 3, role: 'mechanical', note: 'Skip if hired by GC/owner/us' },
     { sortOrder: 4, role: 'us', note: 'Goel' },
   ],
+  followupCrmIntake: {
+    additionalDetailsEditor: false,
+    salesActivitiesEditor: false,
+    patchIgnored: CLIENT_PROCESS_LOCKED,
+    echoOnSaveOk: true,
+    doNotNullWipe: true,
+    listStillReads: ['grossSqFootage', 'cashExpense'] as const,
+  },
   doNot: [
     'Create a second bid when another invitation arrives for the same drawings',
     'Let the clerk freely rename the bid',
@@ -2050,7 +2179,38 @@ const INTAKE_EDITOR = {
     'Put building type / GSF / project type on proposal — those are intake',
     'Require jobId / linked job on intake — wait until awarded',
     'Clear line1 after filling city/state/zip from a pasted address',
+    'PATCH process.additionalDetails or process.salesActivities — editors are gone; echo GET or omit; never null-wipe',
+    'Drop grossSqFootage / cashExpense from the list payload while the filter panel still uses them',
   ],
+};
+
+const ASSIGNMENT_EDITOR = {
+  technicalReview: true,
+  approvedForTakeoff: 'technicalReview.approvedForTakeoff',
+  hideBidClerk: true,
+  assistantEstimatorFrom: 'team bidClerk slot — label Assistant Estimator',
+  takeoffFillsFromTeam: true,
+  who: 'Nick + PJ + Gino',
+  doNot: [
+    'Show Bid clerk next to Assistant Estimator — same person',
+    'Keep approve-for-takeoff on Setup as the editor — Assignment only; Setup still cannot skip the flag',
+  ],
+};
+
+const ESTIMATES_LIST_EDITOR = {
+  defaultView: 'list',
+  hideTiles: true,
+  title: 'bidName + estimateNumber',
+  statusColumn: { bind: 'processStage', label: 'Status', was: 'Work stage' },
+  bidDateSort: {
+    query: 'sort=bidDate',
+    meaning: 'nulls last, then bidDate ascending (today then next week), then updatedAt desc',
+  },
+  search: 'GET /bids?search= — estimate #, name, drawing name/number, owner/ME #, contractor, architect, ProcessJson keyword',
+  multiFilter: true,
+  estimatorFilter: 'GET /lookups/bidding/teams (or captains). Do not GET contacts?role=estimator — that list is empty until captains exist.',
+  hideOpsNavFor: ['assistant_estimator'],
+  drawingNumber: 'drawingNumber on list + GET detail',
 };
 
 /** Estimating Setup — spec rules + money flags. Building type / GSF live on intake. */
@@ -2065,6 +2225,7 @@ const SETUP_EDITOR = {
   specSheet: 'FRONTEND_SPEC_SHEET.md',
   doNot: [
     'Building type / project type / GSF — those moved to intake (PJ 13 Sep 2026)',
+    'Technical review / approve for takeoff editor — that is Assignment now',
   ],
 };
 

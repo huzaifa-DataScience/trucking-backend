@@ -30,6 +30,13 @@ import {
 } from './process/bid-process';
 import { TEAM_CREW_SLOTS, type TeamCrewSlot } from './process/bid-crew';
 
+function aliasCrewRole(role?: string): string {
+  const want = String(role ?? '').trim();
+  if (!want) return '';
+  if (want === 'estimator' || want === 'bid_clerk' || want === 'clerk') return 'assistant_estimator';
+  return want;
+}
+
 export interface WageRateInput {
   rateLabel: string;
   wage: number;
@@ -193,8 +200,12 @@ export class BiddingLookupsService {
   /** Settings people picker. Captains + AEs + clerks + Connecteam + Excel roster. */
   async getContacts(role?: string) {
     const rows = await this.users.listCrewContacts();
-    const want = String(role ?? '').trim();
-    return want ? rows.filter((p) => p.role === want) : rows;
+    const want = aliasCrewRole(role);
+    if (!want) return rows;
+    if (want === 'assistant_estimator') {
+      return rows.filter((p) => p.role === 'assistant_estimator' || p.role === 'bid_clerk');
+    }
+    return rows.filter((p) => p.role === want);
   }
 
   private async crew() {

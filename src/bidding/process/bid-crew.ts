@@ -16,6 +16,12 @@ export type CrewTeam = {
   captain: string | null;
   bidClerk: string | null;
   captainUserId: number | null;
+  duct1?: string | null;
+  duct2?: string | null;
+  hydronic1?: string | null;
+  hydronic2?: string | null;
+  plumbing1?: string | null;
+  plumbing2?: string | null;
 };
 
 export type AssignmentCrew = {
@@ -127,6 +133,7 @@ function fillFromTeam(
   if (next.captainUserId == null && cap) next.captainUserId = cap.userId;
   if (!next.captain) next.captain = cap?.name ?? null;
   if (!next.bidClerk) next.bidClerk = team?.bidClerk ?? null;
+  if (!next.assistantEstimator) next.assistantEstimator = next.bidClerk ?? team?.bidClerk ?? null;
   return next;
 }
 

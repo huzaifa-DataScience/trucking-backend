@@ -11,7 +11,10 @@ import {
   claimDueDate,
   classifyInsulationFamily,
   classifySpecLayer,
+  diffProcessChangePaths,
   emptyProcess,
+  fillTakeoffAssignmentsFromTeam,
+  humanizeProcessPath,
   fillProjectAddress,
   intakeCompleteBlocked,
   mergeProcess,
@@ -163,6 +166,23 @@ const noBid = applyHandoff(
   'complete',
 );
 assert(noBid.outcome === 'no_bid' && noBid.stage === 'result', 'assignment no-bid → Outcome tab');
+
+threw = false;
+try {
+  applyHandoff(mergeProcess(emptyProcess(), { stage: 'assignment' }), 'complete');
+} catch {
+  threw = true;
+}
+assert(threw, 'assignment → setup requires approvedForTakeoff');
+
+const toSetup = applyHandoff(
+  mergeProcess(emptyProcess(), {
+    stage: 'assignment',
+    technicalReview: { approvedForTakeoff: true },
+  }),
+  'complete',
+);
+assert(toSetup.stage === 'estimating_setup', 'approved assignment → setup');
 
 threw = false;
 try {
@@ -451,6 +471,13 @@ assert(meta.specSheetEditor.sizeModeByKind.duct === 'circumference', 'duct uses 
 assert(Array.isArray(meta.specSheetEditor.sizes) && meta.specSheetEditor.sizes.length === 0, 'no global size list');
 assert(Array.isArray(meta.specSheetEditor.thicknesses) && meta.specSheetEditor.thicknesses.length === 0, 'no global thick list');
 assert(meta.attachmentLabels.includes('spec-sheet-image'), 'spec-sheet-image label');
+assert(meta.attachmentLabels.includes('master-scan'), 'master-scan label');
+assert(meta.drawingCategories.includes('cd'), 'CD drawing category');
+assert(meta.attachmentMaxBytes === 50 * 1024 * 1024, 'attachment max 50MB');
+assert(meta.intakeEditor.hideBidClerk === true, 'hide bid clerk');
+assert(meta.assignmentEditor.technicalReview === true, 'technical review on assignment');
+assert(meta.estimatesListEditor.defaultView === 'list', 'list default');
+assert(meta.estimatesListEditor.hideTiles === true, 'hide tiles');
 
 assert(meta.bidKinds.includes('design_assist') && meta.bidKinds.includes('budget'), 'bid kinds from PJ call');
 assert(meta.bidKinds.includes('unknown'), 'unknown bid kind');
@@ -590,9 +617,73 @@ assert(
 );
 assert(meta.intakeEditor.inviteBody.includes('inviteBody'), 'invite body in meta');
 assert(meta.intakeEditor.checkAddenda.includes('checkAddenda'), 'checkAddenda in meta');
-assert(meta.intakeEditor.assignmentOwners.includes('bid clerk'), 'clerk may assign');
+assert(meta.intakeEditor.assignmentOwners.includes('Gino'), 'assignment owners include Gino');
+assert(meta.intakeEditor.followupCrmIntake.additionalDetailsEditor === false, 'no additional-details editor');
+assert(meta.intakeEditor.followupCrmIntake.salesActivitiesEditor === false, 'no sales-activities editor');
+assert(meta.intakeEditor.followupCrmIntake.doNotNullWipe === true, 'do not null-wipe CRM blobs');
+assert(
+  meta.intakeEditor.followupCrmIntake.listStillReads.includes('grossSqFootage') &&
+    meta.intakeEditor.followupCrmIntake.listStillReads.includes('cashExpense'),
+  'list still reads FollowupCRM filter keys',
+);
+assert(
+  meta.intakeEditor.followupCrmIntake.patchIgnored.includes('additionalDetails') &&
+    meta.intakeEditor.followupCrmIntake.patchIgnored.includes('salesActivities'),
+  'PATCH ignores CRM blobs',
+);
+
+const storedCrm = parseProcess({
+  additionalDetails: { bidNumber: 'IVA-6379', cashExpense: 12.5, loginDate: '2026-01-01' },
+  salesActivities: { siteVisit: '2026-09-01', bidDelivered: '2026-09-02' },
+});
+assert(storedCrm.additionalDetails.bidNumber === 'IVA-6379', 'parse still loads additionalDetails');
+assert(storedCrm.salesActivities.siteVisit === '2026-09-01', 'parse still loads salesActivities');
+const clientWipe = mergeProcess(
+  storedCrm,
+  {
+    additionalDetails: { bidNumber: null, cashExpense: null, loginDate: null },
+    salesActivities: { siteVisit: null, bidDelivered: null },
+    bidKind: 'budget',
+  },
+  { fromClient: true },
+);
+assert(clientWipe.additionalDetails.bidNumber === 'IVA-6379', 'client PATCH cannot wipe additionalDetails');
+assert(clientWipe.additionalDetails.cashExpense === 12.5, 'client PATCH cannot wipe cashExpense');
+assert(clientWipe.salesActivities.siteVisit === '2026-09-01', 'client PATCH cannot wipe salesActivities');
+assert(clientWipe.bidKind === 'budget', 'real process keys still merge');
+const echoCrm = mergeProcess(
+  storedCrm,
+  {
+    additionalDetails: storedCrm.additionalDetails,
+    salesActivities: storedCrm.salesActivities,
+    workType: 'insulation',
+  },
+  { fromClient: true },
+);
+assert(echoCrm.additionalDetails.bidNumber === 'IVA-6379', 'GET echo does not replace stored CRM');
+assert(echoCrm.workType === 'insulation', 'echo still saves real fields');
+
+const withDrawing = parseProcess({ drawingNumber: 'A-101' });
+assert(withDrawing.drawingNumber === 'A-101', 'drawingNumber persists');
+const takeoffFilled = mergeProcess(emptyProcess(), { takeoffAssignments: [] });
+fillTakeoffAssignmentsFromTeam(takeoffFilled, { duct1: 'Wesley Morris', hydronic1: 'Jeremee Camat' });
+assert(
+  takeoffFilled.takeoffAssignments.some((a) => a.role === 'duct1' && a.assigneeName === 'Wesley Morris'),
+  'takeoff fills from team',
+);
+assert(
+  takeoffFilled.takeoffAssignments.some((a) => a.role === 'vrf' && a.assigneeName === 'Jeremee Camat'),
+  'vrf follows hydronic1',
+);
+const procDiff = diffProcessChangePaths(
+  parseProcess({ drawingNumber: 'A-101', additionalDetails: { bidNumber: 'X' } }),
+  parseProcess({ drawingNumber: 'A-102', additionalDetails: { bidNumber: 'Y' } }),
+);
+assert(procDiff.includes('process.drawingNumber'), 'diff drawing number');
+assert(!procDiff.some((p) => p.includes('additionalDetails')), 'diff skips additionalDetails');
+assert(humanizeProcessPath('process.owner.company') === 'owner company', 'humanize path');
 assert(meta.defaults.assignmentOwner === 'nick_pj_and_clerk', 'defaults assignment owner includes clerk');
-assert(meta.stages.find((s: { id: string }) => s.id === 'assignment')?.who.includes('bid clerk'), 'assignment who includes clerk');
+assert(meta.stages.find((s: { id: string }) => s.id === 'assignment')?.who.includes('Gino'), 'assignment who includes Gino');
 
 const parsedAddr = parseUsAddress('123 Main St, Baltimore, MD 21201');
 assert(parsedAddr.city === 'Baltimore' && parsedAddr.state === 'MD' && parsedAddr.zip === '21201', 'parse US address');

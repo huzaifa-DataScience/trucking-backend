@@ -61,6 +61,7 @@ export class BiddingController {
     @Query('submitDateFrom') submitDateFrom?: string,
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
+    @Query('sort') sort?: string,
     @CurrentUser() user?: User,
   ) {
     return this.bidding.list({
@@ -78,6 +79,7 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
+      sort: parseSortQuery(sort),
       editor: user,
     });
   }
@@ -107,6 +109,7 @@ export class BiddingController {
     @Query('submitDateFrom') submitDateFrom?: string,
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
+    @Query('sort') sort?: string,
     @CurrentUser() user?: User,
   ) {
     const buffer = await this.bidding.exportList({
@@ -124,6 +127,7 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
+      sort: parseSortQuery(sort),
       editor: user,
     });
     res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
@@ -290,6 +294,13 @@ export class BiddingController {
     await this.bidding.assertUserCanEdit(bidId, user);
     return this.attachments.remove(bidId, attachmentId, user?.id);
   }
+}
+
+function parseSortQuery(raw?: string): 'updated' | 'bidDate' | undefined {
+  const v = raw?.trim();
+  if (v === 'bidDate') return 'bidDate';
+  if (v === 'updated') return 'updated';
+  return undefined;
 }
 
 function parseTeamIdQuery(raw?: string): number | 'all' | undefined {

@@ -105,8 +105,8 @@ Read `workflow` on `GET /bids/:id` — do not invent the gate.
 
 | User does | Call |
 |-----------|------|
-| Save draft (any stage, incomplete OK) | `PATCH /bids/:id` `{ process }` — objects merge, **arrays replace** |
-| Complete my step & hand off | `POST /bids/:id/handoff` `{ "action": "complete", "notes"? }` — Intake blocked until bid type + (drawings if build-to-print/design-assist) + who-else research if fewer than two invites |
+| Save draft (any stage, incomplete OK) | `PATCH /bids/:id` `{ process }` — objects merge, **arrays replace**. **`additionalDetails` / `salesActivities` are ignored** (legacy FollowupCRM; GET may still return them; echo OK; nulls do not wipe). |
+| Complete my step & hand off | `POST /bids/:id/handoff` `{ "action": "complete", "notes"? }` — Intake blocked until bid type + (drawings if build-to-print/design-assist) + who-else research if fewer than two invites. **Assignment** blocked until `technicalReview.approvedForTakeoff === true` unless No-bid. |
 | Close a mistaken duplicate | `POST /bids/:id/link-duplicate` `{ "keepBidId" }` — merges invites onto keep, archives this bid |
 | Return to previous step | `POST /bids/:id/handoff` `{ "action": "return" }` |
 | **Win / lose / no-bid / cancel / postpone** (and change later) | `POST /bids/:id/outcome` `{ "outcome": "awarded" }` — same call to switch |
@@ -116,7 +116,7 @@ Read `workflow` on `GET /bids/:id` — do not invent the gate.
 
 Assignment **No bid** jumps to the Outcome tab with `no_bid` pre-selected — user can still change it.
 
-Estimating Setup → Takeoff is blocked until `process.technicalReview.approvedForTakeoff === true`.
+Estimating Setup → Takeoff is blocked until `process.technicalReview.approvedForTakeoff === true`. Same flag is required to leave **Assignment** (put the editor there).
 
 Outcome tab: **Complete & Hand Off** is off (`canComplete: false`). Change `outcome` on that tab instead.
 
@@ -124,8 +124,8 @@ Outcome tab: **Complete & Hand Off** is off (`canComplete: false`). Change `outc
 
 | Stage | Bind | Notes |
 |-------|------|--------|
-| Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. Two project #s. `bidKind` (budget is a kind). `invitations[]` (`inviteBody`, `preferredContact`) + `documentLinks[]` (`checkAddenda`). Paste address in `line1`. **Hide `jobId`.** Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
-| Assignment | `process.assignment`, `takeoffAssignments` | Nick + PJ + bid clerk. Pick **captain** from `GET /lookups/bidding/captains` (`assignment.captainUserId`) — backend fills `assignment.teamId`. Bid/no-bid, AE/clerk, 1 or 2 people per scope. |
+| Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. **`drawingNumber`** searchable. Two project #s. `bidKind` (budget is a kind). `invitations[]` (`inviteBody`, `preferredContact`) + `documentLinks[]` (`checkAddenda`). Paste address in `line1`. **Hide `jobId`.** Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
+| Assignment | `process.assignment`, `takeoffAssignments`, `technicalReview` | Nick + PJ + Gino. Hide `bidClerk`. Captain pick fills team + takeoff names. Approve for takeoff here. |
 | Estimating Setup | wage **decision**, PLA, OCIP, lifts, parking, `insulationSpecs`, **`specSheets`**, `technicalReview` | Wage **decision** ≠ wage **rate**. Spec **sheet** = dropdown **rules** — **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**. Building type / GSF are **intake**, not here. |
 | Takeoff | existing Specs/Mike + `takeoffAssignments.versions` | Never overwrite a takeoff file. New version each revision. Show `workflow.takeoffComparisons`. |
 | Proposal | existing Estimate (`baseBid` + `computed`) + `estimateReview`, `proposalVersions`, `amendments`, `submission` | **Output + calc.** `proposalEditor.firstHere` = schedule/money, wage rate, lifts, parking, Mike grid. `readOnly` = company / estimate # / bid name / building / project type / GSF / state / team / captain / AE / crew. PLA/CCIP/MBE also on Setup. `+ Add` amendment. **[BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md)** |
@@ -373,7 +373,7 @@ Site photos, screenshots, PDFs. Metadata in SQL; files on disk. `GET /bids/:id` 
 | Rule | Value |
 |------|--------|
 | Types | JPEG, PNG, WebP, PDF |
-| Max size | 10 MB per file |
+| Max size | **50 MB** per file (`process-meta.attachmentMaxBytes`) |
 | Max count | 20 per bid |
 | Upload / delete | until `status === "archived"` (submit does **not** block — PLA/spec PDFs after win) |
 | View / download | Any status |
@@ -409,7 +409,7 @@ const previewUrl = URL.createObjectURL(await res.blob());
 |------|------|
 | `400` | Missing file, bad type, or 20-file limit |
 | `409` | Upload/delete on **archived** bid |
-| `413` | File > 10 MB |
+| `413` | File > 50 MB |
 
 ---
 
@@ -626,9 +626,9 @@ Check-and-balance: who touched the bid, what area changed, when. Logged automati
     {
       "id": 42,
       "action": "updated",
-      "area": "baseBid",
-      "summary": "Base bid inputs updated (marginPercent, projectState)",
-      "changedFields": ["baseBid.marginPercent", "baseBid.projectState"],
+      "area": "process",
+      "summary": "Changed owner company",
+      "changedFields": ["process.owner.company"],
       "userId": 5,
       "userEmail": "estimator@goelservices.com",
       "userFirstName": "Hassan",
@@ -876,7 +876,7 @@ The client Excel engine is the source of truth, so you **do not need to call thi
 1. **Estimates list:** `GET /bids` — admin/clerk full list; captain/AE their team. **Dashboard (other page):** `GET /dashboard`. Do not mix.
 2. **On bid open:** `GET /bids/:id` → hydrate `process`, **`workflow`**, `baseBid`, Specs if takeoff, attachments.
 2. **Company info:** Proposal/Estimate (§3.5). Job pick → prefill, PATCH `companyInfo`.
-3. **Activity log:** `activitySummary` on chrome; timeline `GET /bids/:id/activity` (§3.6). Handoff/outcome are their own actions.
+3. **Activity log:** `activitySummary` on chrome; timeline `GET /bids/:id/activity` (§3.6). Show **who + `summary` + when**. Process `summary` is field-level (`Changed owner company`). Handoff/outcome are their own actions.
 4. **Cover / due date:** `submitDate` + `timeEstimate` on header (§3.4). Submit → `{ "status": "submitted" }` (locks math, not outcome).
 5. **Lookups:** cache `/lookups/bidding/*` including **`process-meta`** and **`wage-decisions`**.
 6. **Wage-rate select (Estimate):** `GET .../wage-rates/:id/burdened-rate`. Wage-**decision** (Setup stage) is a different dropdown.

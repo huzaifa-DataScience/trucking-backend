@@ -14,7 +14,7 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
 };
 
-export const MAX_BID_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_BID_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 export const MAX_BID_ATTACHMENTS_PER_BID = 20;
 export const AVATAR_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
