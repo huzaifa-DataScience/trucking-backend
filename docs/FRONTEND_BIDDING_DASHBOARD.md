@@ -1,7 +1,7 @@
 # Role dashboards — Frontend Handoff
 
 **Give this file to FE.**  
-**Last updated:** 2026-09-15  
+**Last updated:** 2026-09-29  
 **Chat click-through:** [FRONTEND_CONNECTEAM_CHAT.md](./FRONTEND_CONNECTEAM_CHAT.md)
 
 **Two screens. Do not merge them.**
@@ -33,7 +33,11 @@ Do **not** put team setup on Estimates. **Settings → My team** — [FRONTEND_A
 /bidding/[id]?stage=…
 ```
 
-Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`).
+Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`), **`sort=bidDate`**.
+
+**29 Sep CONS UAT — Estimates UI (FE):** tiles off, **list default**. Title = `bidName` + `estimateNumber`. Column **Work stage → Status** (`processStage`). Bid-date sort like follow-up: `GET /bids?sort=bidDate` (today then upcoming; nulls last). Multi-select filters, no cap. Estimator filter = **`GET /lookups/bidding/teams`** (or captains) — **not** `contacts?role=estimator` (empty until someone is a captain). Search is one box (`search=`) — drawing number, architect, contractor included. Hide ops/reporting/billing nav for `assistant_estimator`. Meta: `process-meta.estimatesListEditor`.
+
+Row also has `drawingNumber`.
 
 **Export:** `GET /bids/export` — same query params as `GET /bids` (including captain auto-team). Returns `.xlsx` (`Content-Disposition: attachment; filename="bids.xlsx"`). Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
 

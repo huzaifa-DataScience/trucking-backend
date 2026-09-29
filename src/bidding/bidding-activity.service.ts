@@ -10,6 +10,7 @@ import {
 } from '../database/entities';
 import { cleanPersonName } from '../database/entities/user.entity';
 import type { PatchBidDto } from './dto/bidding.dto';
+import { diffProcessChangePaths, humanizeProcessPath, parseProcess } from './process/bid-process';
 
 export interface BidActivityItemDto {
   id: number;
@@ -54,6 +55,15 @@ const scalarEqual = (a: unknown, b: unknown): boolean => {
     return formatDate(a as Date) === formatDate(b as Date);
   }
   return a === b;
+};
+
+const parseProcessJson = (raw: string | null | undefined): unknown => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 };
 
 @Injectable()
@@ -289,13 +299,22 @@ export class BiddingActivityService {
     }
 
     if (dto.process !== undefined) {
-      const keys = Object.keys(dto.process);
-      entries.push({
-        action: 'updated',
-        area: 'process',
-        summary: `Process updated (${keys.slice(0, 12).join(', ')}${keys.length > 12 ? '…' : ''})`,
-        changedFields: keys.length ? keys.map((k) => `process.${k}`) : ['process'],
-      });
+      const beforeProc = parseProcess(parseProcessJson(beforeContent?.processJson));
+      const afterProc = parseProcess(parseProcessJson(afterContent.processJson));
+      const keys = diffProcessChangePaths(beforeProc, afterProc);
+      if (keys.length) {
+        const labels = keys.map(humanizeProcessPath);
+        const shown = labels.slice(0, 8);
+        entries.push({
+          action: 'updated',
+          area: 'process',
+          summary:
+            shown.length === 1
+              ? `Changed ${shown[0]}`
+              : `Changed ${shown.join(', ')}${labels.length > 8 ? '…' : ''}`,
+          changedFields: keys,
+        });
+      }
     }
 
     if (dto.companyInfo !== undefined) {
@@ -351,9 +370,6 @@ export class BiddingActivityService {
     for (const e of entries) {
       await this.append({ bidId, userId, ...e });
     }
-
-    void beforeContent;
-    void afterContent;
   }
 
   private async append(opts: {

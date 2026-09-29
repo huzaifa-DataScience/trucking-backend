@@ -49,6 +49,7 @@ import {
   mergeProcess,
   normalizeProjectNumber,
   parseProcess,
+  fillTakeoffAssignmentsFromTeam,
   workflowChrome,
   type BidProcess,
   type HandoffAction,
@@ -124,6 +125,7 @@ type BidListQuery = {
   submitDateFrom?: string;
   submitDateTo?: string;
   clientCompanyName?: string;
+  sort?: 'updated' | 'bidDate';
   editor?: BidEditor;
 };
 
@@ -201,8 +203,16 @@ export class BiddingService {
         `(b.estimateNumber LIKE :q OR b.bidName LIKE :q
           OR JSON_VALUE(cnt.CompanyInfoJson, '$.companyName') LIKE :q
           OR JSON_VALUE(cnt.ProcessJson, '$.drawingName') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.drawingNumber') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.owner.name') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.owner.company') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.architect.name') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.architect.company') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineer.name') LIKE :q
+          OR JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineer.company') LIKE :q
           OR REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.ownerProjectNumber'), ''), '#', ''), ' ', '') LIKE :q
-          OR REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineerProjectNumber'), ''), '#', ''), ' ', '') LIKE :q)`,
+          OR REPLACE(REPLACE(ISNULL(JSON_VALUE(cnt.ProcessJson, '$.mechanicalEngineerProjectNumber'), ''), '#', ''), ' ', '') LIKE :q
+          OR cnt.ProcessJson LIKE :q)`,
         { q: `%${q}%` },
       );
     }
@@ -229,7 +239,13 @@ export class BiddingService {
         ccn: params.clientCompanyName,
       });
     }
-    qb.orderBy('b.updatedAt', 'DESC');
+    if (params.sort === 'bidDate') {
+      qb.orderBy('CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC')
+        .addOrderBy('b.bidDate', 'ASC')
+        .addOrderBy('b.updatedAt', 'DESC');
+    } else {
+      qb.orderBy('b.updatedAt', 'DESC');
+    }
 
     const rows = await qb.getMany();
     const contents =
@@ -792,6 +808,7 @@ export class BiddingService {
       outcomeStatus: bid.outcomeStatus ?? 'open',
       workType: bid.workType ?? null,
       drawingName: process.drawingName,
+      drawingNumber: process.drawingNumber,
       ownerProjectNumber: process.ownerProjectNumber,
       mechanicalEngineerProjectNumber: process.mechanicalEngineerProjectNumber,
       relatedBidId: process.relatedBidId,
@@ -806,6 +823,7 @@ export class BiddingService {
       jobStartDate: process.schedule.expectedStart,
       jobEndDate: process.schedule.expectedCompletion,
       contractAmount: process.award.finalContractAmount,
+      // ponytail: list filters still client-side on these FollowupCRM keys — keep until the filter panel drops them.
       grossSqFootage: process.additionalDetails.grossSqFootage,
       cashExpense: process.additionalDetails.cashExpense,
       createdAt,
@@ -817,7 +835,7 @@ export class BiddingService {
 
   private mergeProcessSafe(existing: BidProcess, patch: Record<string, unknown>): BidProcess {
     try {
-      return mergeProcess(existing, patch);
+      return mergeProcess(existing, patch, { fromClient: true });
     } catch (e) {
       if (e instanceof BidProcessError) throw new BadRequestException(e.message);
       throw e;
@@ -834,6 +852,10 @@ export class BiddingService {
       this.lookups.getTeams(),
     ]);
     process.assignment = bindAssignmentCrew(process.assignment, captains, teams);
+    fillTakeoffAssignmentsFromTeam(
+      process,
+      teams.find((t) => t.id === process.assignment.teamId),
+    );
   }
 
   /** Same estimate #, name, or title-block # → one opportunity. Case-insensitive. */

@@ -437,7 +437,9 @@ Slots (captain is always the logged-in user — do not send `captain`): `bidCler
 
 `PATCH` → `{ user, team }`. Replace stored AuthUser from `user` (`teamId` is now their crew). First save **creates** their Bid_Teams row (named after the captain).
 
-Picker: **`GET /lookups/bidding/contacts`** (or `people` on GET `/auth/team`). Full list, no paging. Do **not** use `GET /lookups/bidding/captains` here — that is assignment captains only, so AEs will be missing. Prefer `connecteamUserId`, else `appUserId`, else `{ "name" }` for Excel roster rows that have no login yet.
+Picker: **`GET /lookups/bidding/contacts`** (or `people` on GET `/auth/team`). Full list, no paging. Do **not** use `GET /lookups/bidding/captains` here — that is assignment captains only, so AEs will be missing. `?role=estimator` / `bid_clerk` / `clerk` = assistant estimators (plus old `bid_clerk` rows). Prefer `connecteamUserId`, else `appUserId`, else `{ "name" }` for Excel roster rows that have no login yet.
+
+Settings slot key `bidClerk` stays in JSON — **label it Assistant Estimator**. Do not show a second Bid clerk field.
 
 Do **not** bind this screen to `GET /lookups/bidding/teams`. That list is bid labels / assignment, not the captain picker.
 

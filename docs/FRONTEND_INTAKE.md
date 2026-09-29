@@ -1,7 +1,7 @@
 # Stage 1 — Intake + Assignment
 
 **Give this file to FE** (with [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) for Setup).  
-**Last updated:** 2026-09-16  
+**Last updated:** 2026-09-29  
 **Source:** PJ + Amr (2026-08-20) + spec catch-up (2026-08-23) + PJ intake dry-run (2026-09). Locked pairs only.  
 **Chrome / handoff:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
 **Enums:** `GET /lookups/bidding/process-meta` → `bidKinds`, `tierRoles`, `intakeEditor`
@@ -11,6 +11,8 @@
 9 Sep extras (PJ): **no `jobId` on intake** — link the job when awarded. Paste a full US address in `projectAddress.line1` — backend fills city/state/zip if those are empty (keeps `line1`). Preferred reach: `contact.preferredContact` `email` | `phone`. Paste the invitation email in `invitations[].inviteBody` (not `notes`). Mark `documentLinks[].checkAddenda` on the owner/federal source. Bid clerk (John) may complete **Assignment** so the queue does not sit. `intakeEditor` flags: `jobIdOnIntake`, `hideJobIdOnIntake`, `fillAddressFromLine1`, `preferredContact`, `inviteBody`, `checkAddenda`, `assignmentOwners`.
 
 16 Sep extras (PJ review): **building type, project type, impacted GSF, company rule** on intake — not proposal. Proposal is **output + calculator**. `intakeEditor.constructionType` / `constructionSubtype` / `impactedGsf`. `process-meta.proposalEditor.isOutput`.
+
+29 Sep: FollowupCRM **Additional details** and **Sales activities** editors are gone. Users cannot edit those keys. `PATCH /bids/:id` **ignores** `process.additionalDetails` and `process.salesActivities` (echo from GET is OK; do **not** null-wipe). Stored JSON stays. List still returns `grossSqFootage` / `cashExpense` until the filter panel drops them. Real fields stay where they already live (estimate #, bid kind, owner/ME numbers, document links, assignment takeoff, Setup OCIP, Proposal wage/Mike, Outcome/Lost). `process-meta.intakeEditor.followupCrmIntake`.
 
 Incomplete **save** is OK. **Complete & Hand Off** from Intake is gated — read `workflow.canComplete` / `completeBlockedReason`. Bid clerk on Intake. Estimator is **not** on this page.
 
@@ -33,6 +35,7 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 |----|------|---------|
 | Bid / estimate # | header `estimateNumber` | Already on create |
 | Bid name | header `bidName` **and** `process.drawingName` | **Locked to the drawing name.** If `drawingName` is set, header `bidName` is overwritten. Clerk cannot keep a nickname. |
+| Drawing number | `process.drawingNumber` | Sheet / set number. Searchable. **Not** bidName. |
 | Address | `process.projectAddress` | Paste the full line in `line1` (Followup-style). On save, city/state/zip fill if empty. **Do not clear `line1`.** |
 | Linked job | header `jobId` | **Skip on intake.** Hide the job picker. Set when awarded. |
 | Due date / time | `process.dueDate`, `process.dueTime` | |
@@ -179,17 +182,18 @@ Insulation **can** be direct to owner — do not require a mechanical row.
 
 ## Assignment
 
-Nick + PJ **and** the bid clerk (John). Queue must not sit if Nick/PJ are out. Handoff is not role-gated — whoever has the page can Complete.
+Nick + PJ + **Gino** (technical review / approve for takeoff). Assistant estimator may Complete so the queue does not sit. Handoff is not role-gated.
 
 | UI | Bind |
 |----|------|
 | Pursue? | `assignment.pursue` — `false` + Complete → Outcome `no_bid` |
+| **Approve for takeoff** | `process.technicalReview` (this page, **not Setup**). `approvedForTakeoff === true` required to Complete unless No-bid. Setup still cannot skip the flag on the way to Takeoff. |
 | Captain | `assignment.captainUserId` ← `GET /lookups/bidding/captains` (`App_Users` `role=captain`). Team optional — **still show them**. Pick captain first; backend fills `assignment.teamId` when they have a crew |
-| Team | `assignment.teamId` — filled from the captain’s crew. Still shown; changing the team fills captain if empty |
-| AE / clerk | `assignment.assistantEstimator`, `bidClerk` — clerk copies from the team row; backend fills `bidClerk` when empty. AE picker: `GET /lookups/bidding/contacts?role=assistant_estimator` |
-| Takeoff who | `takeoffAssignments` — 1 or 2 people per scope |
+| Team | `assignment.teamId` — filled from the captain’s crew. Still shown; changing the team fills captain if empty **and** takeoff names from that crew |
+| Assistant Estimator | `assignment.assistantEstimator` only. **Hide `bidClerk`.** Backend copies the team `bidClerk` slot into AE when AE is empty. Picker: `GET /lookups/bidding/contacts?role=assistant_estimator` (`estimator` / `bid_clerk` aliases work) |
+| Takeoff who | `takeoffAssignments` — changing Bill/Mike/Wilder **updates names** from that team’s duct/hydronic/plumbing slots. Versions stay. |
 
-Then Complete → Estimating Setup.
+Then Complete → Estimating Setup. `workflow.completeBlockedReason` when approval is missing.
 
 `teamId: null` means they have not saved Settings → My team yet. **Still pickable.** Assignment saves `captainUserId`; `teamId` fills later when they have a crew. Do **not** hide the row. Do **not** require them to be currently logged in.
 
@@ -258,6 +262,8 @@ Arrays **replace**. To add a second invitation, send the full `invitations` arra
 - Hide unit on spec sheet when size/thick are blank (unrelated)
 - Require / show linked job (`jobId`) on intake
 - Put the pasted invitation email in `notes` — that field is clerk notes; use `inviteBody`
+- PATCH `process.additionalDetails` or `process.salesActivities` to change or clear them — omit or echo GET; never send nulls to wipe
+- Drop `grossSqFootage` / `cashExpense` from the estimates list payload while filters still use them
 
 ---
 

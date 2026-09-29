@@ -45,6 +45,9 @@ reports/
 # Temp slides used to build BACKEND_DESIGN.docx
 docs/.backend-design-slides/
 
+# Meeting / call transcripts (Teams exports, notes) — local only.
+meetings/
+
 # One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
 /*.sql
 *.bak

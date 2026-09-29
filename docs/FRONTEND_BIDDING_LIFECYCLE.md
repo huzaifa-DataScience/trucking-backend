@@ -1,6 +1,6 @@
 # Bid lifecycle — `process` field dictionary
 
-**Last updated:** 2026-09-16  
+**Last updated:** 2026-09-29  
 **UI (stages, handoff, award gate):** **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)** — that is the FE handoff. This file is **fields + API only**.  
 **Stage 1 screen:** **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**
 
@@ -56,7 +56,7 @@ Chrome: **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)**. Enums: `GE
 | Stage / screen | `process.stage` | Fields |
 |----------------|-----------------|--------|
 | Intake | `intake` | workType, bidKind, drawingName (= bid name), ownerProjectNumber, mechanicalEngineerProjectNumber, invitations, documentLinks, address, owner, architect, ME, **constructionType**, **constructionSubtype**, **impactedGsf**, **entityRule**, contractTiers (sketch), GCs, mechanicals, relatedBidId, dueDate, dueTime. `budgetOnly` is derived from `bidKind=budget`. |
-| Assignment | `assignment` | assignment.* (`captainUserId` fills `teamId`), takeoffAssignments (people/due) |
+| Assignment | `assignment` | assignment.* (`captainUserId` fills `teamId` + takeoff names), `technicalReview.approvedForTakeoff`, takeoffAssignments. Hide `bidClerk`. |
 | Estimating Setup | `estimating_setup` | mbePreference, PLA, wageDecisionId, clearance, labor, OCIP, lifts, parking, schedule, insulationSpecs, **specSheets**, technicalReview |
 | Takeoff | `takeoff` | Specs/Mike APIs + takeoffAssignments.versions |
 | Proposal | `proposal` | **Calc first here:** schedule/money, wage **rate**, lifts, parking, Mike `systems[]`. **RO:** company / estimate # / bid name / building / project type / GSF / state / team / captain / AE / crew. PLA/CCIP/MBE also Setup. |
