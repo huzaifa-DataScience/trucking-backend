@@ -341,6 +341,7 @@ Use when the user picks a wage rate to show **single-tier** burden + breakdown (
 | DELETE | `/bids/:id` | Soft delete |
 | POST | `/bids/:id/calculate` | **Deprecated** — no-op echo of stored snapshot (see §5) |
 | POST | `/bids/:id/attachments` | Upload image/PDF (`multipart`, field `file`) |
+| POST | `/bids/:id/attachments/import-link` | Fetch a Project document hub link into Drawings (`{ url, drawingCategory? }`) |
 | GET | `/bids/:id/attachments/:attachmentId/download` | Download / inline view |
 | DELETE | `/bids/:id/attachments/:attachmentId` | Remove attachment (until **archived**) |
 
@@ -402,6 +403,11 @@ const res = await fetch(`${API_BASE}${attachment.downloadPath}`, {
 });
 const previewUrl = URL.createObjectURL(await res.blob());
 ```
+
+**Import from hub link** — `POST /bids/:id/attachments/import-link`, JSON `{ "url": "...", "drawingCategory"?: "ifb" }` → same shape as upload, stored with `label: "drawings"`. Server fetches the file so clerks skip download → re-upload. Same type/size/count limits as upload.
+- `http(s)` direct file links; SharePoint/OneDrive, Dropbox and Google Drive share links are rewritten to their download form. Private/internal addresses are refused.
+- O-drive / UNC / `file://` paths only under folders listed in env **`DOC_HUB_FILE_ROOTS`** (`;`-separated, e.g. `\\fileserver\O-Drive;O:\Bids`). Unset → drive links are rejected.
+- Login portals (HTML page, 401/403) → `400` with a "download manually" message.
 
 **Delete** — `DELETE /bids/:id/attachments/:attachmentId` → `{ "ok": true }` (blocked only if **archived**).
 
