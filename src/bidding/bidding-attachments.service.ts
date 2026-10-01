@@ -5,6 +5,7 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReadStream } from 'fs';
@@ -17,6 +18,7 @@ import {
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
 import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES } from './process/bid-process';
+import { fetchDocumentLink } from './document-link-fetch';
 
 export interface BidAttachmentDto {
   id: number;
@@ -40,6 +42,7 @@ export class BiddingAttachmentsService {
     @InjectRepository(AppFile) private readonly fileRepo: Repository<AppFile>,
     private readonly storage: FileStorageService,
     private readonly activity: BiddingActivityService,
+    private readonly config: ConfigService,
   ) {}
 
   async listForBid(bidId: number, opts?: { skipExistCheck?: boolean }): Promise<BidAttachmentDto[]> {
@@ -120,6 +123,43 @@ export class BiddingAttachmentsService {
     const dto = this.toDto(attachment);
     if (!opts.skipActivity) await this.activity.recordAttachmentAdded(bidId, opts.userId, originalName);
     return dto;
+  }
+
+  /**
+   * Project document hub → Drawings: fetch the file behind a hub link server-side and store it
+   * as a drawing attachment, so clerks no longer download it and upload it again.
+   */
+  async importFromLink(
+    bidId: number,
+    opts: { url: string; drawingCategory?: string; userId?: number },
+  ): Promise<BidAttachmentDto> {
+    const bid = await this.requireBid(bidId);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${bidId} is archived; cannot upload attachments`);
+    }
+    if (typeof opts.url !== 'string' || !opts.url.trim()) {
+      throw new BadRequestException('url is required');
+    }
+    const fileRoots = (this.config.get<string>('DOC_HUB_FILE_ROOTS') ?? '')
+      .split(';')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    const fetched = await fetchDocumentLink(opts.url, { maxBytes: MAX_BID_ATTACHMENT_BYTES, fileRoots });
+    const ext = ALLOWED_UPLOAD_MIMES[fetched.mimeType];
+    const originalname =
+      ext && !fetched.fileName.toLowerCase().endsWith(ext) && !/\.[a-z0-9]{2,5}$/i.test(fetched.fileName)
+        ? `${fetched.fileName}${ext}`
+        : fetched.fileName;
+    return this.upload(
+      bidId,
+      {
+        buffer: fetched.buffer,
+        size: fetched.buffer.length,
+        mimetype: fetched.mimeType,
+        originalname,
+      } as Express.Multer.File,
+      { label: 'drawings', drawingCategory: opts.drawingCategory || undefined, userId: opts.userId },
+    );
   }
 
   /** Move an attachment between category/drawingCategory buckets, or edit its label. */
