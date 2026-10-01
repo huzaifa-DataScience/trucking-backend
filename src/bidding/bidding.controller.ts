@@ -254,6 +254,18 @@ export class BiddingController {
     return this.attachments.upload(id, file, { label, category, drawingCategory, userId: user?.id });
   }
 
+  /** Project document hub link → Drawings, fetched server-side (no download / re-upload). */
+  @Post(':id/attachments/import-link')
+  async importAttachmentFromLink(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('url') url: string,
+    @Body('drawingCategory') drawingCategory?: string,
+    @CurrentUser() user?: User,
+  ) {
+    await this.bidding.assertUserCanEdit(id, user);
+    return this.attachments.importFromLink(id, { url, drawingCategory, userId: user?.id });
+  }
+
   @Patch(':id/attachments/:attachmentId')
   async updateAttachment(
     @Param('id', ParseIntPipe) id: number,
