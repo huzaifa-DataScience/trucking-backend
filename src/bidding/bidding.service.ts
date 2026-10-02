@@ -19,7 +19,14 @@ import {
 } from '../database/entities';
 import { ExcelExportService } from '../common/excel-export.service';
 import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
-import { CalculateBidDto, CreateBidDto, HandoffBidDto, PatchBidDto, SetOutcomeDto } from './dto/bidding.dto';
+import {
+  CalculateBidDto,
+  CreateBidDto,
+  HandoffBidDto,
+  PatchBidDto,
+  SetBoardStatusDto,
+  SetOutcomeDto,
+} from './dto/bidding.dto';
 import { runBidCalc, BID_CALC_VERSION, BidCalcContext } from './bidding-calc';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
@@ -44,7 +51,10 @@ import {
   BidProcessError,
   absorbIntake,
   applyHandoff,
+  applyBoardStatus,
   applyOutcome,
+  boardStatusOf,
+  type BoardStatus,
   emptyProcess,
   mergeProcess,
   normalizeProjectNumber,
@@ -110,6 +120,23 @@ const assertFiniteNumbers = (value: unknown, label: string): void => {
   }
 };
 
+/** People on the bid for the list's Assigned To avatars: captain, AE, clerk, then takeoff assignees (deduped by name). */
+function bidAssignees(p: BidProcess): { name: string; role: string }[] {
+  const out: { name: string; role: string }[] = [];
+  const seen = new Set<string>();
+  const add = (name: string | null | undefined, role: string) => {
+    const n = name?.trim();
+    if (!n || seen.has(n.toLowerCase())) return;
+    seen.add(n.toLowerCase());
+    out.push({ name: n, role });
+  };
+  add(p.assignment.captain, 'Captain');
+  add(p.assignment.assistantEstimator, 'Assistant estimator');
+  add(p.assignment.bidClerk, 'Bid clerk');
+  for (const t of p.takeoffAssignments) add(t.assigneeName, `Takeoff (${t.role})`);
+  return out;
+}
+
 type BidListQuery = {
   status?: string;
   entityId?: number;
@@ -127,6 +154,8 @@ type BidListQuery = {
   clientCompanyName?: string;
   sort?: 'updated' | 'bidDate';
   editor?: BidEditor;
+  /** Estimates list only: attach the newest Notes entry per bid (one extra query). */
+  withNotes?: boolean;
 };
 
 @Injectable()
@@ -253,7 +282,10 @@ export class BiddingService {
         ? await this.contentRepo.find({ where: { bidId: In(rows.map((r) => r.id)) } })
         : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
-    return rows.map((b) => this.toSummary(b, contentByBid.get(b.id), params.editor));
+    const notes = params.withNotes ? await this.comments.latestNotesByBid(rows.map((r) => r.id)) : null;
+    return rows.map((b) =>
+      this.toSummary(b, contentByBid.get(b.id), params.editor, notes ? notes.get(b.id) ?? null : undefined),
+    );
   }
 
   /** Same rows/filters as `list()`. Captain / AE inherit their team filter. */
@@ -648,6 +680,44 @@ export class BiddingService {
     });
   }
 
+  /** Estimates list status dropdown — see `applyBoardStatus` for how it maps onto stage + outcome. */
+  async setBoardStatus(id: number, dto: SetBoardStatusDto, userId?: number) {
+    const { bid, content } = await this.loadProcessRow(id);
+    if (bid.status === 'archived') {
+      throw new ConflictException(`Bid ${id} is archived; cannot change status`);
+    }
+    const current = parseProcess(parseJson(content.processJson ?? null, null));
+    let next: BidProcess;
+    try {
+      next = applyBoardStatus(current, dto.status as BoardStatus);
+    } catch (e) {
+      if (e instanceof BidProcessError) throw new BadRequestException(e.message);
+      throw e;
+    }
+    await this.persistProcess(
+      bid,
+      content,
+      next,
+      userId,
+      async () => {
+        await this.activity.recordOutcome(
+          id,
+          userId,
+          boardStatusOf(current.stage, current.outcome),
+          boardStatusOf(next.stage, next.outcome),
+        );
+      },
+      { skipDetail: true },
+    );
+    // Small payload: the list fires this per dropdown change, so skip the full bid detail.
+    return {
+      id: String(id),
+      boardStatus: boardStatusOf(next.stage, next.outcome),
+      processStage: next.stage,
+      outcomeStatus: next.outcome,
+    };
+  }
+
   private async loadProcessRow(id: number) {
     const bid = await this.bidRepo.findOne({ where: { id, isDeleted: false } });
     if (!bid) throw new NotFoundException(`Bid ${id} not found`);
@@ -662,6 +732,7 @@ export class BiddingService {
     next: BidProcess,
     userId: number | undefined,
     afterSave: () => Promise<void>,
+    opts?: { skipDetail?: boolean },
   ) {
     await this.specs.applySpecSheetCodes(next);
     content.processJson = JSON.stringify(next);
@@ -676,6 +747,7 @@ export class BiddingService {
     await this.contentRepo.save(content);
     await this.lookups.upsertFromProcess(next);
     await afterSave();
+    if (opts?.skipDetail) return null;
     return this.getDetail(bid.id, undefined, { skipSpecCodes: true });
   }
 
@@ -785,7 +857,12 @@ export class BiddingService {
     return result;
   }
 
-  private toSummary(bid: Bid, content?: BidContent | null, editor?: BidEditor) {
+  private toSummary(
+    bid: Bid,
+    content?: BidContent | null,
+    editor?: BidEditor,
+    latestNote?: { body: string; authorName: string; at: string } | null,
+  ) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     const createdAt = bid.createdAt instanceof Date ? bid.createdAt.toISOString() : bid.createdAt;
@@ -815,6 +892,10 @@ export class BiddingService {
       bidKind: process.bidKind,
       dueDate: process.dueDate,
       dueTime: process.dueTime,
+      boardStatus: boardStatusOf(bid.processStage, bid.outcomeStatus),
+      location: [process.projectAddress.city, process.projectAddress.state].filter(Boolean).join(', ') || null,
+      assignees: bidAssignees(process),
+      ...(latestNote !== undefined ? { latestNote } : {}),
       takeoffAssigned: process.takeoffAssignments.length,
       takeoffReceived: process.takeoffAssignments.filter(
         (a) => (a.versions?.length ?? 0) > 0 || a.finalQuantity != null,

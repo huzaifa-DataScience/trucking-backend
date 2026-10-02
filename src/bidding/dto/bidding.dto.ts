@@ -125,6 +125,11 @@ export class SetOutcomeDto {
   outcome!: 'open' | 'awarded' | 'lost' | 'no_bid' | 'cancelled' | 'postponed';
 }
 
+export class SetBoardStatusDto {
+  @IsIn(['not_started', 'bidding', 'bid_submitted', 'won', 'lost', 'no_bid', 'on_hold', 'cancelled'])
+  status!: 'not_started' | 'bidding' | 'bid_submitted' | 'won' | 'lost' | 'no_bid' | 'on_hold' | 'cancelled';
+}
+
 export class CalculateBidDto {
   /**
    * Opt-in server-side recalculation (verify path). When false/omitted the
