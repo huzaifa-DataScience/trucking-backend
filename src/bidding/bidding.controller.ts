@@ -33,6 +33,7 @@ import {
   HandoffBidDto,
   LinkDuplicateDto,
   PatchBidDto,
+  SetBoardStatusDto,
   SetOutcomeDto,
 } from './dto/bidding.dto';
 
@@ -81,6 +82,7 @@ export class BiddingController {
       clientCompanyName,
       sort: parseSortQuery(sort),
       editor: user,
+      withNotes: true,
     });
   }
 
@@ -229,6 +231,17 @@ export class BiddingController {
   async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user?: User) {
     await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.remove(id, user?.id);
+  }
+
+  /** Estimates list status dropdown (Not Started … Cancelled), mapped onto stage + outcome. */
+  @Post(':id/board-status')
+  async setBoardStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetBoardStatusDto,
+    @CurrentUser() user?: User,
+  ) {
+    await this.bidding.assertUserCanEdit(id, user);
+    return this.bidding.setBoardStatus(id, dto, user?.id);
   }
 
   @Post(':id/calculate')
