@@ -64,6 +64,70 @@ export type OutcomeStatus = (typeof OUTCOMES)[number];
 
 export const LOST_OUTCOMES: OutcomeStatus[] = ['lost', 'no_bid', 'cancelled', 'postponed'];
 
+/**
+ * Bid-board status: the single status the Estimates list shows and edits inline.
+ * Derived from stage + outcome (no extra column), so the workflow tabs stay the source of truth.
+ */
+export const BOARD_STATUSES = [
+  'not_started',
+  'bidding',
+  'bid_submitted',
+  'won',
+  'lost',
+  'no_bid',
+  'on_hold',
+  'cancelled',
+] as const;
+export type BoardStatus = (typeof BOARD_STATUSES)[number];
+export const BOARD_STATUS_LABELS: Record<BoardStatus, string> = {
+  not_started: 'Not Started',
+  bidding: 'Bidding',
+  bid_submitted: 'Bid Submitted',
+  won: 'Won',
+  lost: 'Lost',
+  no_bid: 'No Bid',
+  on_hold: 'On Hold',
+  cancelled: 'Cancelled',
+};
+const BOARD_OUTCOME: Partial<Record<BoardStatus, OutcomeStatus>> = {
+  won: 'awarded',
+  lost: 'lost',
+  no_bid: 'no_bid',
+  on_hold: 'postponed',
+  cancelled: 'cancelled',
+};
+const OPEN_BOARD_STAGES: Record<'not_started' | 'bidding' | 'bid_submitted', readonly ProcessStage[]> = {
+  not_started: ['intake', 'assignment'],
+  bidding: ['estimating_setup', 'takeoff', 'proposal'],
+  bid_submitted: ['post_bid', 'result'],
+};
+
+export function boardStatusOf(stage: string | null | undefined, outcome: string | null | undefined): BoardStatus {
+  const closed = (Object.keys(BOARD_OUTCOME) as BoardStatus[]).find((k) => BOARD_OUTCOME[k] === outcome);
+  if (closed) return closed;
+  for (const key of ['bid_submitted', 'bidding'] as const) {
+    if ((OPEN_BOARD_STAGES[key] as readonly string[]).includes(stage ?? '')) return key;
+  }
+  return 'not_started';
+}
+
+/**
+ * Set the board status from the list. Closed statuses go through `applyOutcome`; open ones reopen the
+ * outcome and move the stage only when it sits outside that status (Bidding keeps Takeoff as Takeoff).
+ */
+export function applyBoardStatus(p: BidProcess, status: BoardStatus): BidProcess {
+  if (!BOARD_STATUSES.includes(status)) throw new BidProcessError(`Invalid board status: ${status}`);
+  const outcome = BOARD_OUTCOME[status];
+  if (outcome) return applyOutcome(p, outcome);
+  const next = structuredClone(p) as BidProcess;
+  const stages = OPEN_BOARD_STAGES[status as keyof typeof OPEN_BOARD_STAGES];
+  next.outcome = 'open';
+  if (!stages.includes(next.stage)) next.stage = stages[0];
+  pushBreadcrumb(next, `Status → ${BOARD_STATUS_LABELS[status]}`);
+  assertProcess(next);
+  return next;
+}
+
 export const WORK_TYPES = ['demo', 'insulation', 'gc', 'masonry', 'other'] as const;
 export type WorkType = (typeof WORK_TYPES)[number];
 
