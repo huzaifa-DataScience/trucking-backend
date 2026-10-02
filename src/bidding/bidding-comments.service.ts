@@ -113,6 +113,42 @@ export class BiddingCommentsService implements OnModuleInit {
       }));
   }
 
+  /** Newest non-empty Notes entry per bid, for the Estimates list Notes column (one query for all bids). */
+  async latestNotesByBid(
+    bidIds: number[],
+  ): Promise<Map<number, { body: string; authorName: string; at: string }>> {
+    const out = new Map<number, { body: string; authorName: string; at: string }>();
+    if (!bidIds.length) return out;
+    const wanted = new Set(bidIds);
+    const rows: Array<{
+      BidId: number;
+      Body: string;
+      CreatedAt: Date;
+      UserId: number | null;
+      FirstName: string | null;
+      LastName: string | null;
+      Email: string | null;
+    }> = await this.dataSource.query(`
+      SELECT x.BidId, x.Body, x.CreatedAt, u.Id AS UserId, u.FirstName, u.LastName, u.Email
+      FROM (
+        SELECT c.BidId, c.Body, c.CreatedAt, c.UserId,
+          ROW_NUMBER() OVER (PARTITION BY c.BidId ORDER BY c.CreatedAt DESC, c.CommentId DESC) AS rn
+        FROM Bid_Comments c
+        WHERE c.DeletedAt IS NULL AND NULLIF(LTRIM(RTRIM(c.Body)), '') IS NOT NULL
+      ) x
+      LEFT JOIN dbo.App_Users u ON u.Id = x.UserId
+      WHERE x.rn = 1`);
+    for (const r of rows) {
+      if (!wanted.has(r.BidId)) continue;
+      out.set(r.BidId, {
+        body: r.Body.trim().slice(0, 500),
+        authorName: userDisplayName({ id: r.UserId ?? undefined, firstName: r.FirstName, lastName: r.LastName, email: r.Email ?? undefined }),
+        at: new Date(r.CreatedAt).toISOString(),
+      });
+    }
+    return out;
+  }
+
   async unreadMentions(userId: number): Promise<
     { bidId: number; commentId: number; title: string; body: string | null; at: string }[]
   > {
