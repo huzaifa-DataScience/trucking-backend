@@ -4,7 +4,7 @@
 **UI (stages, handoff, award gate):** **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)** — that is the FE handoff. This file is **fields + API only**.  
 **Stage 1 screen:** **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**
 
-**Related:** [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) · [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md) · [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) · [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md) · [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)
+**Related:** [BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md) · [FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md) · [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) · [FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md) · [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) · [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md)
 
 ---
 
@@ -55,7 +55,7 @@ Chrome: **[BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)**. Enums: `GE
 
 | Stage / screen | `process.stage` | Fields |
 |----------------|-----------------|--------|
-| Intake | `intake` | workType, bidKind, drawingName (= bid name), ownerProjectNumber, mechanicalEngineerProjectNumber, invitations, documentLinks, address, owner, architect, ME, **constructionType**, **constructionSubtype**, **impactedGsf**, **entityRule**, contractTiers (sketch), GCs, mechanicals, relatedBidId, dueDate, dueTime. `budgetOnly` is derived from `bidKind=budget`. |
+| Intake | `intake` | workType, bidKind, drawingName (= bid name), ownerProjectNumber, mechanicalEngineerProjectNumber, invitations, documentLinks, address, owner, architect, ME, **constructionType**, **constructionSubtype**, **impactedGsf**, **baseBidPrice**, **entityRule**, contractTiers (sketch), GCs, mechanicals, relatedBidId, dueDate, dueTime. `budgetOnly` is derived from `bidKind=budget`. |
 | Assignment | `assignment` | assignment.* (`captainUserId` fills `teamId` + takeoff names), `technicalReview.approvedForTakeoff`, takeoffAssignments. Hide `bidClerk`. |
 | Estimating Setup | `estimating_setup` | mbePreference, PLA, wageDecisionId, clearance, labor, OCIP, lifts, parking, schedule, insulationSpecs, **specSheets**, technicalReview |
 | Takeoff | `takeoff` | Specs/Mike APIs + takeoffAssignments.versions |
@@ -84,7 +84,7 @@ Handoff: `POST /bids/:id/handoff`. Setup → takeoff requires `technicalReview.a
 
 **Wage decision ≠ wage rate.**  
 `Bid_WageRates` = calculator scale.  
-`Bid_WageDecisions` = Davis-Bacon / state / city **decision number**. Pick `process.wageDecisionId`.
+`Bid_WageDecisions` = Davis-Bacon / state / city **decision number**. Pick `process.wageDecisionId`. Empty table → dropdown is only "—". Seed is in `scripts/sql/add-bidding-process.sql` (EstimationFile List + 2026 DC/MD/VA). Re-run `npm run bidding-migrate-process`.
 
 **Our entity:** `Bids.ourEntityId` is the real pick. `process.entityRule` only **suggests**.
 

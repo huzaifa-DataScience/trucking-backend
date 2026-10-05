@@ -19,7 +19,7 @@ Give this to FE. FollowupCRM **Additional details / Sales activities** stay igno
 - Assignment: hide `bidClerk`; show `assistantEstimator` + **technical review**.
 - Test-bid cleanup (Micron `IVA 6379`) is ops, not an API.
 
-**Base bid price on Proposal/identity:** wait for **PJ**. Do not add a new field.
+**Base Bid ($)** on Intake: `process.baseBidPrice`. Proposal shows it read-only. Do not PATCH the Excel `baseBid` object for this.
 
 ---
 

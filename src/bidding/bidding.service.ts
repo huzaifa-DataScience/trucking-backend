@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -15,10 +14,11 @@ import {
   BidContent,
   BidCalcSnapshot,
   BidState,
+  BidAttachment,
   Job,
 } from '../database/entities';
 import { ExcelExportService } from '../common/excel-export.service';
-import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
+import { ApiErrorCode, apiConflict, apiForbidden } from '../common/errors/api-error';
 import {
   CalculateBidDto,
   CreateBidDto,
@@ -36,7 +36,7 @@ import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
 import { ConnecteamChatService } from '../connecteam/connecteam-chat.service';
-import { bindAssignmentCrew, resolveEstimatesTeamId } from './process/bid-crew';
+import { bindAssignmentCrew, resolveEstimatesTeamId, useInternalBidList, INTERNAL_LIST_STAGES } from './process/bid-crew';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -61,6 +61,7 @@ import {
   parseProcess,
   fillTakeoffAssignmentsFromTeam,
   workflowChrome,
+  takeoffTurnInFrom,
   type BidProcess,
   type HandoffAction,
   type HandoffCtx,
@@ -153,6 +154,7 @@ type BidListQuery = {
   submitDateTo?: string;
   clientCompanyName?: string;
   sort?: 'updated' | 'bidDate';
+  view?: 'internal' | 'all';
   editor?: BidEditor;
   /** Estimates list only: attach the newest Notes entry per bid (one extra query). */
   withNotes?: boolean;
@@ -167,6 +169,7 @@ export class BiddingService {
     @InjectRepository(BidCalcSnapshot) private readonly snapshotRepo: Repository<BidCalcSnapshot>,
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
+    @InjectRepository(BidAttachment) private readonly attachmentRepo: Repository<BidAttachment>,
     private readonly attachments: BiddingAttachmentsService,
     @Inject(forwardRef(() => BiddingCommentsService))
     private readonly comments: BiddingCommentsService,
@@ -198,8 +201,12 @@ export class BiddingService {
 
     if (params.status) qb.andWhere('b.status = :status', { status: params.status });
     if (params.entityId != null) qb.andWhere('b.ourEntityId = :eid', { eid: params.entityId });
-    if (params.processStage) qb.andWhere('b.processStage = :ps', { ps: params.processStage });
     if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
+    if (useInternalBidList(params.editor?.role, params.view) && !params.processStage) {
+      qb.andWhere('b.processStage IN (:...internalStages)', { internalStages: [...INTERNAL_LIST_STAGES] });
+    } else if (params.processStage) {
+      qb.andWhere('b.processStage = :ps', { ps: params.processStage });
+    }
     if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
     // Intake bids may not have a bid date yet. For list date filters, use the
     // last update as their effective date so recent captain work is discoverable.
@@ -277,14 +284,23 @@ export class BiddingService {
     }
 
     const rows = await qb.getMany();
-    const contents =
-      rows.length > 0
-        ? await this.contentRepo.find({ where: { bidId: In(rows.map((r) => r.id)) } })
-        : [];
+    const ids = rows.map((r) => r.id);
+    const contents = ids.length > 0 ? await this.contentRepo.find({ where: { bidId: In(ids) } }) : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
-    const notes = params.withNotes ? await this.comments.latestNotesByBid(rows.map((r) => r.id)) : null;
+    const notes = params.withNotes ? await this.comments.latestNotesByBid(ids) : null;
+    const attRows =
+      ids.length > 0 ? await this.attachmentRepo.find({ where: { bidId: In(ids) }, select: ['id', 'bidId', 'label'] }) : [];
+    const labelsByBid = new Map<number, string[]>();
+    for (const a of attRows) {
+      const list = labelsByBid.get(a.bidId) ?? [];
+      if (a.label) list.push(a.label);
+      labelsByBid.set(a.bidId, list);
+    }
     return rows.map((b) =>
-      this.toSummary(b, contentByBid.get(b.id), params.editor, notes ? notes.get(b.id) ?? null : undefined),
+      this.toSummary(b, contentByBid.get(b.id), params.editor, {
+        latestNote: notes ? notes.get(b.id) ?? null : undefined,
+        attachmentLabels: labelsByBid.get(b.id),
+      }),
     );
   }
 
@@ -346,13 +362,21 @@ export class BiddingService {
     const bid = await this.bidRepo.findOne({ where: { id: bidId, isDeleted: false } });
     if (!bid) throw new NotFoundException(`Bid ${bidId} not found`);
     const content = await this.contentRepo.findOne({ where: { bidId } });
-    if (!canEditBid(editor, this.teamIdFromContent(content))) {
-      throw new ForbiddenException('Only the assigned team can edit this bid');
+    const assignment = this.assignmentFromContent(content);
+    if (!canEditBid(editor, assignment.teamId, assignment.captainUserId)) {
+      throw apiForbidden(
+        ApiErrorCode.BID_TEAM_LOCKED,
+        'Only the assigned team can edit this bid',
+      );
     }
   }
 
-  private teamIdFromContent(content?: BidContent | null): number | null {
-    return parseProcess(parseJson(content?.processJson ?? null, null)).assignment.teamId;
+  private assignmentFromContent(content?: BidContent | null): {
+    teamId: number | null;
+    captainUserId: number | null;
+  } {
+    const a = parseProcess(parseJson(content?.processJson ?? null, null)).assignment;
+    return { teamId: a.teamId, captainUserId: a.captainUserId };
   }
 
   async getCompanyInfoPrefillFromJob(jobId: number): Promise<Record<string, unknown>> {
@@ -494,14 +518,17 @@ export class BiddingService {
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
     return {
-      ...this.toSummary(bid, content, editor),
+      ...this.toSummary(bid, content, editor, { attachmentLabels: attachments.map((a) => a.label) }),
       jobId: bid.jobId,
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
       systems: parseJson<unknown[]>(content?.systemsJson ?? null, []),
       companyInfo: parseCompanyInfo(content?.companyInfoJson ?? null),
       process,
-      workflow: workflowChrome(process, { hasDrawings: this.hasDrawingsLabel(attachments) }),
+      workflow: workflowChrome(process, {
+        hasDrawings: this.hasDrawingsLabel(attachments),
+        labels: attachments.map((a) => a.label),
+      }),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
       attachments,
       activitySummary,
@@ -861,7 +888,10 @@ export class BiddingService {
     bid: Bid,
     content?: BidContent | null,
     editor?: BidEditor,
-    latestNote?: { body: string; authorName: string; at: string } | null,
+    extra?: {
+      latestNote?: { body: string; authorName: string; at: string } | null;
+      attachmentLabels?: Array<string | null | undefined>;
+    },
   ) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
@@ -890,16 +920,20 @@ export class BiddingService {
       mechanicalEngineerProjectNumber: process.mechanicalEngineerProjectNumber,
       relatedBidId: process.relatedBidId,
       bidKind: process.bidKind,
+      captain: process.assignment.captain,
+      internalBidDate: process.internalBidDate,
+      baseBidPrice: process.baseBidPrice,
       dueDate: process.dueDate,
       dueTime: process.dueTime,
       boardStatus: boardStatusOf(bid.processStage, bid.outcomeStatus),
       location: [process.projectAddress.city, process.projectAddress.state].filter(Boolean).join(', ') || null,
       assignees: bidAssignees(process),
-      ...(latestNote !== undefined ? { latestNote } : {}),
+      ...(extra?.latestNote !== undefined ? { latestNote: extra.latestNote } : {}),
       takeoffAssigned: process.takeoffAssignments.length,
       takeoffReceived: process.takeoffAssignments.filter(
         (a) => (a.versions?.length ?? 0) > 0 || a.finalQuantity != null,
       ).length,
+      ...takeoffTurnInFrom({ labels: extra?.attachmentLabels ?? [] }),
       teamId,
       jobStartDate: process.schedule.expectedStart,
       jobEndDate: process.schedule.expectedCompletion,
@@ -910,7 +944,7 @@ export class BiddingService {
       createdAt,
       updatedAt,
       isNew: isNewBid(updatedAt, createdAt),
-      canEdit: editor ? canEditBid(editor, teamId) : true,
+      canEdit: editor ? canEditBid(editor, teamId, process.assignment.captainUserId) : true,
     };
   }
 

@@ -99,11 +99,19 @@ export class UsersService implements OnModuleInit {
   }
 
   /** Self-service name edit (Account page) — same trim/null rule as the admin panel's. */
-  async setName(userId: number, updates: { firstName?: string | null; lastName?: string | null }): Promise<User> {
+  async setName(
+    userId: number,
+    updates: {
+      firstName?: string | null;
+      lastName?: string | null;
+      estimatesFilterJson?: string;
+    },
+  ): Promise<User> {
     const user = await this.findById(userId);
     if (!user) throw new Error(`User ${userId} not found`);
     if (updates.firstName !== undefined) user.firstName = updates.firstName?.trim() || null;
     if (updates.lastName !== undefined) user.lastName = updates.lastName?.trim() || null;
+    if (updates.estimatesFilterJson !== undefined) user.estimatesFilterJson = updates.estimatesFilterJson;
     return this.userRepo.save(user);
   }
 

@@ -320,6 +320,14 @@ function isCrewPerson(v: unknown): v is TeamCrewPerson {
 
 /** Captain / AE Estimates list — their crew. Admin / clerk stay unfiltered unless `?teamId=` is set. */
 export const ESTIMATES_TEAM_ROLES = new Set(['captain', 'assistant_estimator', 'user']);
+export const INTERNAL_LIST_ROLES = new Set(['assistant_estimator', 'user']);
+export const INTERNAL_LIST_STAGES = ['takeoff'] as const;
+
+export function useInternalBidList(role?: string | null, view?: 'internal' | 'all' | null): boolean {
+  if (view === 'all') return false;
+  if (view === 'internal') return true;
+  return !!role && INTERNAL_LIST_ROLES.has(role);
+}
 
 export function resolveEstimatesTeamId(opts: {
   queryTeamId?: number | 'all' | null;

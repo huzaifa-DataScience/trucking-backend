@@ -106,6 +106,17 @@ export class UsersInitService implements OnModuleInit {
         await this.dataSource.query(`ALTER TABLE dbo.App_Users ADD AvatarPath nvarchar(500) NULL`);
       }
 
+      const filterRows = await this.dataSource.query(`
+        SELECT COUNT(*) as cnt
+        FROM sys.columns
+        WHERE object_id = OBJECT_ID('dbo.App_Users') AND name = 'EstimatesFilterJson'
+      `);
+      if (getCount(filterRows) === 0) {
+        await this.dataSource.query(
+          `ALTER TABLE dbo.App_Users ADD EstimatesFilterJson nvarchar(2000) NULL`,
+        );
+      }
+
       // Step 4: Ensure admin users are active (Status exists after steps 1–2)
       await this.dataSource.query(`
         UPDATE dbo.App_Users SET Status = 'active' WHERE Role = 'admin' AND (Status IS NULL OR Status != 'active')

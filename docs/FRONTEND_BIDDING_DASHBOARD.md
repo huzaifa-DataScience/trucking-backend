@@ -1,7 +1,7 @@
 # Role dashboards — Frontend Handoff
 
 **Give this file to FE.**  
-**Last updated:** 2026-09-29  
+**Last updated:** 2026-10-02  
 **Chat click-through:** [FRONTEND_CONNECTEAM_CHAT.md](./FRONTEND_CONNECTEAM_CHAT.md)
 
 **Two screens. Do not merge them.**
@@ -25,6 +25,8 @@ JWT on every call. Do **not** rebuild bidding engines.
 
 **`captain` / `assistant_estimator` / `user`:** after they have a crew (`user.teamId` from **profile**), Estimates is **that team only**. Same for `GET /bids/export`. No team yet → full list. `?teamId=all` shows every bid.
 
+**AE / `user` extra:** default list is **internal** — takeoff rows only (`internalListEditor`). `GET /bids?view=all` is the full team table. Captain is not auto-internal. See [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md).
+
 Do **not** put team setup on Estimates. **Settings → My team** — [FRONTEND_AUTH.md](./FRONTEND_AUTH.md) (`GET/PATCH /auth/team`, contacts `GET /lookups/bidding/contacts`).
 
 ```
@@ -33,11 +35,11 @@ Do **not** put team setup on Estimates. **Settings → My team** — [FRONTEND_A
 /bidding/[id]?stage=…
 ```
 
-Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`), **`sort=bidDate`**.
+Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`), **`sort=bidDate`**, **`view=internal|all`**.
 
 **29 Sep CONS UAT — Estimates UI (FE):** tiles off, **list default**. Title = `bidName` + `estimateNumber`. Column **Work stage → Status** (`processStage`). Bid-date sort like follow-up: `GET /bids?sort=bidDate` (today then upcoming; nulls last). Multi-select filters, no cap. Estimator filter = **`GET /lookups/bidding/teams`** (or captains) — **not** `contacts?role=estimator` (empty until someone is a captain). Search is one box (`search=`) — drawing number, architect, contractor included. Hide ops/reporting/billing nav for `assistant_estimator`. Meta: `process-meta.estimatesListEditor`.
 
-Row also has `drawingNumber`.
+Row also has `drawingNumber`, `baseBidPrice`.
 
 **Export:** `GET /bids/export` — same query params as `GET /bids` (including captain auto-team). Returns `.xlsx` (`Content-Disposition: attachment; filename="bids.xlsx"`). Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
 
@@ -47,7 +49,9 @@ Row: `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`, `takeoffAssigned`, `tak
 |-----------|------|
 | `admin` / `super_admin` | Always `true` |
 | Bid `teamId` is null | Anyone may edit (intake) |
-| Bid `teamId` set | Only `user.teamId === row.teamId` |
+| Bid `teamId` set | `user.teamId === row.teamId`, **or** `user.id === process.assignment.captainUserId`, or admin |
+
+**PATCH 403** `{ "code": "BID_TEAM_LOCKED", "message": "Only the assigned team can edit this bid" }` is **not** an admin-login failure. Stay on the bid. Show that message. Do **not** send the user to `/job` / Jobs dashboard. `canEdit: false` = view-only on this bid, not a route change.
 
 Team label: `GET /lookups/bidding/teams` + `row.teamId`.  
 Captain sets crew in **Settings → My team**: `GET/PATCH /auth/team` (people from `GET /connecteam/users`). Admin can still `PATCH /admin/users/:id` `{ "teamId" }`.
@@ -86,8 +90,7 @@ Authorization: Bearer <access_token>
       "columns": [
         { "key": "estimateNumber", "label": "Bid #" },
         { "key": "bidName", "label": "Project" },
-        { "key": "dueDate", "label": "Due date" },
-        { "key": "dueTime", "label": "Due time" },
+        { "key": "bidDate", "label": "Bid date" },
         { "key": "teamId", "label": "Team" },
         { "key": "processStage", "label": "Stage" },
         { "key": "isNew", "label": "New" },
@@ -114,7 +117,7 @@ Authorization: Bearer <access_token>
   },
   "notifications": [
     { "kind": "message", "title": "Mike", "body": "drawings are in", "conversationId": "abc", "at": "…" },
-    { "kind": "due", "title": "Weinberg", "body": "Due 2026-09-10", "bidId": "12", "at": "2026-09-10" },
+    { "kind": "due", "title": "Weinberg", "body": "Bid date 2026-09-10", "bidId": "12", "at": "2026-09-10" },
     { "kind": "new_bid", "title": "Weinberg", "body": "Updated in the last 7 days", "bidId": "12" },
     { "kind": "comment_mention", "title": "Hassan Riaz mentioned you", "body": "see drawings", "bidId": "12", "commentId": 44, "at": "…" }
   ]
@@ -137,7 +140,7 @@ Captain / AE: `user.teamId` set → that crew. Null → those stages for all tea
 
 Due = overdue + today. Upcoming = next 7 days.
 
-`messages` = Connecteam unread preview. Not a new inbox. `process-meta.defaults.notifications` stays false.
+`messages` = Connecteam unread preview. Not a new inbox. `process-meta.defaults.notifications` is **true** — render `notifications[]`. Due widgets use **`bidDate`**. Meeting wire-up: [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md).
 
 `kind: "comment_mention"` = someone @mentioned this user on a bid comment. Click `bidId` → Notes drawer. Clears when they `GET /bids/:id/comments`. See [FRONTEND_BID_COMMENTS.md](./FRONTEND_BID_COMMENTS.md).
 
@@ -148,7 +151,7 @@ Login `user.teamId` / `role` / `permissions[]`: [FRONTEND_AUTH.md](./FRONTEND_AU
 ## Do not
 
 - Put `GET /dashboard` or `GET /bids/my-plate` on the Estimates / bidding list
-- Filter `GET /bids` by role or stage for **admin** (captain/AE *are* team-filtered — that is correct)
+- Filter `GET /bids` by role or stage for **admin** (captain is team-filtered; AE default is takeoff/`view=internal` — that is correct)
 - Keep “Assignment waiting” + “Post-bid” as the Estimates page
 - Use `GET /bids` as the dashboard
 - Call `GET /bids/my-plate` as `GET /bids/:id`

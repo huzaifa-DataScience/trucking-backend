@@ -38,10 +38,11 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [FRONTEND_EMAIL_TEMPLATES.md](./FRONTEND_EMAIL_TEMPLATES.md) | Email templates (frontend) |
 | [FRONTEND_RECENT_CHANGES_MAR2026.md](./FRONTEND_RECENT_CHANGES_MAR2026.md) | Mar 2026 backend changes summary |
 
-## Siteline, Clearstory, Trimble
+## Siteline, Clearstory, Trimble, Project Financials
 
 | Doc | Description |
 |-----|-------------|
+| **[FRONTEND_PROJECT_FINANCIALS.md](./FRONTEND_PROJECT_FINANCIALS.md)** | **Give to FE** — awarded-job book (`/project-financials`) |
 | [SITELINE_SCHEMA_REFERENCE.md](./SITELINE_SCHEMA_REFERENCE.md) | Siteline GraphQL schema |
 | [SITELINE_COMPANY_FILTER.md](./SITELINE_COMPANY_FILTER.md) | Backend company filter |
 | [SITELINE_PM_EMAILS.md](./SITELINE_PM_EMAILS.md) | PM Monday / PJ Tuesday / gap emails |
@@ -75,6 +76,7 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | **[BIDDING_FRONTEND_API.md](./BIDDING_FRONTEND_API.md)** | **FE handoff** — PDF stages + handoff + outcome gate (§0), Base Bid, attachments |
 | [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md) | `process` field dictionary (not a second UI spec) |
 | **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** | **Stage 1** — Intake + Assignment (drawing name, project #s, invitations, tiers, team) |
+| [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md) | **Give to FE** — 30 Sep meeting (Estimates, hub, takeoff, dashboard, 403) |
 | **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** | **Give to FE** — spec sheet cascade (family, 2 layers, equipment, duct circumference, manufacturer) |
 | **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** | **Specs Plumb UI + API** — Mike import, Spec grid, Trimble Recv, Structshare item list (no vendor/cheapest) |
 | **[FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)** | **Specs Rules panel** — Mike-only stacking / Qty Est rules for FE button or sub-tab |
