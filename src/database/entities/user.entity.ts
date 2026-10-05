@@ -59,6 +59,10 @@ export class User {
   /** Relative path under UPLOAD_ROOT, e.g. `avatars/12.jpg`. */
   @Column({ name: 'AvatarPath', type: 'nvarchar', length: 500, nullable: true })
   avatarPath: string | null;
+
+  /** Saved Estimates list filters — JSON array of keys from process-meta `filterCatalog`. */
+  @Column({ name: 'EstimatesFilterJson', type: 'nvarchar', length: 2000, nullable: true })
+  estimatesFilterJson: string | null;
 }
 
 export type UserNameBits = {

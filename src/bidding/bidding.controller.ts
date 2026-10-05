@@ -22,7 +22,6 @@ import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../database/entities';
-import { MAX_BID_ATTACHMENT_BYTES } from '../files/file-storage.service';
 import { MAX_COMMENT_IMAGES } from './bidding-comments';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
@@ -63,6 +62,7 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('view') view?: string,
     @CurrentUser() user?: User,
   ) {
     return this.bidding.list({
@@ -81,6 +81,7 @@ export class BiddingController {
       submitDateTo,
       clientCompanyName,
       sort: parseSortQuery(sort),
+      view: parseViewQuery(view),
       editor: user,
       withNotes: true,
     });
@@ -112,6 +113,7 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('view') view?: string,
     @CurrentUser() user?: User,
   ) {
     const buffer = await this.bidding.exportList({
@@ -130,6 +132,7 @@ export class BiddingController {
       submitDateTo,
       clientCompanyName,
       sort: parseSortQuery(sort),
+      view: parseViewQuery(view),
       editor: user,
     });
     res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
@@ -160,7 +163,6 @@ export class BiddingController {
   @UseInterceptors(
     FilesInterceptor('files', MAX_COMMENT_IMAGES, {
       storage: memoryStorage(),
-      limits: { fileSize: MAX_BID_ATTACHMENT_BYTES },
     }),
   )
   async createComment(
@@ -255,8 +257,7 @@ export class BiddingController {
   @Post(':id/attachments')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: MAX_BID_ATTACHMENT_BYTES },
+      storage: memoryStorage(), // ponytail: no byte cap; whole file in RAM — disk stream if Nest OOMs
     }),
   )
   async uploadAttachment(
@@ -313,6 +314,12 @@ function parseSortQuery(raw?: string): 'updated' | 'bidDate' | undefined {
   const v = raw?.trim();
   if (v === 'bidDate') return 'bidDate';
   if (v === 'updated') return 'updated';
+  return undefined;
+}
+
+function parseViewQuery(raw?: string): 'internal' | 'all' | undefined {
+  const v = raw?.trim();
+  if (v === 'internal' || v === 'all') return v;
   return undefined;
 }
 

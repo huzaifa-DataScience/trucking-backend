@@ -204,10 +204,11 @@ export const PROCESS_ATTACHMENT_LABELS = [
   'startup',
   'spec-sheet-image',
   'master-scan',
+  'takeoff',
+  'takeoff-zip',
+  'takeoff-snap',
+  'takeoff-recap',
 ] as const;
-
-/** Keep in sync with `MAX_BID_ATTACHMENT_BYTES` in file-storage.service.ts */
-export const BID_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 
 /** Drawings tab — design/revision phase. Percent = design completeness at issuance. */
 export const DRAWING_CATEGORIES = ['sd', 'dd', 'cd', 'ifb', 'ifp', 'ifc', 'ifr'] as const;
@@ -232,8 +233,29 @@ export const DRAWING_CATEGORY_PERCENTS: Record<DrawingCategory, string> = {
 };
 
 /** Attachments tab bucket (not the "Drawings" tab, which uses label='drawings' instead). */
-export const ATTACHMENT_CATEGORIES = ['project_documents', 'proposal'] as const;
+export const ATTACHMENT_CATEGORIES = ['project_documents', 'proposal', 'takeoff_markup'] as const;
 export type AttachmentCategory = (typeof ATTACHMENT_CATEGORIES)[number];
+export const ATTACHMENT_CATEGORY_LABELS: Record<AttachmentCategory, string> = {
+  project_documents: 'Bid documents',
+  proposal: 'Proposal',
+  takeoff_markup: 'Takeoff markups',
+};
+
+/** Takeoff tab uploads — marked-up / overseas files, not John's bid set. */
+export const TAKEOFF_MARKUP_LABELS = ['takeoff', 'takeoff-zip', 'takeoff-snap', 'takeoff-recap', 'master-scan'] as const;
+
+/** Explicit category wins. Else infer from label. Null → bid documents. */
+export function resolveAttachmentCategory(
+  category?: string | null,
+  label?: string | null,
+): AttachmentCategory {
+  const c = String(category ?? '').trim();
+  if ((ATTACHMENT_CATEGORIES as readonly string[]).includes(c)) return c as AttachmentCategory;
+  const l = String(label ?? '').trim();
+  if ((TAKEOFF_MARKUP_LABELS as readonly string[]).includes(l)) return 'takeoff_markup';
+  if (l === 'proposal') return 'proposal';
+  return 'project_documents';
+}
 
 export const BOND_CLAIM_DAYS = 90;
 
@@ -405,8 +427,37 @@ export type TakeoffAssignment = {
   notes: string | null;
   finalQuantity: number | null;
   reviewedBy: string | null;
+  /** Kept on JSON; not a Takeoff UI field (files = turn-in). */
+  completed: boolean | null;
   versions: TakeoffVersion[];
 };
+
+export const TAKEOFF_TURN_IN_LABELS = TAKEOFF_MARKUP_LABELS;
+
+/** Any takeoff markup file → list tick. One drop zone; old zip/snap/recap labels still count. */
+export function takeoffTurnInFrom(opts: {
+  labels: Array<string | null | undefined>;
+  assignments?: Array<{ completed?: boolean | null; assigneeName?: string | null }>;
+}): {
+  takeoffZip: boolean;
+  takeoffSnap: boolean;
+  takeoffRecap: boolean;
+  takeoffFilesComplete: boolean;
+  takeoffTurnedIn: boolean;
+} {
+  const set = new Set(opts.labels.map((l) => String(l ?? '').trim()).filter(Boolean));
+  const takeoffZip = set.has('takeoff-zip');
+  const takeoffSnap = set.has('takeoff-snap') || set.has('master-scan');
+  const takeoffRecap = set.has('takeoff-recap');
+  const takeoffTurnedIn = [...TAKEOFF_MARKUP_LABELS].some((l) => set.has(l));
+  return {
+    takeoffZip,
+    takeoffSnap,
+    takeoffRecap,
+    takeoffFilesComplete: takeoffTurnedIn,
+    takeoffTurnedIn,
+  };
+}
 
 export type TakeoffComparison = {
   scope: string;
@@ -490,6 +541,8 @@ export type BidProcess = {
   constructionSubtype: string | null;
   /** Life-safety impacted / renovated SF — not the whole building. Intake. */
   impactedGsf: number | null;
+  /** Invitation / advertised base-bid $ at intake. Not Excel `baseBid` / `pjEstimate`. */
+  baseBidPrice: number | null;
   mbePreference: string | null;
   owner: PartyContact;
   architect: PartyContact;
@@ -498,6 +551,8 @@ export type BidProcess = {
   entityRule: EntityRule;
   dueDate: string | null;
   dueTime: string | null;
+  /** Overseas turn-in. Handoff (old Setup). Show on Takeoff too. Not the client bid date. */
+  internalBidDate: string | null;
   dateSubmitted: string | null;
   amountSubmitted: number | null;
   assignment: {
@@ -716,6 +771,8 @@ export type BidProcess = {
   breadcrumbs: Array<{ at: string | null; text: string }>;
 };
 
+export type TabPill = 'complete' | 'in_progress' | 'todo';
+
 export type WorkflowChrome = {
   stage: ProcessStage;
   outcome: OutcomeStatus;
@@ -730,6 +787,8 @@ export type WorkflowChrome = {
   showAward: boolean;
   showLost: boolean;
   takeoffComparisons: TakeoffComparison[];
+  /** Chrome tab pills — Huzaifa 30 Sep. FE renders complete / in progress / todo. */
+  tabs: Array<{ id: string; stage: string | null; label: string; pill: TabPill }>;
 };
 
 export function emptyParty(): PartyContact {
@@ -807,6 +866,7 @@ export function emptyProcess(): BidProcess {
     constructionType: null,
     constructionSubtype: null,
     impactedGsf: null,
+    baseBidPrice: null,
     mbePreference: null,
     owner: emptyParty(),
     architect: emptyParty(),
@@ -823,6 +883,7 @@ export function emptyProcess(): BidProcess {
     },
     dueDate: null,
     dueTime: null,
+    internalBidDate: null,
     dateSubmitted: null,
     amountSubmitted: null,
     assignment: {
@@ -1110,7 +1171,7 @@ export function prevStage(stage: ProcessStage): ProcessStage | null {
   return i > 0 ? PROCESS_STAGES[i - 1] : null;
 }
 
-export type HandoffCtx = { hasDrawings?: boolean };
+export type HandoffCtx = { hasDrawings?: boolean; labels?: Array<string | null | undefined> };
 
 /** Strip `#` / spaces so C.480 and #C.480 match (PJ). */
 export function normalizeProjectNumber(raw: unknown): string | null {
@@ -1134,11 +1195,7 @@ export function intakeCompleteBlocked(p: BidProcess, hasDrawings: boolean): stri
   return null;
 }
 
-export function assignmentCompleteBlocked(p: BidProcess): string | null {
-  if (p.assignment.pursue === false) return null;
-  if (p.technicalReview.approvedForTakeoff !== true) {
-    return 'Approved for takeoff is required before leaving Assignment';
-  }
+export function assignmentCompleteBlocked(_p: BidProcess): string | null {
   return null;
 }
 
@@ -1164,6 +1221,7 @@ function emptyTakeoffRow(role: TakeoffRole, assigneeName: string): TakeoffAssign
     notes: null,
     finalQuantity: null,
     reviewedBy: null,
+    completed: null,
     versions: [],
   };
 }
@@ -1232,6 +1290,7 @@ export function absorbIntake(keep: BidProcess, from: BidProcess): BidProcess {
       keep.mechanicalEngineerProjectNumber || from.mechanicalEngineerProjectNumber,
     drawingName: keep.drawingName || from.drawingName,
     drawingNumber: keep.drawingNumber || from.drawingNumber,
+    baseBidPrice: keep.baseBidPrice ?? from.baseBidPrice,
   });
 }
 
@@ -1320,6 +1379,40 @@ export function takeoffComparisons(assignments: TakeoffAssignment[]): TakeoffCom
   });
 }
 
+export const CHROME_TABS = [
+  { id: 'intake', stage: 'intake' as const, label: 'Intake' },
+  { id: 'assignment', stage: 'assignment' as const, label: 'Assignment' },
+  { id: 'drawings', stage: null, label: 'Drawings', ui: 'attachments' as const, fromHub: true, hubLabels: ['drawings'] as const },
+  { id: 'specs', stage: null, label: 'Specs', ui: 'attachments' as const, fromHub: true, hubLabels: ['specifications'] as const },
+  { id: 'handoff', stage: 'estimating_setup' as const, label: 'Handoff' },
+  { id: 'takeoff', stage: 'takeoff' as const, label: 'Takeoff' },
+  { id: 'proposal', stage: 'proposal' as const, label: 'Proposal' },
+  { id: 'post_bid', stage: 'post_bid' as const, label: 'Post-bid' },
+  { id: 'result', stage: 'result' as const, label: 'Outcome' },
+];
+
+/** Complete = prior stage or hub files present. In progress = current stage. */
+export function chromeTabPills(
+  p: BidProcess,
+  labels: Array<string | null | undefined> = [],
+): Array<{ id: string; stage: string | null; label: string; pill: TabPill }> {
+  const cur = PROCESS_STAGES.indexOf(p.stage);
+  const have = new Set(labels.map((l) => String(l ?? '').trim()).filter(Boolean));
+  return CHROME_TABS.map((tab) => {
+    let pill: TabPill = 'todo';
+    if (tab.stage) {
+      const i = PROCESS_STAGES.indexOf(tab.stage);
+      if (i >= 0 && i < cur) pill = 'complete';
+      else if (i === cur) pill = 'in_progress';
+    } else {
+      const ok = 'hubLabels' in tab && tab.hubLabels.some((l) => have.has(l));
+      if (ok) pill = 'complete';
+      else if (cur >= PROCESS_STAGES.indexOf('assignment')) pill = 'in_progress';
+    }
+    return { id: tab.id, stage: tab.stage, label: tab.label, pill };
+  });
+}
+
 export function workflowChrome(p: BidProcess, ctx?: HandoffCtx): WorkflowChrome {
   const nxt = nextStage(p.stage);
   const prev = prevStage(p.stage);
@@ -1351,6 +1444,7 @@ export function workflowChrome(p: BidProcess, ctx?: HandoffCtx): WorkflowChrome 
     showAward: p.outcome === 'awarded',
     showLost: LOST_OUTCOMES.includes(p.outcome),
     takeoffComparisons: takeoffComparisons(p.takeoffAssignments),
+    tabs: chromeTabPills(p, ctx?.labels),
   };
 }
 
@@ -1458,6 +1552,8 @@ function normalizeProcess(p: BidProcess): void {
   p.amountSubmitted = numOrNull(p.amountSubmitted);
   p.proposalIteration = numOrNull(p.proposalIteration);
   p.impactedGsf = numOrNull(p.impactedGsf);
+  p.baseBidPrice = numOrNull(p.baseBidPrice);
+  p.internalBidDate = nullishStr(p.internalBidDate);
   const nest = emptyProcess();
   if (!p.award || typeof p.award !== 'object') p.award = nest.award;
   else p.award.performingOurEntityId = numOrNull(p.award.performingOurEntityId);
@@ -1697,6 +1793,7 @@ function normalizeProcess(p: BidProcess): void {
     notes: nullishStr(a?.notes),
     finalQuantity: numOrNull(a?.finalQuantity),
     reviewedBy: nullishStr(a?.reviewedBy),
+    completed: triBool(a?.completed),
     versions: Array.isArray(a?.versions)
       ? a.versions.map((v, i) => ({
           version: Number(v?.version) || i + 1,
@@ -1869,14 +1966,51 @@ export function processMeta() {
     intakeEditor: INTAKE_EDITOR,
     assignmentEditor: ASSIGNMENT_EDITOR,
     setupEditor: SETUP_EDITOR,
+    takeoffEditor: TAKEOFF_EDITOR,
     proposalEditor: PROPOSAL_EDITOR,
+    postBidEditor: POST_BID_EDITOR,
     estimatesListEditor: ESTIMATES_LIST_EDITOR,
+    chromeTabs: CHROME_TABS,
+    chromeTabsByRole: {
+      assistant_estimator: INTERNAL_CHROME_TABS,
+      user: INTERNAL_CHROME_TABS,
+    },
+    hubPick: {
+      drawings: { tab: 'drawings', labels: ['drawings'], fromHub: true },
+      specs: { tab: 'specs', labels: ['specifications'], fromHub: true },
+      source: 'GET /bids/:id attachments[] — filter by label. Download, do not POST a second copy.',
+      drawingCategory: 'PATCH /bids/:id/attachments/:attachmentId { drawingCategory }',
+    },
+    dashboardEditor: {
+      query: 'GET /dashboard',
+      bind: ['notifications', 'messages', 'groups', 'counts'],
+      notifications: ['comment_mention', 'due', 'new_bid', 'message'],
+      dueUses: 'bidDate (fallback dueDate)',
+      click: {
+        bidId: '/bidding/:id',
+        commentId: '/bidding/:id notes drawer',
+        conversationId: 'Connecteam — not in-app chat',
+      },
+    },
+    internalListEditor: {
+      query: 'GET /bids?view=internal',
+      autoFor: ['assistant_estimator', 'user'],
+      stages: ['takeoff'],
+      columns: [
+        { bind: 'estimateNumber', label: 'Estimate #' },
+        { bind: 'bidName', label: 'Name' },
+        { bind: 'internalBidDate', label: 'Internal bid date' },
+        { bind: 'takeoffTurnedIn', label: 'Turned in' },
+      ],
+      turnedIn: 'true when any takeoff markup file is on the bid',
+    },
     takeoffRoles: TAKEOFF_ROLES,
     dashboardPlates: dashboardPlatesMeta(),
     lostReasons: LOST_REASONS,
     attachmentLabels: PROCESS_ATTACHMENT_LABELS,
-    attachmentMaxBytes: BID_ATTACHMENT_MAX_BYTES,
+    attachmentMaxBytes: null,
     attachmentCategories: ATTACHMENT_CATEGORIES,
+    attachmentCategoryLabels: ATTACHMENT_CATEGORY_LABELS,
     drawingCategories: DRAWING_CATEGORIES,
     drawingCategoryLabels: DRAWING_CATEGORY_LABELS,
     drawingCategoryPercents: DRAWING_CATEGORY_PERCENTS,
@@ -2021,7 +2155,7 @@ export function processMeta() {
       awardRequiresOutcomeFirst: true,
       outcomeEditable: true,
       stagesLockedAfterComplete: false,
-      notifications: false,
+      notifications: true,
     },
     reuse: {
       bidHeader: ['estimateNumber', 'bidName', 'ourEntityId', 'jobId', 'submitDate', 'timeEstimate'],
@@ -2034,14 +2168,14 @@ export function processMeta() {
       production: 'existing production APIs — after awarded',
       teams: 'GET /lookups/bidding/teams',
     },
-    notNow: ['bond auto-notice at day 89', 'notifications', 'replace Mike', 'handoff email notifications'],
+    notNow: ['bond auto-notice at day 89', 'replace Mike', 'handoff email notifications', 'in-app Bluebeam', 'in-app chat'],
   };
 }
 
 export const STAGE_LABELS: Record<ProcessStage, string> = {
   intake: 'Bid Intake',
   assignment: 'Bid Assignment',
-  estimating_setup: 'Estimating Setup',
+  estimating_setup: 'Handoff',
   takeoff: 'Takeoff & Estimate',
   proposal: 'Bid Review & Proposal',
   post_bid: 'Post-Bid / Intelligence',
@@ -2051,7 +2185,7 @@ export const STAGE_LABELS: Record<ProcessStage, string> = {
 const STAGE_WHO: Record<ProcessStage, string> = {
   intake: 'Bid clerk — invitation info only; incomplete OK',
   assignment: 'Nick + PJ + Gino — approve for takeoff + team. Assistant estimator may complete so the queue does not sit.',
-  estimating_setup: 'Captain / assistant estimator — wage, OSIP, spec sheets. Not technical review.',
+  estimating_setup: 'Captain / ME — drawings/specs done, then approve for overseas takeoff. Internal bid date here.',
   takeoff: 'Assigned takeoff — Mike/Specs; versions never overwritten',
   proposal: 'Estimating review — calculator + totals + versions. Do not re-edit intake identity',
   post_bid: 'Follow-up — competitors, BAFO',
@@ -2081,19 +2215,23 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'budgetOnly', phase: 'intake', note: 'Derived: true when bidKind=budget. Do not show as its own field.' },
   { path: 'relatedBidId', phase: 'intake', note: 'Rebid / prior job — click through. Do not duplicate the project.' },
   { path: 'notes', phase: 'later', note: 'Deprecated pad. Notes drawer is GET/POST /bids/:id/comments. Invite paste is invitations[].inviteBody.' },
-  { path: 'dueDate', phase: 'intake', note: '' },
-  { path: 'dueTime', phase: 'intake', note: '' },
+  { path: 'dueDate', phase: 'intake', note: 'Deprecated on intake — client date is header bidDate (Mike 30 Sep). Keep stored JSON.' },
+  { path: 'dueTime', phase: 'intake', note: 'Deprecated on intake with dueDate.' },
+  { path: 'internalBidDate', phase: 'estimating_setup', note: 'Overseas turn-in. Handoff tab. Show on Takeoff. Not client bidDate.' },
   { path: 'owner', phase: 'intake', note: 'From drawings' },
   { path: 'architect', phase: 'intake', note: 'From drawings' },
   { path: 'mechanicalEngineer', phase: 'intake', note: 'From drawings' },
   { path: 'contractTiers', phase: 'intake', note: 'Sketch ~5 layers on intake. hasTheJob / invitedUs / isPaying. Bonds confirm at award.' },
   { path: 'generalContractors', phase: 'intake', note: 'Multiple GCs on the same opportunity; hasTheJob / stillBidding' },
   { path: 'mechanicals', phase: 'intake', note: 'Multiple mechanicals on the same opportunity; hasTheJob / stillBidding' },
-  { path: 'assignment', phase: 'assignment', note: 'Nick+PJ+Gino. captainUserId from /lookups/bidding/captains fills teamId. Hide bidClerk — Assistant Estimator only. pursue false = no-bid on complete' },
+  { path: 'assignment', phase: 'assignment', note: 'Captain/team only. Internal due dates hidden. Approve-for-takeoff is Handoff (after drawings/specs). pursue false = no-bid on complete' },
+  { path: 'takeoffAssignments.completed', phase: 'takeoff', note: 'Hidden. Turn-in is zip + snap + recap, not a per-scope tick.' },
+  { path: 'technicalReview', phase: 'estimating_setup', note: 'Approve for takeoff on Handoff after drawings/specs. Still required to leave Handoff.' },
   { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. Names fill from the captain’s crew when team changes. VRF + equipment = hydronic team' },
   { path: 'constructionType', phase: 'intake', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name. Not on proposal.' },
   { path: 'constructionSubtype', phase: 'intake', note: 'GET /lookups/bidding/project-types. Not on proposal.' },
   { path: 'impactedGsf', phase: 'intake', note: 'Life-safety impacted / renovated SF. Not whole-building GSF. Proposal shows read-only; calc may copy to baseBid.gsfOfBuilding' },
+  { path: 'baseBidPrice', phase: 'intake', note: 'Advertised / invitation base-bid $. Not the Excel calculator object (`baseBid`) or pjEstimate.' },
   { path: 'mbePreference', phase: 'estimating_setup', note: 'GET /lookups/bidding/preferences' },
   { path: 'entityRule', phase: 'intake', note: 'John’s first company call (DC/MD). Suggests Goel DC / DCB / Goel Services. Header ourEntityId is the pick.' },
   { path: 'pla', phase: 'estimating_setup', note: 'Also on baseBid.pla — keep in sync in UI' },
@@ -2108,7 +2246,6 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'schedule', phase: 'estimating_setup', note: '' },
   { path: 'insulationSpecs', phase: 'estimating_setup', note: 'Which spec types apply (flags). Tables are specSheets.' },
   { path: 'specSheets', phase: 'estimating_setup', note: 'Spec rules rows (dropdowns). Before takeoff. Not the qty grid.' },
-  { path: 'technicalReview', phase: 'assignment', note: 'Nick/PJ/Gino. approvedForTakeoff required to leave Assignment (and still to leave Setup). Not a Setup editor.' },
   { path: 'takeoffAssignments.versions', phase: 'takeoff', note: 'Never overwrite; new version each revision' },
   { path: 'amendments', phase: 'proposal', note: '+ Add; arrays replace on PATCH. Output stage — do not put building type / GSF here' },
   { path: 'estimateReview', phase: 'proposal', note: 'Totals / scope notes. Identity fields are intake — show read-only' },
@@ -2161,7 +2298,23 @@ const BID_KIND_LABELS: Record<BidKind, string> = {
 
 const INTAKE_EDITOR = {
   bidNameFrom: 'drawingName',
-  drawingNumber: 'drawingNumber — sheet/set number; searchable on GET /bids?search=',
+  drawingNumber: 'drawingNumber — sheet/set number; searchable on GET /bids?search= — not a list column (Mike 30 Sep)',
+  hideDueDate: true,
+  hideDueTime: true,
+  clientBidDate: {
+    bind: 'bidDate',
+    source: 'header',
+    label: 'Bid date',
+    note: 'Client submit date. Not process.dueDate. Not overseas internalBidDate.',
+  },
+  documentHub: {
+    labels: ['drawings', 'specifications', 'invitation'] as const,
+    note: 'John’s initial plans / specs / contract docs. Same POST /bids/:id/attachments.',
+  },
+  laterAttachments: {
+    labels: ['addenda'] as const,
+    note: 'After the initial invite — not the hub.',
+  },
   hideBidClerk: true,
   bidNameNote: 'Architect name on the drawings. Not the invitation subject. Not a nickname.',
   budgetIsBidKind: true,
@@ -2210,6 +2363,13 @@ const INTAKE_EDITOR = {
     bind: 'impactedGsf',
     note: 'Life-safety impacted / renovated SF. Not whole-building GSF.',
   },
+  baseBidPrice: {
+    bind: 'baseBidPrice',
+    label: 'Base Bid',
+    type: 'number',
+    required: false,
+    note: 'Invitation / advertised price. Not PATCH baseBid (calculator). Proposal shows read-only.',
+  },
   entityRule: 'process.entityRule — suggests ourEntityId. John makes the first company call.',
   assignmentOwners: 'Nick + PJ + Gino',
   teamField: 'assignment.teamId',
@@ -2249,36 +2409,126 @@ const INTAKE_EDITOR = {
 };
 
 const ASSIGNMENT_EDITOR = {
-  technicalReview: true,
-  approvedForTakeoff: 'technicalReview.approvedForTakeoff',
+  technicalReview: false,
+  hideInternalEstimateDue: true,
+  hideInternalReviewDue: true,
   hideBidClerk: true,
   assistantEstimatorFrom: 'team bidClerk slot — label Assistant Estimator',
   takeoffFillsFromTeam: true,
+  takeoffSlotOrder: ['duct1', 'duct2', 'hydronic1', 'hydronic2', 'plumbing1', 'plumbing2'] as const,
   who: 'Nick + PJ + Gino',
   doNot: [
     'Show Bid clerk next to Assistant Estimator — same person',
-    'Keep approve-for-takeoff on Setup as the editor — Assignment only; Setup still cannot skip the flag',
+    'Show internal estimate due / internal review due — those moved to Handoff internalBidDate',
+    'Block Complete for approvedForTakeoff — that gate is Handoff → Takeoff',
+    'Keep approve-for-takeoff editor on Assignment — Handoff after Drawings/Specs',
   ],
 };
 
 const ESTIMATES_LIST_EDITOR = {
   defaultView: 'list',
   hideTiles: true,
+  columns: [
+    { bind: 'estimateNumber', label: 'Estimate #', note: 'IDC / IMD — Followup bid number. Own column.' },
+    { bind: 'bidName', label: 'Name', note: 'Own column. Do not concat with estimate # in one cell.' },
+    { bind: 'processStage', label: 'Current progress', note: 'Was Status / Work stage' },
+    { bind: 'bidDate', label: 'Bid date', note: 'Header. Client date. Not dueDate.' },
+    { bind: 'captain', label: 'Team captain', note: 'process.assignment.captain — was Estimator' },
+  ],
+  hideColumns: ['drawingNumber', 'dueDate', 'dueTime'],
   title: 'bidName + estimateNumber',
-  statusColumn: { bind: 'processStage', label: 'Status', was: 'Work stage' },
+  statusColumn: { bind: 'processStage', label: 'Current progress', was: 'Status' },
   bidDateSort: {
     query: 'sort=bidDate',
     meaning: 'nulls last, then bidDate ascending (today then next week), then updatedAt desc',
   },
   search: 'GET /bids?search= — estimate #, name, drawing name/number, owner/ME #, contractor, architect, ProcessJson keyword',
   multiFilter: true,
-  estimatorFilter: 'GET /lookups/bidding/teams (or captains). Do not GET contacts?role=estimator — that list is empty until captains exist.',
+  estimatorFilter: 'GET /lookups/bidding/teams (or captains). Label the filter Team captain. Do not GET contacts?role=estimator.',
   hideOpsNavFor: ['assistant_estimator'],
-  drawingNumber: 'drawingNumber on list + GET detail',
+  drawingNumber: 'on GET detail only — not a list column (Mike: Mike estimate # is estimateNumber)',
+  captain: 'assignment.captain on list row',
+  filterCatalog: [
+    { key: 'search', label: 'Search' },
+    { key: 'processStage', label: 'Current progress' },
+    { key: 'bidDate', label: 'Bid date' },
+    { key: 'captain', label: 'Team captain' },
+    { key: 'entityId', label: 'Company' },
+    { key: 'workType', label: 'Work type' },
+    { key: 'outcome', label: 'Outcome' },
+    { key: 'bidKind', label: 'Bid type' },
+    { key: 'constructionType', label: 'Building type' },
+  ],
+  defaultFilterKeys: ['search', 'processStage', 'bidDate', 'captain'] as const,
+  saveFilters: 'PATCH /auth/profile { estimatesFilterKeys } — echoed on login / GET /auth/profile',
 };
 
-/** Estimating Setup — spec rules + money flags. Building type / GSF live on intake. */
+export const ESTIMATES_FILTER_KEYS = [
+  'search',
+  'processStage',
+  'bidDate',
+  'captain',
+  'entityId',
+  'workType',
+  'outcome',
+  'bidKind',
+  'constructionType',
+] as const;
+
+export function parseEstimatesFilterKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const allow = new Set<string>(ESTIMATES_FILTER_KEYS);
+  const out: string[] = [];
+  for (const k of raw) {
+    const s = String(k ?? '').trim();
+    if (!allow.has(s) || out.includes(s)) continue;
+    out.push(s);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+const INTERNAL_CHROME_TABS = [
+  { id: 'internal', list: 'internal' as const, label: 'Internal bid list' },
+  { id: 'takeoff', stage: 'takeoff', label: 'Takeoff' },
+];
+
+const TAKEOFF_EDITOR = {
+  uploads: [
+    { label: 'takeoff', category: 'takeoff_markup', note: 'One drop zone' },
+  ],
+  oneDropZone: true,
+  uploadCategory: 'takeoff_markup' as const,
+  hideCompleted: true,
+  showInternalBidDate: true,
+  internalBidDate: {
+    bind: 'internalBidDate',
+    label: 'Internal bid date',
+    note: 'Overseas turn-in. Same field as Handoff. Not client bidDate.',
+  },
+  markup: {
+    offline: true,
+    tool: 'Bluebeam Revu',
+    flow: 'GET download hub drawings → markup in Revu offline → POST /bids/:id/attachments category=takeoff_markup',
+  },
+  fileBuckets: [
+    { category: 'project_documents', label: 'Bid documents', from: 'intake' },
+    { category: 'takeoff_markup', label: 'Takeoff markups', from: 'takeoff' },
+  ],
+  slotOrder: ['duct1', 'duct2', 'hydronic1', 'hydronic2', 'plumbing1', 'plumbing2'] as const,
+};
+
+/** Estimating Setup chrome label = Handoff (Mike 30 Sep). */
 const SETUP_EDITOR = {
+  label: 'Handoff',
+  stageId: 'estimating_setup',
+  internalBidDate: {
+    bind: 'internalBidDate',
+    label: 'Internal bid date',
+    note: 'Overseas takeoff turn-in. Show the same date on Takeoff.',
+  },
+  technicalReview: true,
+  approvedForTakeoff: 'technicalReview.approvedForTakeoff',
   mbePreference: {
     bind: 'mbePreference',
     lookup: 'GET /lookups/bidding/preferences',
@@ -2289,7 +2539,7 @@ const SETUP_EDITOR = {
   specSheet: 'FRONTEND_SPEC_SHEET.md',
   doNot: [
     'Building type / project type / GSF — those moved to intake (PJ 13 Sep 2026)',
-    'Technical review / approve for takeoff editor — that is Assignment now',
+    'Put approve-for-takeoff back on Assignment — drawings/specs first, then this tab',
   ],
 };
 
@@ -2309,7 +2559,6 @@ const PROPOSAL_EDITOR = {
   ],
   /** First appear (or mainly) on Proposal — not Intake/Assignment editors. */
   firstHere: [
-    'bidDate',
     'submitDate',
     'timeEstimate',
     'marginPercent',
@@ -2338,10 +2587,12 @@ const PROPOSAL_EDITOR = {
     'ourEntityId',
     'estimateNumber',
     'bidName',
+    'bidDate',
     'drawingName',
     'constructionType',
     'constructionSubtype',
     'impactedGsf',
+    'baseBidPrice',
     'projectAddress',
     'entityRule',
     'assignment.teamId',
@@ -2354,6 +2605,7 @@ const PROPOSAL_EDITOR = {
     'constructionType',
     'constructionSubtype',
     'impactedGsf',
+    'baseBidPrice',
     'entityRule',
     'drawingName',
     'projectAddress',
@@ -2364,5 +2616,33 @@ const PROPOSAL_EDITOR = {
     'Editable building type / GSF / project type / company / state / team / captain / AE / crew',
     'Re-ask address, owner, bid kind, our entity, estimate #, bid name',
     'Duplicate Follow-up CRM / startup / Proposify identity fields',
+  ],
+};
+
+/** Follow-up after the proposal is out. Not the Estimates list. */
+const POST_BID_EDITOR = {
+  stageId: 'post_bid',
+  bind: [
+    'intelligence.followUpOwner',
+    'intelligence.nextFollowUpDate',
+    'intelligence.expectedAwardDate',
+    'intelligence.bafoRequested',
+    'intelligence.revisedProposalRequired',
+    'intelligence.customerFeedback',
+    'intelligence.currentProjectStatus',
+    'intelligence.competitors',
+    'intelligence.followUpCalls',
+    'intelligence.notes',
+    'generalContractors.stillBidding',
+    'mechanicals.stillBidding',
+  ],
+  stillBidding: 'generalContractors[].stillBidding / mechanicals[].stillBidding',
+  proposalPdf: { label: 'proposal', category: 'proposal' },
+  outcome: 'POST /bids/:id/outcome — then Outcome tab (award / lost)',
+  export: 'GET /bids/export',
+  doNot: [
+    'salesActivities PATCH — locked; use intelligence',
+    'Turn Estimates into a post-bid queue',
+    'In-app Bluebeam or a second chat',
   ],
 };
