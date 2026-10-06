@@ -2440,7 +2440,15 @@ const ESTIMATES_LIST_EDITOR = {
   statusColumn: { bind: 'processStage', label: 'Current progress', was: 'Status' },
   bidDateSort: {
     query: 'sort=bidDate',
-    meaning: 'nulls last, then bidDate ascending (today then next week), then updatedAt desc',
+    sortDir: 'sortDir=asc|desc — omit = bidDate asc / updated desc',
+    meaning: 'ORDER BY first, then OFFSET/FETCH. Nulls last on dates.',
+  },
+  paging: {
+    when: 'page= present',
+    pageSizes: [25, 50, 100],
+    envelope: { items: 'same row as bare array', page: '1-based', pageSize: 25, total: 'filtered count', counts: 'status tabs' },
+    counts: 'all/draft/submitted/archived — other filters apply; status query does not cut counts',
+    omitPage: 'bare array — intake duplicate search, new-bid recent, export, client-only filters',
   },
   search: 'GET /bids?search= — estimate #, name, drawing name/number, owner/ME #, contractor, architect, ProcessJson keyword',
   multiFilter: true,

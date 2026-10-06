@@ -34,7 +34,17 @@ import {
   resolveAttachmentCategory,
   chromeTabPills,
 } from '../src/bidding/process/bid-process';
-import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS, useInternalBidList } from '../src/bidding/process/bid-crew';
+import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS, teamBelongsToCaptain, useInternalBidList } from '../src/bidding/process/bid-crew';
+import {
+  bidListLastPage,
+  bidListPageWindow,
+  defaultBidListSortDir,
+  foldBidListStatusCounts,
+  parseBidListPage,
+  parseBidListPageSize,
+  parseBidListSort,
+  parseBidListSortDir,
+} from '../src/bidding/bid-list-page';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -530,6 +540,28 @@ assert(resolveAttachmentCategory(null, 'drawings') === 'project_documents', 'dra
 assert(resolveAttachmentCategory('proposal', 'takeoff-zip') === 'proposal', 'explicit category wins');
 assert(meta.estimatesListEditor.defaultView === 'list', 'list default');
 assert(meta.estimatesListEditor.hideTiles === true, 'hide tiles');
+assert(meta.estimatesListEditor.paging.when === 'page= present', 'list paging opt-in');
+assert(meta.estimatesListEditor.paging.pageSizes.join() === '25,50,100', 'list page sizes');
+assert(parseBidListPage(undefined) === undefined, 'no page → no envelope');
+assert(parseBidListPage('') === undefined, 'empty page → no envelope');
+assert(parseBidListPage('1') === 1, 'page 1');
+assert(parseBidListPage('0') === 1, 'page 0 clamps');
+assert(parseBidListPageSize('50') === 50 && parseBidListPageSize('30') === 25, 'pageSize allow-list');
+assert(parseBidListSort('captain') === 'captain' && parseBidListSort('nope') === undefined, 'sort allow-list');
+assert(parseBidListSortDir('desc') === 'DESC' && parseBidListSortDir('up') === undefined, 'sortDir');
+assert(defaultBidListSortDir('bidDate') === 'ASC' && defaultBidListSortDir('updated') === 'DESC', 'default sortDir');
+assert(bidListLastPage(342, 25) === 14 && bidListLastPage(0, 25) === 1, 'last page');
+assert(bidListPageWindow({ total: 342, page: 20, pageSize: 25 }).page === 14, 'OOR page → last');
+assert(bidListPageWindow({ total: 342, page: 20, pageSize: 25 }).empty === true, 'OOR items empty');
+assert(bidListPageWindow({ total: 342, page: 2, pageSize: 25 }).skip === 25, 'page 2 offset');
+assert(
+  foldBidListStatusCounts([
+    { status: 'draft', c: 200 },
+    { status: 'submitted', c: 100 },
+    { status: 'archived', c: 42 },
+  ]).all === 342,
+  'status counts all',
+);
 
 assert(meta.bidKinds.includes('design_assist') && meta.bidKinds.includes('budget'), 'bid kinds from PJ call');
 assert(meta.bidKinds.includes('unknown'), 'unknown bid kind');
@@ -905,6 +937,33 @@ assert(lookupPersonByName(peopleIdx, 'John Carlo Orpilla')?.email === 'jco@goel.
 const roster = excelRosterContacts();
 assert(roster.some((p) => p.name === 'Hassan Riaz' && p.role === 'bid_clerk'), 'excel Hassan clerk');
 assert(roster.some((p) => p.name === 'John Carlo Orpilla' && p.role === 'assistant_estimator'), 'excel AE');
+assert(roster.some((p) => p.name === 'Edle Nobleza' && p.role === 'assistant_estimator'), 'Mike hydronic2 in picker');
+assert(
+  teamBelongsToCaptain(
+    {
+      teamName: 'Mike Robberts',
+      captain: 'Mike Roberts',
+      crewJson: JSON.stringify({
+        captain: { appUserId: null, connecteamUserId: 14395212, name: 'Mike Roberts', email: 'mike.roberts@goelservices.com' },
+      }),
+    },
+    {
+      userId: 32,
+      email: 'mike.roberts@goelservices.com',
+      displayName: 'mike.roberts@goelservices.com',
+      connecteamUserId: 14395212,
+      connecteamName: 'Mike Roberts',
+    },
+  ),
+  'Mike login matches seeded crew',
+);
+assert(
+  !teamBelongsToCaptain(
+    { teamName: 'Wilder Rodriguez', captain: 'Wilder Rodriguez', crewJson: null },
+    { userId: 32, email: 'mike.roberts@goelservices.com', displayName: 'mike.roberts@goelservices.com', connecteamUserId: 14395212, connecteamName: 'Mike Roberts' },
+  ),
+  'Mike does not steal Wilder crew',
+);
 const crewContacts = mergeBiddingContacts(
   [{ appUserId: 9, connecteamUserId: null, name: 'Hassan Riaz', email: 'hassan@goel.com', firstName: 'Hassan', lastName: 'Riaz', role: 'assistant_estimator' }],
   [{ appUserId: null, connecteamUserId: 100, name: 'John Carlo Orpilla', email: null, firstName: 'John Carlo', lastName: 'Orpilla' }],

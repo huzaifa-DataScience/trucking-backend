@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, Repository, type SelectQueryBuilder } from 'typeorm';
 import {
   Bid,
   BidContent,
@@ -36,6 +36,14 @@ import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
 import { ConnecteamChatService } from '../connecteam/connecteam-chat.service';
+import {
+  bidListNeedsProcessJoin,
+  bidListPageWindow,
+  defaultBidListSortDir,
+  foldBidListStatusCounts,
+  type BidListPageSize,
+  type BidListSort,
+} from './bid-list-page';
 import { bindAssignmentCrew, resolveEstimatesTeamId, useInternalBidList, INTERNAL_LIST_STAGES } from './process/bid-crew';
 import {
   BID_LIST_EXCEL_COLUMNS,
@@ -62,6 +70,7 @@ import {
   fillTakeoffAssignmentsFromTeam,
   workflowChrome,
   takeoffTurnInFrom,
+  TAKEOFF_MARKUP_LABELS,
   type BidProcess,
   type HandoffAction,
   type HandoffCtx,
@@ -153,8 +162,12 @@ type BidListQuery = {
   submitDateFrom?: string;
   submitDateTo?: string;
   clientCompanyName?: string;
-  sort?: 'updated' | 'bidDate';
+  sort?: BidListSort;
+  sortDir?: 'ASC' | 'DESC';
   view?: 'internal' | 'all';
+  /** 1-based. Omit → bare array (intake search, recent list, export). */
+  page?: number;
+  pageSize?: BidListPageSize;
   editor?: BidEditor;
   /** Estimates list only: attach the newest Notes entry per bid (one extra query). */
   withNotes?: boolean;
@@ -194,12 +207,44 @@ export class BiddingService {
   }
 
   async list(params: BidListQuery) {
-    const qb = this.bidRepo
-      .createQueryBuilder('b')
-      .leftJoinAndSelect('b.ourEntity', 'e')
-      .where('b.isDeleted = :del', { del: false });
+    if (params.page == null) return this.listRows(params);
+    return this.listPage(params);
+  }
 
-    if (params.status) qb.andWhere('b.status = :status', { status: params.status });
+  /** Full filtered list — export, typeahead, my-plate, and `GET /bids` without `page`. */
+  private async listRows(params: BidListQuery) {
+    const qb = this.listFilterQb(params, { hydrate: true });
+    this.applyListSort(qb, params.sort, params.sortDir);
+    return this.hydrateSummaries(await qb.getMany(), params);
+  }
+
+  private async listPage(params: BidListQuery) {
+    const pageSize = params.pageSize ?? 25;
+    const requested = params.page ?? 1;
+    const [total, counts] = await Promise.all([
+      this.listFilterQb(params, { hydrate: false }).getCount(),
+      this.listStatusCounts(params),
+    ]);
+    const win = bidListPageWindow({ total, page: requested, pageSize });
+    if (win.empty) {
+      return { items: [], page: win.page, pageSize, total, counts };
+    }
+    const qb = this.listFilterQb(params, { hydrate: true });
+    this.applyListSort(qb, params.sort, params.sortDir);
+    qb.skip(win.skip).take(win.take);
+    const items = await this.hydrateSummaries(await qb.getMany(), params);
+    return { items, page: win.page, pageSize, total, counts };
+  }
+
+  private listFilterQb(
+    params: BidListQuery,
+    opts: { hydrate: boolean; omitStatus?: boolean },
+  ): SelectQueryBuilder<Bid> {
+    const qb = this.bidRepo.createQueryBuilder('b').where('b.isDeleted = :del', { del: false });
+    if (opts.hydrate) qb.leftJoinAndSelect('b.ourEntity', 'e');
+    else qb.leftJoin('b.ourEntity', 'e');
+
+    if (!opts.omitStatus && params.status) qb.andWhere('b.status = :status', { status: params.status });
     if (params.entityId != null) qb.andWhere('b.ourEntityId = :eid', { eid: params.entityId });
     if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
     if (useInternalBidList(params.editor?.role, params.view) && !params.processStage) {
@@ -231,7 +276,14 @@ export class BiddingService {
       role: params.editor?.role,
       userTeamId: params.editor?.bidTeamId ?? null,
     });
-    const needProcess = !!(params.search || opn || mepn || teamId != null || params.clientCompanyName);
+    const needProcess = !!(
+      params.search ||
+      opn ||
+      mepn ||
+      teamId != null ||
+      params.clientCompanyName ||
+      bidListNeedsProcessJoin(params.sort)
+    );
     if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
     if (params.search) {
       const q = params.search.replace(/#/g, '').trim();
@@ -275,15 +327,108 @@ export class BiddingService {
         ccn: params.clientCompanyName,
       });
     }
-    if (params.sort === 'bidDate') {
-      qb.orderBy('CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC')
-        .addOrderBy('b.bidDate', 'ASC')
-        .addOrderBy('b.updatedAt', 'DESC');
-    } else {
-      qb.orderBy('b.updatedAt', 'DESC');
-    }
+    return qb;
+  }
 
-    const rows = await qb.getMany();
+  private applyListSort(
+    qb: SelectQueryBuilder<Bid>,
+    sort?: BidListSort,
+    sortDir?: 'ASC' | 'DESC',
+  ): void {
+    const dir = sortDir ?? defaultBidListSortDir(sort);
+    const key = sort ?? 'updated';
+    const takeoffLabels = TAKEOFF_MARKUP_LABELS.map((l) => `'${l.replace(/'/g, "''")}'`).join(',');
+    switch (key) {
+      case 'bidDate':
+        qb.orderBy('CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC')
+          .addOrderBy('b.bidDate', dir)
+          .addOrderBy('b.id', 'DESC');
+        return;
+      case 'updated':
+        qb.orderBy('b.updatedAt', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'bidName':
+        qb.orderBy('b.bidName', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'estimateNumber':
+        qb.orderBy('b.estimateNumber', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'status':
+        qb.orderBy('b.status', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'processStage':
+        qb.orderBy('b.processStage', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'outcomeStatus':
+        qb.orderBy('b.outcomeStatus', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'workType':
+        qb.orderBy('b.workType', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'companyName':
+        qb.orderBy('e.name', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'drawingNumber':
+        qb.orderBy(`JSON_VALUE(cnt.ProcessJson, '$.drawingNumber')`, dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'dueDate':
+        qb.orderBy(`CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate')) IS NULL THEN 1 ELSE 0 END`, 'ASC')
+          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate'))`, dir)
+          .addOrderBy('b.id', 'DESC');
+        return;
+      case 'estimator':
+      case 'captain':
+        qb.orderBy(`JSON_VALUE(cnt.ProcessJson, '$.assignment.captain')`, dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'internalBidDate':
+        qb.orderBy(
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+        )
+          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate'))`, dir)
+          .addOrderBy('b.id', 'DESC');
+        return;
+      case 'baseBidAmount':
+        qb.orderBy(`TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.baseBidPrice'))`, dir).addOrderBy(
+          'b.id',
+          'DESC',
+        );
+        return;
+      case 'contractAmount':
+        qb.orderBy(
+          `TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.award.finalContractAmount'))`,
+          dir,
+        ).addOrderBy('b.id', 'DESC');
+        return;
+      case 'jobStartDate':
+        qb.orderBy(
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+        )
+          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart'))`, dir)
+          .addOrderBy('b.id', 'DESC');
+        return;
+      case 'takeoffTurnedIn':
+        qb.orderBy(
+          `CASE WHEN EXISTS (SELECT 1 FROM Bid_Attachments att WHERE att.BidId = b.BidId AND att.Label IN (${takeoffLabels})) THEN 1 ELSE 0 END`,
+          dir,
+        ).addOrderBy('b.id', 'DESC');
+        return;
+      default:
+        qb.orderBy('b.updatedAt', 'DESC').addOrderBy('b.id', 'DESC');
+    }
+  }
+
+  private async listStatusCounts(params: BidListQuery) {
+    const raw = await this.listFilterQb(params, { hydrate: false, omitStatus: true })
+      .select('b.status', 'status')
+      .addSelect('COUNT(DISTINCT b.id)', 'c')
+      .groupBy('b.status')
+      .getRawMany<{ status: string; c: string | number }>();
+    return foldBidListStatusCounts(raw);
+  }
+
+  private async hydrateSummaries(rows: Bid[], params: BidListQuery) {
     const ids = rows.map((r) => r.id);
     const contents = ids.length > 0 ? await this.contentRepo.find({ where: { bidId: In(ids) } }) : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
@@ -304,9 +449,9 @@ export class BiddingService {
     );
   }
 
-  /** Same rows/filters as `list()`. Captain / AE inherit their team filter. */
+  /** Same rows/filters as `list()`. Captain / AE inherit their team filter. Never the page envelope. */
   async exportList(params: BidListQuery): Promise<Buffer> {
-    const rows = await this.list(params);
+    const rows = await this.listRows({ ...params, page: undefined, pageSize: undefined });
     const teams = await this.lookups.getTeams();
     const teamName = new Map(teams.map((t) => [t.id, t.teamName]));
     return this.excelExport.exportSheet(
@@ -319,7 +464,7 @@ export class BiddingService {
   /** Role home: due / upcoming / assigned for this login + chat unread. Full list stays on GET /bids. */
   async myPlate(user: BidEditor) {
     const plate = plateForRole(user.role);
-    const rows = await this.list({ editor: user });
+    const rows = await this.listRows({ editor: user });
     const groups = fillPlateGroups(user.role, rows, { bidTeamId: user.bidTeamId ?? null });
     const messages =
       user.id != null
