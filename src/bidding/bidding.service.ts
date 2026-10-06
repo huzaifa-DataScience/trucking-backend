@@ -330,6 +330,22 @@ export class BiddingService {
     return qb;
   }
 
+  /**
+   * Paged list joins OurEntity, so TypeORM's DISTINCT wrapper treats any ORDER BY
+   * with a `.` as `alias.column`. Raw CASE / JSON_VALUE must be a select alias.
+   */
+  private orderBySql(
+    qb: SelectQueryBuilder<Bid>,
+    expr: string,
+    dir: 'ASC' | 'DESC',
+    alias: string,
+    lead: boolean,
+  ): void {
+    qb.addSelect(expr, alias);
+    if (lead) qb.orderBy(alias, dir);
+    else qb.addOrderBy(alias, dir);
+  }
+
   private applyListSort(
     qb: SelectQueryBuilder<Bid>,
     sort?: BidListSort,
@@ -340,9 +356,8 @@ export class BiddingService {
     const takeoffLabels = TAKEOFF_MARKUP_LABELS.map((l) => `'${l.replace(/'/g, "''")}'`).join(',');
     switch (key) {
       case 'bidDate':
-        qb.orderBy('CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC')
-          .addOrderBy('b.bidDate', dir)
-          .addOrderBy('b.id', 'DESC');
+        this.orderBySql(qb, 'CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC', 'sortBidDateNull', true);
+        qb.addOrderBy('b.bidDate', dir).addOrderBy('b.id', 'DESC');
         return;
       case 'updated':
         qb.orderBy('b.updatedAt', dir).addOrderBy('b.id', 'DESC');
@@ -369,50 +384,88 @@ export class BiddingService {
         qb.orderBy('e.name', dir).addOrderBy('b.id', 'DESC');
         return;
       case 'drawingNumber':
-        qb.orderBy(`JSON_VALUE(cnt.ProcessJson, '$.drawingNumber')`, dir).addOrderBy('b.id', 'DESC');
+        this.orderBySql(qb, `JSON_VALUE(cnt.ProcessJson, '$.drawingNumber')`, dir, 'sortDrawingNumber', true);
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'dueDate':
-        qb.orderBy(`CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate')) IS NULL THEN 1 ELSE 0 END`, 'ASC')
-          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate'))`, dir)
-          .addOrderBy('b.id', 'DESC');
+        this.orderBySql(
+          qb,
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+          'sortDueNull',
+          true,
+        );
+        this.orderBySql(qb, `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate'))`, dir, 'sortDue', false);
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'estimator':
       case 'captain':
-        qb.orderBy(`JSON_VALUE(cnt.ProcessJson, '$.assignment.captain')`, dir).addOrderBy('b.id', 'DESC');
+        this.orderBySql(qb, `JSON_VALUE(cnt.ProcessJson, '$.assignment.captain')`, dir, 'sortCaptain', true);
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'internalBidDate':
-        qb.orderBy(
+        this.orderBySql(
+          qb,
           `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate')) IS NULL THEN 1 ELSE 0 END`,
           'ASC',
-        )
-          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate'))`, dir)
-          .addOrderBy('b.id', 'DESC');
+          'sortInternalNull',
+          true,
+        );
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate'))`,
+          dir,
+          'sortInternal',
+          false,
+        );
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'baseBidAmount':
-        qb.orderBy(`TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.baseBidPrice'))`, dir).addOrderBy(
-          'b.id',
-          'DESC',
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.baseBidPrice'))`,
+          dir,
+          'sortBaseBid',
+          true,
         );
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'contractAmount':
-        qb.orderBy(
+        this.orderBySql(
+          qb,
           `TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.award.finalContractAmount'))`,
           dir,
-        ).addOrderBy('b.id', 'DESC');
+          'sortContract',
+          true,
+        );
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'jobStartDate':
-        qb.orderBy(
+        this.orderBySql(
+          qb,
           `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart')) IS NULL THEN 1 ELSE 0 END`,
           'ASC',
-        )
-          .addOrderBy(`TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart'))`, dir)
-          .addOrderBy('b.id', 'DESC');
+          'sortStartNull',
+          true,
+        );
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart'))`,
+          dir,
+          'sortStart',
+          false,
+        );
+        qb.addOrderBy('b.id', 'DESC');
         return;
       case 'takeoffTurnedIn':
-        qb.orderBy(
+        this.orderBySql(
+          qb,
           `CASE WHEN EXISTS (SELECT 1 FROM Bid_Attachments att WHERE att.BidId = b.BidId AND att.Label IN (${takeoffLabels})) THEN 1 ELSE 0 END`,
           dir,
-        ).addOrderBy('b.id', 'DESC');
+          'sortTurnedIn',
+          true,
+        );
+        qb.addOrderBy('b.id', 'DESC');
         return;
       default:
         qb.orderBy('b.updatedAt', 'DESC').addOrderBy('b.id', 'DESC');
