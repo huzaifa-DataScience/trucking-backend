@@ -231,7 +231,9 @@ export class BiddingService {
     }
     const qb = this.listFilterQb(params, { hydrate: true });
     this.applyListSort(qb, params.sort, params.sortDir);
-    qb.skip(win.skip).take(win.take);
+    // skip/take + the OurEntity join sends ORDER BY through TypeORM's DISTINCT
+    // wrapper, which treats "CASE WHEN b.bidDate" as an alias. offset/limit does not.
+    if (win.take > 0) qb.offset(win.skip).limit(win.take);
     const items = await this.hydrateSummaries(await qb.getMany(), params);
     return { items, page: win.page, pageSize, total, counts };
   }
