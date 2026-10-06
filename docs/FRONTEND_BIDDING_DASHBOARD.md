@@ -35,13 +35,17 @@ Do **not** put team setup on Estimates. **Settings → My team** — [FRONTEND_A
 /bidding/[id]?stage=…
 ```
 
-Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`), **`sort=bidDate`**, **`view=internal|all`**.
+Query: `status`, `entityId`, `search`, `processStage`, `workType`, `outcome`, `ownerProjectNumber`, `mechanicalEngineerProjectNumber`, `teamId` (`number` or `all`), **`sort`**, **`sortDir=asc|desc`**, **`view=internal|all`**, `bidDateFrom`, `bidDateTo`, `clientCompanyName`.
+
+**Paging (Estimates table):** `GET /bids?page=1&pageSize=25&sort=bidDate&sortDir=desc`. Envelope `{ items, page, pageSize, total, counts }`. `items` = same row as the old array. `page` 1-based. `pageSize` 25 | 50 | 100. Out-of-range page → `items: []` and `page` = last page. `total` is the filtered count. `counts` = `{ all, draft, submitted, archived }` for the status tabs — **other filters apply, `status=` does not cut counts**.
+
+**No `page`:** bare array (today’s response). Intake duplicate search, New bid recent, estimation files, and **`GET /bids/export`** stay on the full list. Do not send `page` when sidebar saved views / captain / bid type / building type are client-filtered. Do not put export on the envelope.
 
 **29 Sep CONS UAT — Estimates UI (FE):** tiles off, **list default**. Title = `bidName` + `estimateNumber`. Column **Work stage → Status** (`processStage`). Bid-date sort like follow-up: `GET /bids?sort=bidDate` (today then upcoming; nulls last). Multi-select filters, no cap. Estimator filter = **`GET /lookups/bidding/teams`** (or captains) — **not** `contacts?role=estimator` (empty until someone is a captain). Search is one box (`search=`) — drawing number, architect, contractor included. Hide ops/reporting/billing nav for `assistant_estimator`. Meta: `process-meta.estimatesListEditor`.
 
 Row also has `drawingNumber`, `baseBidPrice`.
 
-**Export:** `GET /bids/export` — same query params as `GET /bids` (including captain auto-team). Returns `.xlsx` (`Content-Disposition: attachment; filename="bids.xlsx"`). Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
+**Export:** `GET /bids/export` — same **filters** as `GET /bids` (including captain auto-team). **Not** the page envelope — always the full filtered set / `.xlsx`. Put an Export button on Estimates; pass the current table filters. Do not export from the dashboard widgets.
 
 Row: `dueDate`, `dueTime`, `teamId`, `canEdit`, `isNew`, `takeoffAssigned`, `takeoffReceived`, …
 

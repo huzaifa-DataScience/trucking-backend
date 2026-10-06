@@ -27,6 +27,12 @@ import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingService } from './bidding.service';
 import {
+  parseBidListPage,
+  parseBidListPageSize,
+  parseBidListSort,
+  parseBidListSortDir,
+} from './bid-list-page';
+import {
   CalculateBidDto,
   CreateBidDto,
   HandoffBidDto,
@@ -62,9 +68,13 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
     @Query('view') view?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
     @CurrentUser() user?: User,
   ) {
+    const pageNum = parseBidListPage(page);
     return this.bidding.list({
       status,
       entityId: entityId ? parseInt(entityId, 10) : undefined,
@@ -80,8 +90,11 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
-      sort: parseSortQuery(sort),
+      sort: parseBidListSort(sort),
+      sortDir: parseBidListSortDir(sortDir),
       view: parseViewQuery(view),
+      page: pageNum,
+      pageSize: pageNum != null ? parseBidListPageSize(pageSize) : undefined,
       editor: user,
       withNotes: true,
     });
@@ -113,6 +126,7 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
     @Query('view') view?: string,
     @CurrentUser() user?: User,
   ) {
@@ -131,7 +145,8 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
-      sort: parseSortQuery(sort),
+      sort: parseBidListSort(sort),
+      sortDir: parseBidListSortDir(sortDir),
       view: parseViewQuery(view),
       editor: user,
     });
@@ -308,13 +323,6 @@ export class BiddingController {
     await this.bidding.assertUserCanEdit(bidId, user);
     return this.attachments.remove(bidId, attachmentId, user?.id);
   }
-}
-
-function parseSortQuery(raw?: string): 'updated' | 'bidDate' | undefined {
-  const v = raw?.trim();
-  if (v === 'bidDate') return 'bidDate';
-  if (v === 'updated') return 'updated';
-  return undefined;
 }
 
 function parseViewQuery(raw?: string): 'internal' | 'all' | undefined {
