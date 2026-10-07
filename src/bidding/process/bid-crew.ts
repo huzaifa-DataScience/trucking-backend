@@ -86,6 +86,42 @@ export function lookupPersonByName<T>(map: Map<string, T>, name: unknown): T | u
   return undefined;
 }
 
+function namesMatch(a: unknown, b: unknown): boolean {
+  const left = crewNameKey(a);
+  const right = crewNameKey(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const leftA = CREW_NAME_ALIASES[left];
+  const rightA = CREW_NAME_ALIASES[right];
+  return leftA === right || rightA === left || (!!leftA && leftA === rightA);
+}
+
+/** Seeded Bid_Teams row for this login captain (Connecteam / email / Excel spelling). */
+export function teamBelongsToCaptain(
+  team: { teamName: string; captain?: string | null; crewJson?: string | null },
+  cap: {
+    userId: number;
+    email?: string | null;
+    displayName?: string | null;
+    connecteamUserId?: number | null;
+    connecteamName?: string | null;
+  },
+): boolean {
+  const slots = parseCrewJson(team.crewJson, null);
+  const person = slots.captain;
+  if (person?.appUserId === cap.userId) return true;
+  if (cap.connecteamUserId != null && person?.connecteamUserId === cap.connecteamUserId) return true;
+  const email = crewNameKey(cap.email);
+  if (email && crewNameKey(person?.email) === email) return true;
+  const labels = [cap.connecteamName, cap.displayName].filter((n) => n && crewNameKey(n) !== email);
+  for (const label of labels) {
+    if (namesMatch(label, person?.name) || namesMatch(label, team.captain) || namesMatch(label, team.teamName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function bindAssignmentCrew(
   assignment: AssignmentCrew,
   captains: CrewCaptain[],
@@ -229,7 +265,7 @@ export const EXCEL_BID_TEAMS: ExcelBidTeamSeed[] = [
     duct1: 'Wesley Morris',
     duct2: 'Gerald Ordonez',
     hydronic1: 'Jeremee Camat',
-    hydronic2: null,
+    hydronic2: 'Edle Nobleza',
     plumbing1: 'Joel Simplina',
     plumbing2: 'Junel Neri',
   },
@@ -320,6 +356,14 @@ function isCrewPerson(v: unknown): v is TeamCrewPerson {
 
 /** Captain / AE Estimates list — their crew. Admin / clerk stay unfiltered unless `?teamId=` is set. */
 export const ESTIMATES_TEAM_ROLES = new Set(['captain', 'assistant_estimator', 'user']);
+export const INTERNAL_LIST_ROLES = new Set(['assistant_estimator', 'user']);
+export const INTERNAL_LIST_STAGES = ['takeoff'] as const;
+
+export function useInternalBidList(role?: string | null, view?: 'internal' | 'all' | null): boolean {
+  if (view === 'all') return false;
+  if (view === 'internal') return true;
+  return !!role && INTERNAL_LIST_ROLES.has(role);
+}
 
 export function resolveEstimatesTeamId(opts: {
   queryTeamId?: number | 'all' | null;
