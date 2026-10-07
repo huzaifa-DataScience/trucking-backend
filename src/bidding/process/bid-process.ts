@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { dashboardPlatesMeta } from './bid-plate';
+import { dashboardPlatesMeta, todayYmd } from './bid-plate';
 import {
   normalizeSpecSheets,
   specSheetTemplatesMeta,
@@ -1054,6 +1054,24 @@ export function ourTierIndex(tiers: ContractTier[]): number | null {
   return i < 0 ? null : i;
 }
 
+/**
+ * Takeoff `assignedAt` is server-owned: set to today when a role gets a new
+ * assignee, cleared when the assignee is removed. Feeds the personal calendar.
+ */
+export function stampTakeoffAssignedAt(before: BidProcess, after: BidProcess, today = todayYmd()): void {
+  const prevByRole = new Map(before.takeoffAssignments.map((r) => [r.role, r]));
+  for (const row of after.takeoffAssignments) {
+    const name = (row.assigneeName ?? '').trim();
+    if (!name) {
+      row.assignedAt = null;
+      continue;
+    }
+    const prev = prevByRole.get(row.role);
+    const prevName = (prev?.assigneeName ?? '').trim();
+    row.assignedAt = name.toLowerCase() === prevName.toLowerCase() ? prev?.assignedAt ?? row.assignedAt ?? today : today;
+  }
+}
+
 export function parseProcess(raw: unknown): BidProcess {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyProcess();
   return mergeProcess(emptyProcess(), raw as Record<string, unknown>);
@@ -1334,7 +1352,8 @@ export function workflowChrome(p: BidProcess, ctx?: HandoffCtx): WorkflowChrome 
   } else if (p.stage === 'estimating_setup' && p.technicalReview.approvedForTakeoff !== true) {
     completeBlockedReason = 'Approved for takeoff is required before handing off to takeoff';
   } else if (!nxt) {
-    completeBlockedReason = 'On Outcome tab — change win/lose anytime; post screens follow';
+    // Outcome — no handoff; win/lose is edited on this tab (no banner copy).
+    completeBlockedReason = null;
   } else {
     canComplete = true;
   }
