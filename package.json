@@ -44,6 +44,8 @@
     "connecteam-migrate": "ts-node scripts/run-connecteam-migration.ts",
     "sync-connecteam-once": "ts-node scripts/sync-connecteam-once.ts",
     "test-bidding-calc": "ts-node scripts/test-bidding-calc.ts",
+    "calendar-migrate": "ts-node scripts/run-calendar-migration.ts",
+    "test": "node --require ts-node/register --test \"src/**/*.spec.ts\"",
     "playwright:install": "playwright install chromium",
     "postinstall": "playwright install chromium"
   },

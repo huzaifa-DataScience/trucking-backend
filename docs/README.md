@@ -79,6 +79,7 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** | **Specs Plumb UI + API** — Mike import, Spec grid, Trimble Recv, Structshare item list (no vendor/cheapest) |
 | **[FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)** | **Specs Rules panel** — Mike-only stacking / Qty Est rules for FE button or sub-tab |
 | **[FRONTEND_PRODUCTION_REPORT.md](./FRONTEND_PRODUCTION_REPORT.md)** | **Production report UI + API** — commodity hours vs Connecteam actual (green/red) |
+| **[CALENDAR.md](./CALENDAR.md)** | **Personal calendar** — sources, who's "on" a bid, API, access rules |
 | [BIDDING_FRONTEND_CALCULATOR_HANDOFF.md](./BIDDING_FRONTEND_CALCULATOR_HANDOFF.md) | Client-calc contract (backend change history) |
 | [BIDDING_BASEBID_FIELDS.md](./BIDDING_BASEBID_FIELDS.md) | Excel cell ↔ `baseBid` field map |
 | [BIDDING_DATABASE_DESIGN.md](./BIDDING_DATABASE_DESIGN.md) | Bidding DB schema — reuse `Ref_*`, no duplicates |
