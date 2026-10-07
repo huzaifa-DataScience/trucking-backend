@@ -124,7 +124,7 @@ Outcome tab: **Complete & Hand Off** is off (`canComplete: false`). Change `outc
 
 | Stage | Bind | Notes |
 |-------|------|--------|
-| Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. **`drawingNumber`** searchable. Two project #s. `bidKind` (budget is a kind). `invitations[]` (`inviteBody`, `preferredContact`) + `documentLinks[]` (`checkAddenda`). Paste address in `line1`. **Hide `jobId`.** Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
+| Intake | `process` identity + parties + invite docs | Bid clerk. Estimator **not** required. Bid name = `drawingName`. **`drawingNumber`** searchable. Two project #s. `bidKind` (budget is a kind). **`baseBidPrice`** (invitation $). `invitations[]` (`inviteBody`, `preferredContact`) + `documentLinks[]` (`checkAddenda`). Paste address in `line1`. **Hide `jobId`.** Tiers sketched here. Typeahead: `GET /bids?search=&ownerProjectNumber=&mechanicalEngineerProjectNumber=`. **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)**. |
 | Assignment | `process.assignment`, `takeoffAssignments`, `technicalReview` | Nick + PJ + Gino. Hide `bidClerk`. Captain pick fills team + takeoff names. Approve for takeoff here. |
 | Estimating Setup | wage **decision**, PLA, OCIP, lifts, parking, `insulationSpecs`, **`specSheets`**, `technicalReview` | Wage **decision** ≠ wage **rate**. Spec **sheet** = dropdown **rules** — **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)**. Building type / GSF are **intake**, not here. |
 | Takeoff | existing Specs/Mike + `takeoffAssignments.versions` | Never overwrite a takeoff file. New version each revision. Show `workflow.takeoffComparisons`. |
@@ -373,7 +373,7 @@ Site photos, screenshots, PDFs. Metadata in SQL; files on disk. `GET /bids/:id` 
 | Rule | Value |
 |------|--------|
 | Types | JPEG, PNG, WebP, PDF |
-| Max size | **50 MB** per file (`process-meta.attachmentMaxBytes`) |
+| Max size | **none** (`process-meta.attachmentMaxBytes` is `null`) |
 | Max count | 20 per bid |
 | Upload / delete | until `status === "archived"` (submit does **not** block — PLA/spec PDFs after win) |
 | View / download | Any status |
@@ -409,7 +409,6 @@ const previewUrl = URL.createObjectURL(await res.blob());
 |------|------|
 | `400` | Missing file, bad type, or 20-file limit |
 | `409` | Upload/delete on **archived** bid |
-| `413` | File > 50 MB |
 
 ---
 

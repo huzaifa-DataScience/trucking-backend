@@ -5,13 +5,7 @@ dist
 config.bat
 
 # Secrets — never commit real env files (only *example templates are allowed below)
-.env
-.env.*
-.env.local
 .env.*.local
-.env.production
-.env.development
-.env.test
 !.env.example
 !.env.production.example
 !.env.sync.example
@@ -51,3 +45,5 @@ meetings/
 # One-off SQL dumps at repo root only — keep scripts/sql migrations tracked.
 /*.sql
 *.bak
+.gitignore
+branch_structure.json

@@ -25,6 +25,7 @@ export const ApiErrorCode = {
   SPECS_CATALOG_PRICE_INVALID: 'SPECS_CATALOG_PRICE_INVALID',
   SPECS_TRIMBLE_NOT_LINKED: 'SPECS_TRIMBLE_NOT_LINKED',
   BID_DUPLICATE: 'BID_DUPLICATE',
+  BID_TEAM_LOCKED: 'BID_TEAM_LOCKED',
 } as const;
 
 export type ApiErrorCodeName = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
@@ -59,6 +60,14 @@ export function apiBadRequest(
   details?: unknown,
 ): ApiException {
   return new ApiException(code, message, HttpStatus.BAD_REQUEST, details);
+}
+
+export function apiForbidden(
+  code: ApiErrorCodeName | string,
+  message: string,
+  details?: unknown,
+): ApiException {
+  return new ApiException(code, message, HttpStatus.FORBIDDEN, details);
 }
 
 export function apiConflict(

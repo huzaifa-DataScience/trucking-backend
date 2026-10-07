@@ -192,7 +192,7 @@ IF NOT EXISTS (SELECT 1 FROM dbo.Bid_Teams)
 INSERT INTO dbo.Bid_Teams (TeamName, Captain, BidClerk, Duct1, Duct2, Hydronic1, Hydronic2, Plumbing1, Plumbing2, SortOrder) VALUES
  (N'Wilder Rodriguez', N'Wilder Rodriguez', N'Hassan Riaz', N'John Carlo Orpilla', NULL, N'Jonathan Bruce', N'Brian Angelo Limon', N'Hennan Berberio', N'Mark Chua', 1),
  (N'Bil Shams', N'Bil Shams', N'Mark Tan', N'Marc Maniago', N'Oliver Crucero', N'Maristella Malamug', N'Kevin Strauss', N'Ralph Resare', N'Hugh Belangel', 2),
- (N'Mike Robberts', N'Mike Roberts', N'Rhal Dumol', N'Wesley Morris', N'Gerald Ordonez', N'Jeremee Camat', NULL, N'Joel Simplina', N'Junel Neri', 3);
+ (N'Mike Robberts', N'Mike Roberts', N'Rhal Dumol', N'Wesley Morris', N'Gerald Ordonez', N'Jeremee Camat', N'Edle Nobleza', N'Joel Simplina', N'Junel Neri', 3);
 
 IF NOT EXISTS (SELECT 1 FROM dbo.Bid_WageRates)
 INSERT INTO dbo.Bid_WageRates (RateLabel, Wage, Fringe, Total, DisplayLabel, WageAsOf, SortOrder) VALUES

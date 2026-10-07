@@ -33,6 +33,7 @@ Company, estimate #, bid name · building / project type · impacted SF · state
 | — | Building type | intake | `process.constructionType` — `GET /lookups/bidding/building-types` |
 | D5–D7 | Project Type | intake | `process.constructionSubtype` — `GET /lookups/bidding/project-types` |
 | E7 | Impacted SF (GSF cell) | intake | `process.impactedGsf` — copy to `baseBid.gsfOfBuilding` for calc only |
+| — | Base Bid $ | intake | `process.baseBidPrice` — invitation price; not `pjEstimate` |
 | B5 | Project State | intake address | `projectAddress.state` — copy to `baseBid.projectState` for tax |
 | F2 | Team | assignment | `process.assignment.teamId` → `GET /lookups/bidding/teams` |
 | A4 | Captain | assignment / team row | `process.assignment.captain` / teams → `captain` |
