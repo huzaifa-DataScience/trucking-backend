@@ -200,6 +200,7 @@ export interface AuthUser {
   permissions: string[];
   teamId: number | null;
   avatarUrl: string | null;
+  estimatesFilterKeys: string[];
 }
 
 export interface LoginResponse {
@@ -401,7 +402,9 @@ Build the register form with:
  
 ### Note on user profile fields
 
-This backend’s `AuthUser` currently includes: `id`, `email`, `role`, `status`, `permissions`, `teamId`, `avatarUrl`. It does **not** include `firstName`, `lastName`, `phone`, `company`, or `displayName`.
+This backend’s `AuthUser` currently includes: `id`, `email`, `role`, `status`, `permissions`, `teamId`, `avatarUrl`, `estimatesFilterKeys`. It does **not** include `phone`, `company`, or `displayName`. Login/profile also return `firstName` / `lastName`.
+
+**Estimates filter prefs:** `PATCH /auth/profile` `{ "estimatesFilterKeys": ["search", "processStage"] }` — allowed keys from `process-meta.estimatesListEditor.filterCatalog`. Echoed on login / `GET /auth/profile`. Empty array = FE should use `defaultFilterKeys`. See [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md).
 
 ---
 

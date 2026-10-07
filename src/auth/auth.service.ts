@@ -7,6 +7,7 @@ import { User, UserStatus, userAvatarUrl } from '../database/entities';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { AVATAR_MIMES, FileStorageService } from '../files/file-storage.service';
 import type { PatchTeamDto } from './dto/patch-team.dto';
+import { parseEstimatesFilterKeys } from '../bidding/process/bid-process';
 
 @Injectable()
 export class AuthService {
@@ -103,6 +104,7 @@ export class AuthService {
       permissions: permissions ?? [],
       teamId: user.bidTeamId ?? null,
       avatarUrl: userAvatarUrl(user),
+      estimatesFilterKeys: parseEstimatesFilterKeys(parseFilterJson(user.estimatesFilterJson)),
     };
   }
 
@@ -128,9 +130,16 @@ export class AuthService {
 
   async updateProfile(
     user: User,
-    updates: { firstName?: string | null; lastName?: string | null },
+    updates: { firstName?: string | null; lastName?: string | null; estimatesFilterKeys?: string[] },
   ): Promise<LoginResult> {
-    const saved = await this.usersService.setName(user.id, updates);
+    const saved = await this.usersService.setName(user.id, {
+      firstName: updates.firstName,
+      lastName: updates.lastName,
+      estimatesFilterJson:
+        updates.estimatesFilterKeys !== undefined
+          ? JSON.stringify(parseEstimatesFilterKeys(updates.estimatesFilterKeys))
+          : undefined,
+    });
     const permissions = await this.rbacService.getPermissionNamesForRole(saved.role);
     return this.toLoginResult(saved, permissions);
   }
@@ -172,4 +181,14 @@ export interface LoginResult {
   permissions: string[];
   teamId: number | null;
   avatarUrl: string | null;
+  estimatesFilterKeys: string[];
+}
+
+function parseFilterJson(raw: string | null | undefined): unknown {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
 }

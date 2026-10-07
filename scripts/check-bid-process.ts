@@ -29,8 +29,22 @@ import {
   suggestOurEntity,
   takeoffComparisons,
   workflowChrome,
+  takeoffTurnInFrom,
+  parseEstimatesFilterKeys,
+  resolveAttachmentCategory,
+  chromeTabPills,
 } from '../src/bidding/process/bid-process';
-import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS } from '../src/bidding/process/bid-crew';
+import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS, teamBelongsToCaptain, useInternalBidList } from '../src/bidding/process/bid-crew';
+import {
+  bidListLastPage,
+  bidListPageWindow,
+  defaultBidListSortDir,
+  foldBidListStatusCounts,
+  parseBidListPage,
+  parseBidListPageSize,
+  parseBidListSort,
+  parseBidListSortDir,
+} from '../src/bidding/bid-list-page';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -38,6 +52,7 @@ import {
   dueBucket,
   fillPlateGroups,
   isNewBid,
+  plateCalendarDate,
   plateForRole,
   todayYmd,
 } from '../src/bidding/process/bid-plate';
@@ -167,13 +182,8 @@ const noBid = applyHandoff(
 );
 assert(noBid.outcome === 'no_bid' && noBid.stage === 'result', 'assignment no-bid → Outcome tab');
 
-threw = false;
-try {
-  applyHandoff(mergeProcess(emptyProcess(), { stage: 'assignment' }), 'complete');
-} catch {
-  threw = true;
-}
-assert(threw, 'assignment → setup requires approvedForTakeoff');
+const toSetupOpen = applyHandoff(mergeProcess(emptyProcess(), { stage: 'assignment' }), 'complete');
+assert(toSetupOpen.stage === 'estimating_setup', 'assignment complete does not need approvedForTakeoff');
 
 const toSetup = applyHandoff(
   mergeProcess(emptyProcess(), {
@@ -182,7 +192,7 @@ const toSetup = applyHandoff(
   }),
   'complete',
 );
-assert(toSetup.stage === 'estimating_setup', 'approved assignment → setup');
+assert(toSetup.stage === 'estimating_setup', 'assignment → setup');
 
 threw = false;
 try {
@@ -223,8 +233,8 @@ assert(workflowChrome(awarded).showAward === true, 'awarded shows award screen')
 assert(workflowChrome(lost).showLost === true, 'lost shows lost screen');
 
 const comps = takeoffComparisons([
-  { role: 'duct1', assigneeName: 'A', assignedAt: null, dueAt: null, status: null, hoursSpent: null, notes: null, finalQuantity: null, reviewedBy: null, versions: [{ version: 1, createdBy: null, createdAt: null, reason: null, quantity: 100, hoursSpent: null, csvAttachmentId: null, pdfAttachmentId: null }] },
-  { role: 'duct2', assigneeName: 'B', assignedAt: null, dueAt: null, status: null, hoursSpent: null, notes: null, finalQuantity: null, reviewedBy: null, versions: [{ version: 1, createdBy: null, createdAt: null, reason: null, quantity: 110, hoursSpent: null, csvAttachmentId: null, pdfAttachmentId: null }] },
+  { role: 'duct1', assigneeName: 'A', assignedAt: null, dueAt: null, status: null, hoursSpent: null, notes: null, finalQuantity: null, reviewedBy: null, completed: null, versions: [{ version: 1, createdBy: null, createdAt: null, reason: null, quantity: 100, hoursSpent: null, csvAttachmentId: null, pdfAttachmentId: null }] },
+  { role: 'duct2', assigneeName: 'B', assignedAt: null, dueAt: null, status: null, hoursSpent: null, notes: null, finalQuantity: null, reviewedBy: null, completed: null, versions: [{ version: 1, createdBy: null, createdAt: null, reason: null, quantity: 110, hoursSpent: null, csvAttachmentId: null, pdfAttachmentId: null }] },
 ]);
 assert(comps[0].difference === 10 && comps[0].reconciliationRequired === true, 'duct1 vs duct2 compare');
 
@@ -461,11 +471,14 @@ assert(parseCrewJson(null, null).duct1 === null, 'empty crew json');
 assert(!('constructionType' in meta.setupEditor), 'building type left setup');
 assert(meta.intakeEditor.constructionType.lookup.includes('building-types'), 'intake construction type = Followup buckets');
 assert(meta.intakeEditor.impactedGsf.bind === 'impactedGsf', 'GSF on intake');
+assert(meta.intakeEditor.baseBidPrice.bind === 'baseBidPrice', 'Base Bid $ on intake');
+assert(meta.proposalEditor.readOnly.includes('baseBidPrice'), 'baseBidPrice RO on proposal');
 assert(meta.proposalEditor.firstHere.includes('marginPercent'), 'proposal firstHere margin');
 assert(meta.proposalEditor.firstHere.includes('systems'), 'proposal firstHere mike grid');
 assert(meta.proposalEditor.alsoOnSetup.includes('pla'), 'PLA also Setup');
 assert(meta.proposalEditor.readOnly.includes('assignment.captainUserId'), 'captain RO on proposal');
 assert(mergeProcess(emptyProcess(), { impactedGsf: 120000 }).impactedGsf === 120000, 'impactedGsf');
+assert(mergeProcess(emptyProcess(), { baseBidPrice: 47600 }).baseBidPrice === 47600, 'baseBidPrice');
 assert(meta.defaults.equipmentAndVrfTeam === 'hydronic', 'VRF/equipment hydronic team');
 assert(meta.specSheetEditor.sizeModeByKind.duct === 'circumference', 'duct uses circumference');
 assert(Array.isArray(meta.specSheetEditor.sizes) && meta.specSheetEditor.sizes.length === 0, 'no global size list');
@@ -473,11 +486,82 @@ assert(Array.isArray(meta.specSheetEditor.thicknesses) && meta.specSheetEditor.t
 assert(meta.attachmentLabels.includes('spec-sheet-image'), 'spec-sheet-image label');
 assert(meta.attachmentLabels.includes('master-scan'), 'master-scan label');
 assert(meta.drawingCategories.includes('cd'), 'CD drawing category');
-assert(meta.attachmentMaxBytes === 50 * 1024 * 1024, 'attachment max 50MB');
+assert(meta.attachmentMaxBytes === null, 'attachment max unlimited');
 assert(meta.intakeEditor.hideBidClerk === true, 'hide bid clerk');
-assert(meta.assignmentEditor.technicalReview === true, 'technical review on assignment');
+assert(meta.assignmentEditor.technicalReview === false, 'approve not on assignment');
+assert(meta.setupEditor.technicalReview === true, 'approve on handoff');
+assert(meta.setupEditor.label === 'Handoff', 'setup chrome is Handoff');
+assert(meta.intakeEditor.hideDueDate === true, 'hide intake due date');
+assert(meta.intakeEditor.clientBidDate.bind === 'bidDate', 'client bid date is header');
+assert(meta.takeoffEditor.uploads.length === 1 && meta.takeoffEditor.uploads[0].label === 'takeoff', 'one takeoff drop');
+assert(meta.takeoffEditor.oneDropZone === true, 'one drop zone');
+assert(mergeProcess(emptyProcess(), { internalBidDate: '2026-10-02' }).internalBidDate === '2026-10-02', 'internalBidDate');
+assert(meta.chromeTabs.map((t: { id: string }) => t.id).join() === 'intake,assignment,drawings,specs,handoff,takeoff,proposal,post_bid,result', 'mike tab order');
+assert(meta.chromeTabs.find((t: { id: string; fromHub?: boolean }) => t.id === 'drawings')?.fromHub === true, 'drawings fromHub');
+assert(meta.defaults.notifications === true, 'dashboard notifications live');
+assert(meta.dashboardEditor.query === 'GET /dashboard', 'dashboard editor');
+assert(meta.postBidEditor.stageId === 'post_bid', 'post-bid editor');
+assert(meta.hubPick.drawings.labels.includes('drawings'), 'hub pick drawings');
+assert(workflowChrome(readyIntake()).tabs.some((t) => t.id === 'intake' && t.pill === 'in_progress'), 'intake pill in progress');
+assert(chromeTabPills(mergeProcess(emptyProcess(), { stage: 'takeoff' }), ['drawings']).find((t) => t.id === 'drawings')?.pill === 'complete', 'drawings complete with hub file');
+assert(chromeTabPills(mergeProcess(emptyProcess(), { stage: 'takeoff' }), []).find((t) => t.id === 'intake')?.pill === 'complete', 'prior stage complete');
+assert(meta.estimatesListEditor.statusColumn.label === 'Current progress', 'list progress label');
+assert(meta.estimatesListEditor.columns[0].bind === 'estimateNumber', 'list estimate # column');
+assert(meta.attachmentLabels.includes('takeoff'), 'takeoff label');
+assert(meta.takeoffEditor.uploads.length === 1, 'single takeoff upload');
+assert(meta.chromeTabsByRole.assistant_estimator[0].id === 'internal', 'AE internal tab');
+assert(meta.internalListEditor.columns.some((c: { bind: string }) => c.bind === 'takeoffTurnedIn'), 'internal turned-in col');
+assert(useInternalBidList('assistant_estimator') === true, 'AE auto internal list');
+assert(useInternalBidList('assistant_estimator', 'all') === false, 'AE view=all');
+assert(useInternalBidList('captain') === false, 'captain not internal');
+assert(useInternalBidList('admin', 'internal') === true, 'view=internal forces');
+assert(takeoffTurnInFrom({ labels: ['takeoff'] }).takeoffTurnedIn, 'one file turns in');
+assert(takeoffTurnInFrom({ labels: ['takeoff-zip'] }).takeoffTurnedIn, 'old zip still counts');
+assert(takeoffTurnInFrom({ labels: [] }).takeoffTurnedIn === false, 'no files');
+assert(
+  takeoffTurnInFrom({
+    labels: [],
+    assignments: [
+      { assigneeName: 'A', completed: true },
+      { assigneeName: 'B', completed: true },
+    ],
+  }).takeoffTurnedIn === false,
+  'scope ticks do not turn in',
+);
+assert(meta.takeoffEditor.hideCompleted === true, 'no scope turned-in on takeoff');
+assert(parseEstimatesFilterKeys(['search', 'search', 'nope', 'captain']).join() === 'search,captain', 'filter keys');
+assert(meta.estimatesListEditor.saveFilters.includes('estimatesFilterKeys'), 'save filters path');
+assert(meta.attachmentCategories.includes('takeoff_markup'), 'markup bucket');
+assert(meta.takeoffEditor.uploadCategory === 'takeoff_markup', 'takeoff default category');
+assert(meta.takeoffEditor.markup.offline === true, 'markup offline');
+assert(meta.takeoffEditor.internalBidDate.bind === 'internalBidDate', 'takeoff shows internal date');
+assert(resolveAttachmentCategory(null, 'takeoff-zip') === 'takeoff_markup', 'zip infers markup');
+assert(resolveAttachmentCategory(null, 'drawings') === 'project_documents', 'drawings infers docs');
+assert(resolveAttachmentCategory('proposal', 'takeoff-zip') === 'proposal', 'explicit category wins');
 assert(meta.estimatesListEditor.defaultView === 'list', 'list default');
 assert(meta.estimatesListEditor.hideTiles === true, 'hide tiles');
+assert(meta.estimatesListEditor.paging.when === 'page= present', 'list paging opt-in');
+assert(meta.estimatesListEditor.paging.pageSizes.join() === '25,50,100', 'list page sizes');
+assert(parseBidListPage(undefined) === undefined, 'no page → no envelope');
+assert(parseBidListPage('') === undefined, 'empty page → no envelope');
+assert(parseBidListPage('1') === 1, 'page 1');
+assert(parseBidListPage('0') === 1, 'page 0 clamps');
+assert(parseBidListPageSize('50') === 50 && parseBidListPageSize('30') === 25, 'pageSize allow-list');
+assert(parseBidListSort('captain') === 'captain' && parseBidListSort('nope') === undefined, 'sort allow-list');
+assert(parseBidListSortDir('desc') === 'DESC' && parseBidListSortDir('up') === undefined, 'sortDir');
+assert(defaultBidListSortDir('bidDate') === 'ASC' && defaultBidListSortDir('updated') === 'DESC', 'default sortDir');
+assert(bidListLastPage(342, 25) === 14 && bidListLastPage(0, 25) === 1, 'last page');
+assert(bidListPageWindow({ total: 342, page: 20, pageSize: 25 }).page === 14, 'OOR page → last');
+assert(bidListPageWindow({ total: 342, page: 20, pageSize: 25 }).empty === true, 'OOR items empty');
+assert(bidListPageWindow({ total: 342, page: 2, pageSize: 25 }).skip === 25, 'page 2 offset');
+assert(
+  foldBidListStatusCounts([
+    { status: 'draft', c: 200 },
+    { status: 'submitted', c: 100 },
+    { status: 'archived', c: 42 },
+  ]).all === 342,
+  'status counts all',
+);
 
 assert(meta.bidKinds.includes('design_assist') && meta.bidKinds.includes('budget'), 'bid kinds from PJ call');
 assert(meta.bidKinds.includes('unknown'), 'unknown bid kind');
@@ -747,6 +831,14 @@ assert(canEditBid({ role: 'captain', bidTeamId: 2 }, null) === true, 'unassigned
 assert(canEditBid({ role: 'captain', bidTeamId: 2 }, 2) === true, 'same team edits');
 assert(canEditBid({ role: 'captain', bidTeamId: 2 }, 3) === false, 'other team cannot edit');
 assert(canEditBid({ role: 'assistant_estimator', bidTeamId: null }, 3) === false, 'no team cannot edit assigned');
+assert(
+  canEditBid({ role: 'captain', id: 9, bidTeamId: null }, 3, 9) === true,
+  'named captain edits without My team',
+);
+assert(
+  canEditBid({ role: 'captain', id: 9, bidTeamId: null }, 3, 8) === false,
+  'other login is not the named captain',
+);
 assert(plateForRole('bid_clerk').plateId === 'clerk', 'clerk plate');
 assert(plateForRole('admin').plateId === 'admin', 'admin plate');
 assert(plateForRole('captain').groups.map((g) => g.id).join() === 'due,upcoming,assigned', 'captain widgets');
@@ -782,6 +874,13 @@ const ae = fillPlateGroups('assistant_estimator', sample, { bidTeamId: 2, now: n
 assert(ae.find((g) => g.id === 'due')?.rows.map((r) => r.id).join() === '5', 'AE due this week on team');
 const pm = fillPlateGroups('project_manager', sample, { now: new Date(2026, 8, 10) });
 assert(pm.find((g) => g.id === 'assigned')?.rows.map((r) => r.id).join() === '4', 'PM assigned = awarded');
+assert(plateCalendarDate({ bidDate: '2026-10-02', dueDate: '2026-01-01' }) === '2026-10-02', 'bidDate wins calendar');
+const byBid = fillPlateGroups(
+  'bid_clerk',
+  [{ id: '9', processStage: 'intake', outcomeStatus: 'open', bidDate: '2026-09-10', teamId: null }],
+  { now: new Date(2026, 8, 10) },
+);
+assert(byBid.find((g) => g.id === 'due')?.rows.map((r) => r.id).join() === '9', 'dashboard due uses bidDate');
 
 const excel = bidListExcelRow(
   {
@@ -838,6 +937,33 @@ assert(lookupPersonByName(peopleIdx, 'John Carlo Orpilla')?.email === 'jco@goel.
 const roster = excelRosterContacts();
 assert(roster.some((p) => p.name === 'Hassan Riaz' && p.role === 'bid_clerk'), 'excel Hassan clerk');
 assert(roster.some((p) => p.name === 'John Carlo Orpilla' && p.role === 'assistant_estimator'), 'excel AE');
+assert(roster.some((p) => p.name === 'Edle Nobleza' && p.role === 'assistant_estimator'), 'Mike hydronic2 in picker');
+assert(
+  teamBelongsToCaptain(
+    {
+      teamName: 'Mike Robberts',
+      captain: 'Mike Roberts',
+      crewJson: JSON.stringify({
+        captain: { appUserId: null, connecteamUserId: 14395212, name: 'Mike Roberts', email: 'mike.roberts@goelservices.com' },
+      }),
+    },
+    {
+      userId: 32,
+      email: 'mike.roberts@goelservices.com',
+      displayName: 'mike.roberts@goelservices.com',
+      connecteamUserId: 14395212,
+      connecteamName: 'Mike Roberts',
+    },
+  ),
+  'Mike login matches seeded crew',
+);
+assert(
+  !teamBelongsToCaptain(
+    { teamName: 'Wilder Rodriguez', captain: 'Wilder Rodriguez', crewJson: null },
+    { userId: 32, email: 'mike.roberts@goelservices.com', displayName: 'mike.roberts@goelservices.com', connecteamUserId: 14395212, connecteamName: 'Mike Roberts' },
+  ),
+  'Mike does not steal Wilder crew',
+);
 const crewContacts = mergeBiddingContacts(
   [{ appUserId: 9, connecteamUserId: null, name: 'Hassan Riaz', email: 'hassan@goel.com', firstName: 'Hassan', lastName: 'Riaz', role: 'assistant_estimator' }],
   [{ appUserId: null, connecteamUserId: 100, name: 'John Carlo Orpilla', email: null, firstName: 'John Carlo', lastName: 'Orpilla' }],

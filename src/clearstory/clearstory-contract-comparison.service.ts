@@ -223,6 +223,14 @@ export class ClearstoryContractComparisonService {
     return this.buildComparison(project, cors);
   }
 
+  /** COR buckets for a project (same math as the Siteline comparison). */
+  summarizeCors(
+    project: ClearstoryProject,
+    cors: ClearstoryCor[],
+  ): ClearstoryContractWebsiteSummary {
+    return this.buildWebsiteSummary(project, cors);
+  }
+
   private async buildComparison(
     project: ClearstoryProject,
     cors: ClearstoryCor[],

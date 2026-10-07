@@ -17,6 +17,7 @@ export type PlateRowBase = {
   processStage: string;
   outcomeStatus?: string | null;
   status?: string | null;
+  bidDate?: string | null;
   dueDate?: string | null;
   teamId?: number | null;
   isNew?: boolean;
@@ -25,8 +26,7 @@ export type PlateRowBase = {
 const COLS: PlateColumn[] = [
   { key: 'estimateNumber', label: 'Bid #' },
   { key: 'bidName', label: 'Project' },
-  { key: 'dueDate', label: 'Due date' },
-  { key: 'dueTime', label: 'Due time' },
+  { key: 'bidDate', label: 'Bid date' },
   { key: 'teamId', label: 'Team' },
   { key: 'processStage', label: 'Stage' },
   { key: 'isNew', label: 'New' },
@@ -179,19 +179,33 @@ export function dueBucket(dueDate: string | null | undefined, today: string): Du
   return 'later';
 }
 
+/** Client bid date first (Mike hid process.dueDate). Old rows may only have dueDate. */
+export function plateCalendarDate(row: { bidDate?: string | null; dueDate?: string | null }): string | null {
+  const raw = (row.bidDate || row.dueDate || '').trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
 function byDueThenId<T extends PlateRowBase>(a: T, b: T): number {
-  const da = (a.dueDate ?? '').slice(0, 10);
-  const db = (b.dueDate ?? '').slice(0, 10);
+  const da = plateCalendarDate(a) ?? '';
+  const db = plateCalendarDate(b) ?? '';
   if (da && db && da !== db) return da < db ? -1 : 1;
   if (da && !db) return -1;
   if (!da && db) return 1;
   return 0;
 }
 
-/** No team on the bid yet → anyone may edit (intake). After assign → that team + admins. */
-export function canEditBid(editor: BidEditor, bidTeamId: number | null): boolean {
+/**
+ * No team on the bid yet → anyone may edit (intake).
+ * After assign → that crew + admins + the named captain (even if they have not saved Settings → My team).
+ */
+export function canEditBid(
+  editor: BidEditor,
+  bidTeamId: number | null,
+  captainUserId?: number | null,
+): boolean {
   if (isAdminPanelRole(editor.role)) return true;
   if (bidTeamId == null) return true;
+  if (editor.id != null && captainUserId != null && editor.id === captainUserId) return true;
   return editor.bidTeamId != null && editor.bidTeamId === bidTeamId;
 }
 
@@ -227,11 +241,11 @@ export function fillPlateGroups<T extends PlateRowBase>(
   const assigned = rows.filter((r) => inAssignedUniverse(role, r, bidTeamId)).sort(byDueThenId);
   const due = calendar
     .filter((r) => {
-      const b = dueBucket(r.dueDate, today);
+      const b = dueBucket(plateCalendarDate(r), today);
       return b === 'due' || b === 'overdue';
     })
     .sort(byDueThenId);
-  const upcoming = calendar.filter((r) => dueBucket(r.dueDate, today) === 'upcoming').sort(byDueThenId);
+  const upcoming = calendar.filter((r) => dueBucket(plateCalendarDate(r), today) === 'upcoming').sort(byDueThenId);
   const byId: Record<PlateGroupId, T[]> = { due, upcoming, assigned };
   return plate.groups.map((g) => ({ ...g, rows: byId[g.id] }));
 }
@@ -290,12 +304,13 @@ export function dashboardNotifications<
   }
   const due = groups.find((g) => g.id === 'due')?.rows ?? [];
   for (const r of due) {
+    const when = plateCalendarDate(r);
     out.push({
       kind: 'due',
       title: r.bidName?.trim() || r.estimateNumber || 'Bid due',
-      body: r.dueDate ? `Due ${r.dueDate}` : 'Due',
+      body: when ? `Bid date ${when}` : 'Due',
       bidId: r.id,
-      at: r.dueDate,
+      at: when,
     });
   }
   const assigned = groups.find((g) => g.id === 'assigned')?.rows ?? [];
