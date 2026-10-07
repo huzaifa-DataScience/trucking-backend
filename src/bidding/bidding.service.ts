@@ -50,6 +50,7 @@ import {
   bidListExcelRow,
   canEditBid,
   dashboardNotifications,
+  NOTIFICATION_LIMIT,
   fillPlateGroups,
   isNewBid,
   plateForRole,
@@ -68,6 +69,7 @@ import {
   normalizeProjectNumber,
   parseProcess,
   fillTakeoffAssignmentsFromTeam,
+  stampTakeoffAssignedAt,
   workflowChrome,
   takeoffTurnInFrom,
   TAKEOFF_MARKUP_LABELS,
@@ -537,7 +539,7 @@ export class BiddingService {
         at: m.at,
       })),
       ...dashboardNotifications(groups, messages.items),
-    ].slice(0, 15);
+    ].slice(0, NOTIFICATION_LIMIT);
     return {
       role: plate.role,
       plateId: plate.plateId,
@@ -603,6 +605,7 @@ export class BiddingService {
     const process = dto.process
       ? this.mergeProcessSafe(emptyProcess(), dto.process)
       : null;
+    if (process) stampTakeoffAssignedAt(emptyProcess(), process);
     // Captains creating their own bid should see it in their team-scoped list right
     // away, instead of it sitting unassigned until someone runs Assignment.
     if (
@@ -778,6 +781,7 @@ export class BiddingService {
       dto.process !== undefined
         ? this.mergeProcessSafe(existingProcess, dto.process)
         : existingProcess;
+    if (dto.process !== undefined) stampTakeoffAssignedAt(existingProcess, processNow);
     if (dto.process?.assignment !== undefined) await this.applyAssignmentCrew(processNow);
     const prevBidName = bid.bidName;
     const prevEstimate = bid.estimateNumber;

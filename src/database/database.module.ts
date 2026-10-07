@@ -89,6 +89,7 @@ import {
   ConnecteamMessage,
   WfsStaticItem,
   WfsSnapshot,
+  CalendarEvent,
 } from './entities';
 
 @Module({
@@ -214,6 +215,7 @@ import {
             ConnecteamMessage,
             WfsStaticItem,
             WfsSnapshot,
+            CalendarEvent,
           ],
           synchronize: false,
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
@@ -324,6 +326,7 @@ import {
       ConnecteamMessage,
       WfsStaticItem,
       WfsSnapshot,
+      CalendarEvent,
     ]),
   ],
   exports: [TypeOrmModule],
