@@ -24,7 +24,7 @@ export class BidAttachment {
   @Column({ name: 'Label', type: 'nvarchar', length: 200, nullable: true })
   label!: string | null;
 
-  /** Attachments tab bucket: 'project_documents' | 'proposal'. Null = project_documents. */
+  /** Attachments tab bucket: 'project_documents' | 'proposal' | 'takeoff_markup'. Null = project_documents. */
   @Column({ name: 'Category', type: 'nvarchar', length: 30, nullable: true })
   category!: string | null;
 
