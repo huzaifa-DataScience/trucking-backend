@@ -20,6 +20,7 @@ import { TrimbleModule } from './trimble/trimble.module';
 import { BiddingModule } from './bidding/bidding.module';
 import { ConnecteamModule } from './connecteam/connecteam.module';
 import { WfsModule } from './wfs/wfs.module';
+import { CalendarModule } from './calendar/calendar.module';
 import { ProjectFinancialsModule } from './project-financials/project-financials.module';
 
 @Module({
@@ -44,6 +45,7 @@ import { ProjectFinancialsModule } from './project-financials/project-financials
     BiddingModule,
     ConnecteamModule,
     WfsModule,
+    CalendarModule,
     ProjectFinancialsModule,
   ],
   controllers: [AppController],
