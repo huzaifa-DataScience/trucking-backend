@@ -16,6 +16,7 @@ import {
   lookupPersonByName,
   mergeBiddingContacts,
   parseCrewJson,
+  teamBelongsToCaptain,
   type BiddingContact,
   type TeamCrewPerson,
   type TeamCrewSlots,
@@ -99,11 +100,19 @@ export class UsersService implements OnModuleInit {
   }
 
   /** Self-service name edit (Account page) — same trim/null rule as the admin panel's. */
-  async setName(userId: number, updates: { firstName?: string | null; lastName?: string | null }): Promise<User> {
+  async setName(
+    userId: number,
+    updates: {
+      firstName?: string | null;
+      lastName?: string | null;
+      estimatesFilterJson?: string;
+    },
+  ): Promise<User> {
     const user = await this.findById(userId);
     if (!user) throw new Error(`User ${userId} not found`);
     if (updates.firstName !== undefined) user.firstName = updates.firstName?.trim() || null;
     if (updates.lastName !== undefined) user.lastName = updates.lastName?.trim() || null;
+    if (updates.estimatesFilterJson !== undefined) user.estimatesFilterJson = updates.estimatesFilterJson;
     return this.userRepo.save(user);
   }
 
@@ -157,6 +166,13 @@ export class UsersService implements OnModuleInit {
     people: BiddingContact[];
     slots: TeamCrewSlots;
   }> {
+    if (user.bidTeamId == null) {
+      const found = await this.findCrewTeamForUser(user);
+      if (found) {
+        user.bidTeamId = found.id;
+        user = await this.userRepo.save(user);
+      }
+    }
     const captain = this.personFromApp(user);
     const contacts = 'GET /lookups/bidding/contacts';
     const people = await this.listCrewContacts();
@@ -168,6 +184,29 @@ export class UsersService implements OnModuleInit {
     const slots = parseCrewJson(team.crewJson, captain);
     this.fillSlotsFromNameColumns(team, slots);
     return { teamId: team.id, teamName: team.teamName, contacts, people, slots };
+  }
+
+  /** Excel / Connecteam crew already exists — attach the login instead of creating a second Bid_Teams row. */
+  private async findCrewTeamForUser(user: User): Promise<BidTeam | null> {
+    const teams = await this.teamRepo.find({ where: { isActive: true } });
+    if (!teams.length) return null;
+    const ct = user.email
+      ? await this.connecteamUsers.findOne({ where: { email: user.email, isArchived: false } })
+      : null;
+    const connecteamName = ct
+      ? [ct.firstName, ct.lastName].map((s) => String(s ?? '').trim()).filter(Boolean).join(' ') || null
+      : null;
+    return (
+      teams.find((t) =>
+        teamBelongsToCaptain(t, {
+          userId: user.id,
+          email: user.email,
+          displayName: userDisplayName(user),
+          connecteamUserId: ct?.userId ?? null,
+          connecteamName,
+        }),
+      ) ?? null
+    );
   }
 
   /** Settings / assignment people picker — AEs + clerks + captains + Connecteam + Excel roster. */
@@ -210,6 +249,13 @@ export class UsersService implements OnModuleInit {
 
     let team: BidTeam | null =
       user.bidTeamId != null ? await this.teamRepo.findOne({ where: { id: user.bidTeamId } }) : null;
+    if (!team) {
+      team = await this.findCrewTeamForUser(user);
+      if (team) {
+        user.bidTeamId = team.id;
+        user = await this.userRepo.save(user);
+      }
+    }
     if (!team) {
       const max = await this.teamRepo
         .createQueryBuilder('t')
@@ -320,6 +366,15 @@ export class UsersService implements OnModuleInit {
           slots.captain = person;
           team.captain = person.name;
           dirty = true;
+        }
+      } else if (slots.captain?.connecteamUserId) {
+        const linkedCt = [...ctByName.values()].find((c) => c.userId === slots.captain?.connecteamUserId);
+        if (linkedCt) {
+          const app = await this.linkAppUserToTeam(linkedCt, team.id, true);
+          if (app && slots.captain.appUserId !== app.id) {
+            slots.captain = { ...slots.captain, appUserId: app.id };
+            dirty = true;
+          }
         }
       } else if (slots.captain?.appUserId) {
         await this.setBidTeamIfCrew(slots.captain.appUserId, team.id, true);

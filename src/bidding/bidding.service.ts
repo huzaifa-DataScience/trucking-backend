@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,16 +8,17 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, Repository, type SelectQueryBuilder } from 'typeorm';
 import {
   Bid,
   BidContent,
   BidCalcSnapshot,
   BidState,
+  BidAttachment,
   Job,
 } from '../database/entities';
 import { ExcelExportService } from '../common/excel-export.service';
-import { ApiErrorCode, apiConflict } from '../common/errors/api-error';
+import { ApiErrorCode, apiConflict, apiForbidden } from '../common/errors/api-error';
 import {
   CalculateBidDto,
   CreateBidDto,
@@ -36,7 +36,15 @@ import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 import { resolveTrimbleProjectIdForJob } from './resolve-trimble-project';
 import { ConnecteamChatService } from '../connecteam/connecteam-chat.service';
-import { bindAssignmentCrew, resolveEstimatesTeamId } from './process/bid-crew';
+import {
+  bidListNeedsProcessJoin,
+  bidListPageWindow,
+  defaultBidListSortDir,
+  foldBidListStatusCounts,
+  type BidListPageSize,
+  type BidListSort,
+} from './bid-list-page';
+import { bindAssignmentCrew, resolveEstimatesTeamId, useInternalBidList, INTERNAL_LIST_STAGES } from './process/bid-crew';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
@@ -63,6 +71,8 @@ import {
   fillTakeoffAssignmentsFromTeam,
   stampTakeoffAssignedAt,
   workflowChrome,
+  takeoffTurnInFrom,
+  TAKEOFF_MARKUP_LABELS,
   type BidProcess,
   type HandoffAction,
   type HandoffCtx,
@@ -154,7 +164,12 @@ type BidListQuery = {
   submitDateFrom?: string;
   submitDateTo?: string;
   clientCompanyName?: string;
-  sort?: 'updated' | 'bidDate';
+  sort?: BidListSort;
+  sortDir?: 'ASC' | 'DESC';
+  view?: 'internal' | 'all';
+  /** 1-based. Omit → bare array (intake search, recent list, export). */
+  page?: number;
+  pageSize?: BidListPageSize;
   editor?: BidEditor;
   /** Estimates list only: attach the newest Notes entry per bid (one extra query). */
   withNotes?: boolean;
@@ -169,6 +184,7 @@ export class BiddingService {
     @InjectRepository(BidCalcSnapshot) private readonly snapshotRepo: Repository<BidCalcSnapshot>,
     @InjectRepository(BidState) private readonly stateRepo: Repository<BidState>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
+    @InjectRepository(BidAttachment) private readonly attachmentRepo: Repository<BidAttachment>,
     private readonly attachments: BiddingAttachmentsService,
     @Inject(forwardRef(() => BiddingCommentsService))
     private readonly comments: BiddingCommentsService,
@@ -193,15 +209,53 @@ export class BiddingService {
   }
 
   async list(params: BidListQuery) {
-    const qb = this.bidRepo
-      .createQueryBuilder('b')
-      .leftJoinAndSelect('b.ourEntity', 'e')
-      .where('b.isDeleted = :del', { del: false });
+    if (params.page == null) return this.listRows(params);
+    return this.listPage(params);
+  }
 
-    if (params.status) qb.andWhere('b.status = :status', { status: params.status });
+  /** Full filtered list — export, typeahead, my-plate, and `GET /bids` without `page`. */
+  private async listRows(params: BidListQuery) {
+    const qb = this.listFilterQb(params, { hydrate: true });
+    this.applyListSort(qb, params.sort, params.sortDir);
+    return this.hydrateSummaries(await qb.getMany(), params);
+  }
+
+  private async listPage(params: BidListQuery) {
+    const pageSize = params.pageSize ?? 25;
+    const requested = params.page ?? 1;
+    const [total, counts] = await Promise.all([
+      this.listFilterQb(params, { hydrate: false }).getCount(),
+      this.listStatusCounts(params),
+    ]);
+    const win = bidListPageWindow({ total, page: requested, pageSize });
+    if (win.empty) {
+      return { items: [], page: win.page, pageSize, total, counts };
+    }
+    const qb = this.listFilterQb(params, { hydrate: true });
+    this.applyListSort(qb, params.sort, params.sortDir);
+    // skip/take + the OurEntity join sends ORDER BY through TypeORM's DISTINCT
+    // wrapper, which treats "CASE WHEN b.bidDate" as an alias. offset/limit does not.
+    if (win.take > 0) qb.offset(win.skip).limit(win.take);
+    const items = await this.hydrateSummaries(await qb.getMany(), params);
+    return { items, page: win.page, pageSize, total, counts };
+  }
+
+  private listFilterQb(
+    params: BidListQuery,
+    opts: { hydrate: boolean; omitStatus?: boolean },
+  ): SelectQueryBuilder<Bid> {
+    const qb = this.bidRepo.createQueryBuilder('b').where('b.isDeleted = :del', { del: false });
+    if (opts.hydrate) qb.leftJoinAndSelect('b.ourEntity', 'e');
+    else qb.leftJoin('b.ourEntity', 'e');
+
+    if (!opts.omitStatus && params.status) qb.andWhere('b.status = :status', { status: params.status });
     if (params.entityId != null) qb.andWhere('b.ourEntityId = :eid', { eid: params.entityId });
-    if (params.processStage) qb.andWhere('b.processStage = :ps', { ps: params.processStage });
     if (params.workType) qb.andWhere('b.workType = :wt', { wt: params.workType });
+    if (useInternalBidList(params.editor?.role, params.view) && !params.processStage) {
+      qb.andWhere('b.processStage IN (:...internalStages)', { internalStages: [...INTERNAL_LIST_STAGES] });
+    } else if (params.processStage) {
+      qb.andWhere('b.processStage = :ps', { ps: params.processStage });
+    }
     if (params.outcome) qb.andWhere('b.outcomeStatus = :oc', { oc: params.outcome });
     // Intake bids may not have a bid date yet. For list date filters, use the
     // last update as their effective date so recent captain work is discoverable.
@@ -226,7 +280,14 @@ export class BiddingService {
       role: params.editor?.role,
       userTeamId: params.editor?.bidTeamId ?? null,
     });
-    const needProcess = !!(params.search || opn || mepn || teamId != null || params.clientCompanyName);
+    const needProcess = !!(
+      params.search ||
+      opn ||
+      mepn ||
+      teamId != null ||
+      params.clientCompanyName ||
+      bidListNeedsProcessJoin(params.sort)
+    );
     if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
     if (params.search) {
       const q = params.search.replace(/#/g, '').trim();
@@ -270,29 +331,184 @@ export class BiddingService {
         ccn: params.clientCompanyName,
       });
     }
-    if (params.sort === 'bidDate') {
-      qb.orderBy('CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC')
-        .addOrderBy('b.bidDate', 'ASC')
-        .addOrderBy('b.updatedAt', 'DESC');
-    } else {
-      qb.orderBy('b.updatedAt', 'DESC');
-    }
+    return qb;
+  }
 
-    const rows = await qb.getMany();
-    const contents =
-      rows.length > 0
-        ? await this.contentRepo.find({ where: { bidId: In(rows.map((r) => r.id)) } })
-        : [];
+  /**
+   * Paged list joins OurEntity, so TypeORM's DISTINCT wrapper treats any ORDER BY
+   * with a `.` as `alias.column`. Raw CASE / JSON_VALUE must be a select alias.
+   */
+  private orderBySql(
+    qb: SelectQueryBuilder<Bid>,
+    expr: string,
+    dir: 'ASC' | 'DESC',
+    alias: string,
+    lead: boolean,
+  ): void {
+    qb.addSelect(expr, alias);
+    if (lead) qb.orderBy(alias, dir);
+    else qb.addOrderBy(alias, dir);
+  }
+
+  private applyListSort(
+    qb: SelectQueryBuilder<Bid>,
+    sort?: BidListSort,
+    sortDir?: 'ASC' | 'DESC',
+  ): void {
+    const dir = sortDir ?? defaultBidListSortDir(sort);
+    const key = sort ?? 'updated';
+    const takeoffLabels = TAKEOFF_MARKUP_LABELS.map((l) => `'${l.replace(/'/g, "''")}'`).join(',');
+    switch (key) {
+      case 'bidDate':
+        this.orderBySql(qb, 'CASE WHEN b.bidDate IS NULL THEN 1 ELSE 0 END', 'ASC', 'sortBidDateNull', true);
+        qb.addOrderBy('b.bidDate', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'updated':
+        qb.orderBy('b.updatedAt', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'bidName':
+        qb.orderBy('b.bidName', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'estimateNumber':
+        qb.orderBy('b.estimateNumber', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'status':
+        qb.orderBy('b.status', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'processStage':
+        qb.orderBy('b.processStage', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'outcomeStatus':
+        qb.orderBy('b.outcomeStatus', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'workType':
+        qb.orderBy('b.workType', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'companyName':
+        qb.orderBy('e.name', dir).addOrderBy('b.id', 'DESC');
+        return;
+      case 'drawingNumber':
+        this.orderBySql(qb, `JSON_VALUE(cnt.ProcessJson, '$.drawingNumber')`, dir, 'sortDrawingNumber', true);
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'dueDate':
+        this.orderBySql(
+          qb,
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+          'sortDueNull',
+          true,
+        );
+        this.orderBySql(qb, `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.dueDate'))`, dir, 'sortDue', false);
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'estimator':
+      case 'captain':
+        this.orderBySql(qb, `JSON_VALUE(cnt.ProcessJson, '$.assignment.captain')`, dir, 'sortCaptain', true);
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'internalBidDate':
+        this.orderBySql(
+          qb,
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+          'sortInternalNull',
+          true,
+        );
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.internalBidDate'))`,
+          dir,
+          'sortInternal',
+          false,
+        );
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'baseBidAmount':
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.baseBidPrice'))`,
+          dir,
+          'sortBaseBid',
+          true,
+        );
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'contractAmount':
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(decimal(18,2), JSON_VALUE(cnt.ProcessJson, '$.award.finalContractAmount'))`,
+          dir,
+          'sortContract',
+          true,
+        );
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'jobStartDate':
+        this.orderBySql(
+          qb,
+          `CASE WHEN TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart')) IS NULL THEN 1 ELSE 0 END`,
+          'ASC',
+          'sortStartNull',
+          true,
+        );
+        this.orderBySql(
+          qb,
+          `TRY_CONVERT(date, JSON_VALUE(cnt.ProcessJson, '$.schedule.expectedStart'))`,
+          dir,
+          'sortStart',
+          false,
+        );
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      case 'takeoffTurnedIn':
+        this.orderBySql(
+          qb,
+          `CASE WHEN EXISTS (SELECT 1 FROM Bid_Attachments att WHERE att.BidId = b.BidId AND att.Label IN (${takeoffLabels})) THEN 1 ELSE 0 END`,
+          dir,
+          'sortTurnedIn',
+          true,
+        );
+        qb.addOrderBy('b.id', 'DESC');
+        return;
+      default:
+        qb.orderBy('b.updatedAt', 'DESC').addOrderBy('b.id', 'DESC');
+    }
+  }
+
+  private async listStatusCounts(params: BidListQuery) {
+    const raw = await this.listFilterQb(params, { hydrate: false, omitStatus: true })
+      .select('b.status', 'status')
+      .addSelect('COUNT(DISTINCT b.id)', 'c')
+      .groupBy('b.status')
+      .getRawMany<{ status: string; c: string | number }>();
+    return foldBidListStatusCounts(raw);
+  }
+
+  private async hydrateSummaries(rows: Bid[], params: BidListQuery) {
+    const ids = rows.map((r) => r.id);
+    const contents = ids.length > 0 ? await this.contentRepo.find({ where: { bidId: In(ids) } }) : [];
     const contentByBid = new Map(contents.map((c) => [c.bidId, c]));
-    const notes = params.withNotes ? await this.comments.latestNotesByBid(rows.map((r) => r.id)) : null;
+    const notes = params.withNotes ? await this.comments.latestNotesByBid(ids) : null;
+    const attRows =
+      ids.length > 0 ? await this.attachmentRepo.find({ where: { bidId: In(ids) }, select: ['id', 'bidId', 'label'] }) : [];
+    const labelsByBid = new Map<number, string[]>();
+    for (const a of attRows) {
+      const list = labelsByBid.get(a.bidId) ?? [];
+      if (a.label) list.push(a.label);
+      labelsByBid.set(a.bidId, list);
+    }
     return rows.map((b) =>
-      this.toSummary(b, contentByBid.get(b.id), params.editor, notes ? notes.get(b.id) ?? null : undefined),
+      this.toSummary(b, contentByBid.get(b.id), params.editor, {
+        latestNote: notes ? notes.get(b.id) ?? null : undefined,
+        attachmentLabels: labelsByBid.get(b.id),
+      }),
     );
   }
 
-  /** Same rows/filters as `list()`. Captain / AE inherit their team filter. */
+  /** Same rows/filters as `list()`. Captain / AE inherit their team filter. Never the page envelope. */
   async exportList(params: BidListQuery): Promise<Buffer> {
-    const rows = await this.list(params);
+    const rows = await this.listRows({ ...params, page: undefined, pageSize: undefined });
     const teams = await this.lookups.getTeams();
     const teamName = new Map(teams.map((t) => [t.id, t.teamName]));
     return this.excelExport.exportSheet(
@@ -305,7 +521,7 @@ export class BiddingService {
   /** Role home: due / upcoming / assigned for this login + chat unread. Full list stays on GET /bids. */
   async myPlate(user: BidEditor) {
     const plate = plateForRole(user.role);
-    const rows = await this.list({ editor: user });
+    const rows = await this.listRows({ editor: user });
     const groups = fillPlateGroups(user.role, rows, { bidTeamId: user.bidTeamId ?? null });
     const messages =
       user.id != null
@@ -348,13 +564,21 @@ export class BiddingService {
     const bid = await this.bidRepo.findOne({ where: { id: bidId, isDeleted: false } });
     if (!bid) throw new NotFoundException(`Bid ${bidId} not found`);
     const content = await this.contentRepo.findOne({ where: { bidId } });
-    if (!canEditBid(editor, this.teamIdFromContent(content))) {
-      throw new ForbiddenException('Only the assigned team can edit this bid');
+    const assignment = this.assignmentFromContent(content);
+    if (!canEditBid(editor, assignment.teamId, assignment.captainUserId)) {
+      throw apiForbidden(
+        ApiErrorCode.BID_TEAM_LOCKED,
+        'Only the assigned team can edit this bid',
+      );
     }
   }
 
-  private teamIdFromContent(content?: BidContent | null): number | null {
-    return parseProcess(parseJson(content?.processJson ?? null, null)).assignment.teamId;
+  private assignmentFromContent(content?: BidContent | null): {
+    teamId: number | null;
+    captainUserId: number | null;
+  } {
+    const a = parseProcess(parseJson(content?.processJson ?? null, null)).assignment;
+    return { teamId: a.teamId, captainUserId: a.captainUserId };
   }
 
   async getCompanyInfoPrefillFromJob(jobId: number): Promise<Record<string, unknown>> {
@@ -497,14 +721,17 @@ export class BiddingService {
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
     return {
-      ...this.toSummary(bid, content, editor),
+      ...this.toSummary(bid, content, editor, { attachmentLabels: attachments.map((a) => a.label) }),
       jobId: bid.jobId,
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       baseBid: parseJson<Record<string, unknown>>(content?.baseBidJson ?? null, {}),
       systems: parseJson<unknown[]>(content?.systemsJson ?? null, []),
       companyInfo: parseCompanyInfo(content?.companyInfoJson ?? null),
       process,
-      workflow: workflowChrome(process, { hasDrawings: this.hasDrawingsLabel(attachments) }),
+      workflow: workflowChrome(process, {
+        hasDrawings: this.hasDrawingsLabel(attachments),
+        labels: attachments.map((a) => a.label),
+      }),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
       attachments,
       activitySummary,
@@ -865,7 +1092,10 @@ export class BiddingService {
     bid: Bid,
     content?: BidContent | null,
     editor?: BidEditor,
-    latestNote?: { body: string; authorName: string; at: string } | null,
+    extra?: {
+      latestNote?: { body: string; authorName: string; at: string } | null;
+      attachmentLabels?: Array<string | null | undefined>;
+    },
   ) {
     const companyInfo = parseCompanyInfo(content?.companyInfoJson ?? null);
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
@@ -894,16 +1124,20 @@ export class BiddingService {
       mechanicalEngineerProjectNumber: process.mechanicalEngineerProjectNumber,
       relatedBidId: process.relatedBidId,
       bidKind: process.bidKind,
+      captain: process.assignment.captain,
+      internalBidDate: process.internalBidDate,
+      baseBidPrice: process.baseBidPrice,
       dueDate: process.dueDate,
       dueTime: process.dueTime,
       boardStatus: boardStatusOf(bid.processStage, bid.outcomeStatus),
       location: [process.projectAddress.city, process.projectAddress.state].filter(Boolean).join(', ') || null,
       assignees: bidAssignees(process),
-      ...(latestNote !== undefined ? { latestNote } : {}),
+      ...(extra?.latestNote !== undefined ? { latestNote: extra.latestNote } : {}),
       takeoffAssigned: process.takeoffAssignments.length,
       takeoffReceived: process.takeoffAssignments.filter(
         (a) => (a.versions?.length ?? 0) > 0 || a.finalQuantity != null,
       ).length,
+      ...takeoffTurnInFrom({ labels: extra?.attachmentLabels ?? [] }),
       teamId,
       jobStartDate: process.schedule.expectedStart,
       jobEndDate: process.schedule.expectedCompletion,
@@ -914,7 +1148,7 @@ export class BiddingService {
       createdAt,
       updatedAt,
       isNew: isNewBid(updatedAt, createdAt),
-      canEdit: editor ? canEditBid(editor, teamId) : true,
+      canEdit: editor ? canEditBid(editor, teamId, process.assignment.captainUserId) : true,
     };
   }
 

@@ -12,10 +12,11 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'application/pdf': '.pdf',
   'application/msword': '.doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/zip': '.zip',
+  'application/x-zip-compressed': '.zip',
 };
 
-export const MAX_BID_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-export const MAX_BID_ATTACHMENTS_PER_BID = 20;
+export const MAX_BID_ATTACHMENTS_PER_BID = 200; // ponytail: intake hub + markup copies; raise if a job hits it
 export const AVATAR_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 

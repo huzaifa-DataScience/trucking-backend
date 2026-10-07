@@ -1,7 +1,7 @@
 # Stage 1 — Intake + Assignment
 
 **Give this file to FE** (with [FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md) for Setup).  
-**Last updated:** 2026-09-29  
+**Last updated:** 2026-09-30  
 **Source:** PJ + Amr (2026-08-20) + spec catch-up (2026-08-23) + PJ intake dry-run (2026-09). Locked pairs only.  
 **Chrome / handoff:** [BIDDING_FRONTEND_API.md §0](./BIDDING_FRONTEND_API.md)  
 **Enums:** `GET /lookups/bidding/process-meta` → `bidKinds`, `tierRoles`, `intakeEditor`
@@ -59,6 +59,7 @@ New bid stays tiny (`estimateNumber`, `ourEntityId`). Then this form.
 | Building type | `process.constructionType` | `GET /lookups/bidding/building-types` (Followup buckets). **Not on proposal.** |
 | Project type | `process.constructionSubtype` | `GET /lookups/bidding/project-types`. **Not on proposal.** |
 | Impacted SF | `process.impactedGsf` | Life-safety **renovated / impacted** area — not whole-building GSF. `$/SF` later. |
+| **Base Bid** | `process.baseBidPrice` | Dollar amount from the invitation / advertised price. Number. Optional. **Not** the Excel calculator object (`PATCH baseBid` / `pjEstimate`). Proposal shows this read-only. |
 | Our company (first call) | header `ourEntityId` + `process.entityRule` | John picks from state/rules. `entityRule` only **suggests**. |
 | Contract chain | `process.contractTiers` | Sketch ~5 layers now. See below. |
 | GCs / mechanicals | `process.generalContractors`, `process.mechanicals` | Same opportunity. `hasTheJob` / `stillBidding` on each. |
@@ -203,7 +204,7 @@ Then Complete → Estimating Setup. `workflow.completeBlockedReason` when approv
 
 Later stage (`proposal`). **Output + calculator** (`process-meta.proposalEditor`).
 
-**Do not re-ask here** (read-only): company, estimate #, bid name · building / project type · impacted SF · state · team / captain / AE / crew.
+**Do not re-ask here** (read-only): company, estimate #, bid name · building / project type · impacted SF · **Base Bid $** · state · team / captain / AE / crew.
 
 Calculator (first/mainly on Proposal): schedule/money, wage **rate**, lifts, parking, Mike grid. PLA / CCIP / MBE preference may also live on Setup — same flags, keep in sync. Do not move identity editors back onto Proposal.
 

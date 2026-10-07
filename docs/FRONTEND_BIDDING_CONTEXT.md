@@ -72,7 +72,8 @@ Captain picks a crew in **Settings → My team**: people from `GET /lookups/bidd
 
 - `admin` / `super_admin`: always `canEdit: true`
 - Bid has no `teamId` yet: anyone may edit (intake)
-- Bid `assignment.teamId` set: only users on that team (`user.teamId` from login) + admins
+- Bid `assignment.teamId` set: that team (`user.teamId`) + the named captain (`user.id === process.assignment.captainUserId`) + admins. Captain does **not** need Settings → My team first.
+- **PATCH 403** `"Only the assigned team can edit this bid"`: stay on `/bidding/:id`. Toast the body. Do **not** treat every 403 as “not an admin” and dump to `/job`.
 
 Assign a person to a crew: captain **Settings → My team** `PATCH /auth/team` `{ slots }`, or admin `PATCH /admin/users/:id` `{ "teamId": <Bid_Teams id> }`. Captain / AE plates **and Estimates** filter to that team when `user.teamId` is set.
 

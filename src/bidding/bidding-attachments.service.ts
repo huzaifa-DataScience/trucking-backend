@@ -3,7 +3,6 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-  PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,10 +12,9 @@ import { BiddingActivityService } from './bidding-activity.service';
 import {
   ALLOWED_UPLOAD_MIMES,
   FileStorageService,
-  MAX_BID_ATTACHMENT_BYTES,
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
-import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES } from './process/bid-process';
+import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES, resolveAttachmentCategory } from './process/bid-process';
 
 export interface BidAttachmentDto {
   id: number;
@@ -66,13 +64,10 @@ export class BiddingAttachmentsService {
     if (!file?.buffer?.length) {
       throw new BadRequestException('No file uploaded (field name: file)');
     }
-    if (file.size > MAX_BID_ATTACHMENT_BYTES) {
-      throw new PayloadTooLargeException(`File exceeds ${MAX_BID_ATTACHMENT_BYTES} bytes`);
-    }
     const mimeType = file.mimetype?.trim() || '';
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       throw new BadRequestException(
-        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx)`,
+        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), ZIP`,
       );
     }
     if (opts.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(opts.category)) {
@@ -111,7 +106,7 @@ export class BiddingAttachmentsService {
         bidId,
         fileId: appFile.id,
         label: opts.label?.trim() || null,
-        category: opts.category ?? null,
+        category: resolveAttachmentCategory(opts.category, opts.label),
         drawingCategory: opts.drawingCategory ?? null,
         sortOrder: count,
       }),
@@ -213,7 +208,7 @@ export class BiddingAttachmentsService {
       mimeType: f.mimeType,
       sizeBytes: Number(f.sizeBytes),
       label: row.label,
-      category: row.category,
+      category: resolveAttachmentCategory(row.category, row.label),
       drawingCategory: row.drawingCategory,
       sortOrder: row.sortOrder,
       downloadPath: `/bids/${row.bidId}/attachments/${row.id}/download`,

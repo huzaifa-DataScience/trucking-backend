@@ -22,11 +22,16 @@ import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../database/entities';
-import { MAX_BID_ATTACHMENT_BYTES } from '../files/file-storage.service';
 import { MAX_COMMENT_IMAGES } from './bidding-comments';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingService } from './bidding.service';
+import {
+  parseBidListPage,
+  parseBidListPageSize,
+  parseBidListSort,
+  parseBidListSortDir,
+} from './bid-list-page';
 import {
   CalculateBidDto,
   CreateBidDto,
@@ -63,8 +68,13 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
+    @Query('view') view?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
     @CurrentUser() user?: User,
   ) {
+    const pageNum = parseBidListPage(page);
     return this.bidding.list({
       status,
       entityId: entityId ? parseInt(entityId, 10) : undefined,
@@ -80,7 +90,11 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
-      sort: parseSortQuery(sort),
+      sort: parseBidListSort(sort),
+      sortDir: parseBidListSortDir(sortDir),
+      view: parseViewQuery(view),
+      page: pageNum,
+      pageSize: pageNum != null ? parseBidListPageSize(pageSize) : undefined,
       editor: user,
       withNotes: true,
     });
@@ -112,6 +126,8 @@ export class BiddingController {
     @Query('submitDateTo') submitDateTo?: string,
     @Query('clientCompanyName') clientCompanyName?: string,
     @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
+    @Query('view') view?: string,
     @CurrentUser() user?: User,
   ) {
     const buffer = await this.bidding.exportList({
@@ -129,7 +145,9 @@ export class BiddingController {
       submitDateFrom,
       submitDateTo,
       clientCompanyName,
-      sort: parseSortQuery(sort),
+      sort: parseBidListSort(sort),
+      sortDir: parseBidListSortDir(sortDir),
+      view: parseViewQuery(view),
       editor: user,
     });
     res.setHeader('Content-Disposition', 'attachment; filename="bids.xlsx"');
@@ -160,7 +178,6 @@ export class BiddingController {
   @UseInterceptors(
     FilesInterceptor('files', MAX_COMMENT_IMAGES, {
       storage: memoryStorage(),
-      limits: { fileSize: MAX_BID_ATTACHMENT_BYTES },
     }),
   )
   async createComment(
@@ -255,8 +272,7 @@ export class BiddingController {
   @Post(':id/attachments')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: MAX_BID_ATTACHMENT_BYTES },
+      storage: memoryStorage(), // ponytail: no byte cap; whole file in RAM — disk stream if Nest OOMs
     }),
   )
   async uploadAttachment(
@@ -309,10 +325,9 @@ export class BiddingController {
   }
 }
 
-function parseSortQuery(raw?: string): 'updated' | 'bidDate' | undefined {
+function parseViewQuery(raw?: string): 'internal' | 'all' | undefined {
   const v = raw?.trim();
-  if (v === 'bidDate') return 'bidDate';
-  if (v === 'updated') return 'updated';
+  if (v === 'internal' || v === 'all') return v;
   return undefined;
 }
 
