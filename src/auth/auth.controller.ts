@@ -115,7 +115,7 @@ export class AuthController {
     const { stream, mimeType } = await this.authService.openAvatar(userId);
     res.set({
       'Content-Type': mimeType,
-      'Cache-Control': 'private, max-age=3600',
+      'Cache-Control': 'private, no-store',
     });
     return new StreamableFile(stream);
   }

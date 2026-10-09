@@ -34,6 +34,9 @@ import {
   resolveAttachmentCategory,
   chromeTabPills,
 } from '../src/bidding/process/bid-process';
+import { pickTogalTool } from '../src/bidding/togal-mcp.client';
+import { readZipEntries } from '../src/bidding/zip-entries';
+import { proposalCopyPrice, proposalCopyTotal } from '../src/bidding/process/proposal-sheet';
 import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS, teamBelongsToCaptain, useInternalBidList } from '../src/bidding/process/bid-crew';
 import {
   bidListLastPage,
@@ -52,7 +55,9 @@ import {
   dueBucket,
   fillPlateGroups,
   isNewBid,
+  personalBidNotifications,
   plateCalendarDate,
+  viewerRolesOnBid,
   plateForRole,
   todayYmd,
 } from '../src/bidding/process/bid-plate';
@@ -534,6 +539,35 @@ assert(meta.estimatesListEditor.saveFilters.includes('estimatesFilterKeys'), 'sa
 assert(meta.attachmentCategories.includes('takeoff_markup'), 'markup bucket');
 assert(meta.takeoffEditor.uploadCategory === 'takeoff_markup', 'takeoff default category');
 assert(meta.takeoffEditor.markup.offline === true, 'markup offline');
+assert(meta.takeoffEditor.markup.tool === 'Togal.ai', 'markup is Togal');
+assert(meta.togalEditor.staysInTogal.includes('drawings'), 'drawings stay in Togal');
+assert(meta.togalEditor.returns.some((r: { what: string }) => r.what === 'snaps'), 'snaps return');
+assert(mergeProcess(emptyProcess(), {}).togal.projectUrl === null, 'togal link empty');
+assert(mergeProcess(emptyProcess(), {}).togal.projectId === null, 'togal id empty');
+assert(
+  mergeProcess(emptyProcess(), { togal: { projectUrl: 'https://app.togal.ai/p/1' } }).togal.projectUrl ===
+    'https://app.togal.ai/p/1',
+  'togal link kept',
+);
+{
+  let rejected = false;
+  try {
+    mergeProcess(emptyProcess(), { togal: { projectUrl: 'http://togal.ai/p/1' } });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, 'togal link must be https on togal.ai');
+}
+assert(
+  pickTogalTool(
+    [
+      { name: 'list_projects', description: 'List projects' },
+      { name: 'create_project', description: 'Create a project' },
+    ],
+    ['create', 'project'],
+  )?.name === 'create_project',
+  'togal tool pick',
+);
 assert(meta.takeoffEditor.internalBidDate.bind === 'internalBidDate', 'takeoff shows internal date');
 assert(resolveAttachmentCategory(null, 'takeoff-zip') === 'takeoff_markup', 'zip infers markup');
 assert(resolveAttachmentCategory(null, 'drawings') === 'project_documents', 'drawings infers docs');
@@ -823,6 +857,9 @@ const clipped = mergeProcess(emptyProcess(), {
 assert(clipped.invitations[0].inviteBody?.length === 50_000, 'inviteBody capped');
 
 const now = new Date('2026-09-10T12:00:00Z');
+assert(viewerRolesOnBid([{ name: 'Mike Roberts', role: 'Captain' }, { name: 'Rhal', role: 'Takeoff (duct1)' }], { name: 'Mike Roberts' }).join() === 'Captain', 'viewer role');
+assert(personalBidNotifications([{ id: '9', bidName: 'Weinberg', status: 'draft', outcomeStatus: 'open', processStage: 'takeoff', bidDate: '2026-10-09', assignees: [{ name: 'Mike Roberts', role: 'Captain' }] }], { name: 'Mike Roberts' }, '2026-10-09')[0]?.kind === 'due', 'my bid due');
+assert(personalBidNotifications([{ id: '8', bidName: 'Other', status: 'draft', outcomeStatus: 'open', processStage: 'takeoff', assignees: [{ name: 'Rhal', role: 'Captain' }] }], { name: 'Mike Roberts' }, '2026-10-09').length === 0, 'not my bid');
 assert(isNewBid('2026-09-08T00:00:00Z', null, now) === true, 'isNew within 7d');
 assert(isNewBid('2026-08-01T00:00:00Z', null, now) === false, 'isNew older than 7d');
 assert(canEditBid({ role: 'admin' }, 3) === true, 'admin edits any team');
@@ -978,6 +1015,52 @@ assert(resolveEstimatesTeamId({ queryTeamId: 'all', role: 'captain', userTeamId:
 assert(resolveEstimatesTeamId({ queryTeamId: 3, role: 'admin' }) === 3, 'explicit team filter');
 assert(resolveEstimatesTeamId({ role: 'captain', userTeamId: null }) === null, 'captain with no team sees all');
 assert(emptyProcess().assignment.captainUserId === null, 'empty captainUserId');
+
+function storedZip(name: string, text: string): Buffer {
+  const data = Buffer.from(text);
+  const nameBuf = Buffer.from(name);
+  const local = Buffer.alloc(30 + nameBuf.length + data.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(nameBuf.length, 26);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  nameBuf.copy(local, 30);
+  data.copy(local, 30 + nameBuf.length);
+  const central = Buffer.alloc(46 + nameBuf.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(nameBuf.length, 28);
+  nameBuf.copy(central, 46);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(1, 8);
+  eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(central.length, 12);
+  eocd.writeUInt32LE(local.length, 16);
+  return Buffer.concat([local, central, eocd]);
+}
+const unzipped = readZipEntries(storedZip('Mechanical/M-101.pdf', 'pdf-bytes'));
+assert(unzipped.length === 1 && unzipped[0].name === 'Mechanical/M-101.pdf', 'zip keeps the folder path');
+assert(unzipped[0].bytes.toString() === 'pdf-bytes', 'zip keeps the file bytes');
+
+const sheetBid = mergeProcess(emptyProcess(), {
+  proposalSheet: {
+    specialNotes: 'No equipment.',
+    lines: [{ bucket: 'ductwork', systems: 'Supply Air', quantity: '1200 SF', price: 78000 }],
+    copies: [{ toCompany: 'Clark', showQuantities: false, prices: { ductwork: 50100 } }],
+  },
+});
+assert(sheetBid.proposalSheet.lines.length === 5, 'proposal keeps every bucket');
+assert(sheetBid.proposalSheet.lines[0].quantity === '1200 SF', 'duct quantity stored');
+assert(sheetBid.proposalSheet.copies[0].showQuantities === false, 'copy hides quantities');
+assert(proposalCopyPrice(sheetBid.proposalSheet, sheetBid.proposalSheet.copies[0], 'ductwork') === 50100, 'copy price wins');
+assert(proposalCopyTotal(sheetBid.proposalSheet, sheetBid.proposalSheet.copies[0]) === 50100, 'alternates stay out of the total');
+assert(sheetBid.proposalSheet.exceptions.length > 20, 'exception list is seeded');
+assert(
+  (meta.proposalEditor as { doNot: string[] }).doNot.some((line) => line.includes('Proposify')),
+  'proposal meta refuses a Proposify connection',
+);
 
 assert(Array.isArray(meta.dashboardPlates) && meta.dashboardPlates.length === APP_ROLE_IDS.length, 'process-meta plates');
 assert(meta.dashboardPlates.some((p: { plateId: string }) => p.plateId === 'clerk'), 'meta clerk plate');
