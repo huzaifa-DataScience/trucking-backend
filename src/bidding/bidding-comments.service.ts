@@ -14,7 +14,7 @@ import { Bid, BidComment, BidCommentAttachment, BidCommentMention, User, UserSta
 import { isAdminPanelRole } from '../database/entities/user.entity';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingService } from './bidding.service';
-import { NOTIFICATION_LIMIT } from './process/bid-plate';
+import { NEW_BID_DAYS, NOTIFICATION_LIMIT } from './process/bid-plate';
 import { cleanPersonName, userDisplayName } from '../database/entities/user.entity';
 import {
   COMMENT_IMAGE_MIMES,
@@ -170,6 +170,42 @@ export class BiddingCommentsService implements OnModuleInit {
           title: `${who} mentioned you`,
           body: preview,
           at: r.comment.createdAt instanceof Date ? r.comment.createdAt.toISOString() : String(r.comment.createdAt),
+        };
+      });
+  }
+
+  /** Other people's notes on bids this user is on. Mentions stay a separate row. */
+  async notesOnBids(
+    userId: number,
+    bidIds: number[],
+    skipCommentIds: number[],
+  ): Promise<{ bidId: number; commentId: number; title: string; body: string | null; at: string }[]> {
+    const ids = [...new Set(bidIds)].filter((id) => Number.isInteger(id) && id > 0);
+    if (!ids.length) return [];
+    const since = new Date(Date.now() - NEW_BID_DAYS * 86_400_000);
+    const skip = new Set(skipCommentIds);
+    const rows = await this.commentRepo
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.user', 'user')
+      .leftJoinAndSelect('c.bid', 'bid')
+      .where('c.bidId IN (:...ids)', { ids })
+      .andWhere('c.deletedAt IS NULL')
+      .andWhere('c.userId != :userId', { userId })
+      .andWhere('c.createdAt >= :since', { since })
+      .orderBy('c.id', 'DESC')
+      .take(NOTIFICATION_LIMIT)
+      .getMany();
+    return rows
+      .filter((r) => !skip.has(r.id))
+      .map((r) => {
+        const who = userDisplayName(r.user);
+        const bidLabel = r.bid?.bidName?.trim() || r.bid?.estimateNumber || 'a bid';
+        return {
+          bidId: r.bidId,
+          commentId: r.id,
+          title: `${who} on ${bidLabel}`,
+          body: (r.body ?? '').trim().slice(0, 140) || 'Left a note',
+          at: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
         };
       });
   }

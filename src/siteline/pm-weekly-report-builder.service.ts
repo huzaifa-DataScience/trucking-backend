@@ -20,6 +20,7 @@ import {
   isInactiveComparisonStatus,
   isInactiveSitelineAgingRow,
 } from './siteline-aging-inactive.util';
+import { sitelineJobLabel } from '../common/job-number-match.util';
 import { isPmWeeklyReportIssueRow } from './siteline-weekly-portfolio-report.util';
 
 const ENTITY_LABELS: Record<number, string> = {
@@ -150,7 +151,7 @@ export class PmWeeklyReportBuilderService {
     const rows: PmWeeklyReportRow[] = [];
 
     for (const ac of contracts) {
-      const jobNumber = ac.internalProjectNumber?.trim() || ac.projectNumber?.trim() || '';
+      const jobNumber = sitelineJobLabel(ac);
       const overdueCents = overdueCentsFromAgingContract(ac, daysThreshold);
       const totalCents = totalAgedCentsFromAgingContract(ac);
       if (totalCents <= 0) continue;

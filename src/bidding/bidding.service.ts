@@ -45,11 +45,12 @@ import {
   type BidListSort,
 } from './bid-list-page';
 import { bindAssignmentCrew, resolveEstimatesTeamId, useInternalBidList, INTERNAL_LIST_STAGES } from './process/bid-crew';
+import { userDisplayName } from '../database/entities/user.entity';
 import {
   BID_LIST_EXCEL_COLUMNS,
   bidListExcelRow,
   canEditBid,
-  dashboardNotifications,
+  personalBidNotifications,
   NOTIFICATION_LIMIT,
   fillPlateGroups,
   isNewBid,
@@ -518,8 +519,8 @@ export class BiddingService {
     );
   }
 
-  /** Role home: due / upcoming / assigned for this login + chat unread. Full list stays on GET /bids. */
-  async myPlate(user: BidEditor) {
+  /** Role home. The bell is only this person's bids: assignment, their due date, notes, mentions. */
+  async myPlate(user: BidEditor & { firstName?: string | null; lastName?: string | null; email?: string | null }) {
     const plate = plateForRole(user.role);
     const rows = await this.listRows({ editor: user });
     const groups = fillPlateGroups(user.role, rows, { bidTeamId: user.bidTeamId ?? null });
@@ -529,6 +530,18 @@ export class BiddingService {
         : { totalUnread: 0, items: [] };
     const mentions =
       user.id != null ? await this.comments.unreadMentions(user.id) : [];
+    const mine = personalBidNotifications(rows, {
+      name: userDisplayName({ id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email }, ''),
+      email: user.email,
+    });
+    const notes =
+      user.id != null
+        ? await this.comments.notesOnBids(
+            user.id,
+            mine.map((n) => Number(n.bidId)).filter((id) => Number.isInteger(id)),
+            mentions.map((m) => m.commentId),
+          )
+        : [];
     const notifications = [
       ...mentions.map((m) => ({
         kind: 'comment_mention' as const,
@@ -538,7 +551,15 @@ export class BiddingService {
         commentId: m.commentId,
         at: m.at,
       })),
-      ...dashboardNotifications(groups, messages.items),
+      ...notes.map((n) => ({
+        kind: 'note' as const,
+        title: n.title,
+        body: n.body,
+        bidId: String(n.bidId),
+        commentId: n.commentId,
+        at: n.at,
+      })),
+      ...mine,
     ].slice(0, NOTIFICATION_LIMIT);
     return {
       role: plate.role,
