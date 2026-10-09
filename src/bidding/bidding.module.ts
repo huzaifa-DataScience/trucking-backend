@@ -23,6 +23,7 @@ import {
   BidItemCatalog,
   AppFile,
   BidAttachment,
+  BidTogalInstruction,
   BidComment,
   BidCommentAttachment,
   BidCommentMention,
@@ -35,6 +36,7 @@ import { UsersModule } from '../users/users.module';
 import { EmailTemplateModule } from '../email/email-template.module';
 import { FileStorageService } from '../files/file-storage.service';
 import { BiddingController } from './bidding.controller';
+import { TogalService } from './togal.service';
 import { BiddingService } from './bidding.service';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
@@ -80,6 +82,7 @@ import { SpecsService } from './specs/specs.service';
       BidItemCatalog,
       AppFile,
       BidAttachment,
+      BidTogalInstruction,
       BidComment,
       BidCommentAttachment,
       BidCommentMention,
@@ -91,6 +94,7 @@ import { SpecsService } from './specs/specs.service';
   controllers: [RoleDashboardController, BiddingController, BiddingLookupsController, SpecsController],
   providers: [
     BiddingService,
+    TogalService,
     BiddingLookupsService,
     BiddingAttachmentsService,
     BiddingCommentsService,

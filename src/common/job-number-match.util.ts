@@ -1,17 +1,56 @@
 /**
  * Compare Siteline internal project numbers with Clearstory job numbers.
- * Treats leading-zero variants as the same (9920 === 09920) and allows Clearstory
- * suffixes (12201 - 02 matches Siteline 12201).
+ * Leading-zero variants are the same (9920 === 09920). A spaced Clearstory
+ * suffix stays the base job (12201 - 02 === 12201). A letter glued to the
+ * number is a different job (21138a !== 21138).
  */
 
-/** Leading digit run at the start of a job string, without leading zeros. */
+/** Job token at the start of a string. Keeps a letter suffix (21138a). Drops leading zeros. */
 export function normalizeJobNumberKey(raw: string | null | undefined): string | null {
   const s = String(raw ?? '').trim();
   if (!s) return null;
-  const m = s.match(/^(\d+)/);
-  if (!m) return s.toLowerCase();
-  const digits = m[1].replace(/^0+/, '') || '0';
-  return digits;
+  const m = s.match(/^0*(\d+)([A-Za-z]*)/);
+  if (!m || !m[1]) return /^0+$/.test(s) ? '0' : s.toLowerCase();
+  return m[1] + m[2].toLowerCase();
+}
+
+/** Job as written on the row: "21138a - Name" → "21138a". */
+export function sitelineJobLabel(row: {
+  projectName?: string | null;
+  internalProjectNumber?: string | null;
+  projectNumber?: string | null;
+}): string {
+  const name = String(row.projectName ?? '').trim();
+  const written = name.match(/^(\d+[A-Za-z]*)/);
+  if (written) return written[1];
+  return row.internalProjectNumber?.trim() || row.projectNumber?.trim() || '';
+}
+
+/**
+ * Grouping key. Project name wins when it starts with a job number, so 21138a
+ * does not collapse into internal project number 21138.
+ */
+export function sitelineRowJobKey(row: {
+  projectName?: string | null;
+  internalProjectNumber?: string | null;
+  projectNumber?: string | null;
+}): string | null {
+  const name = String(row.projectName ?? '').trim();
+  if (/^\d/.test(name)) return normalizeJobNumberKey(name);
+  return normalizeJobNumberKey(row.internalProjectNumber) ?? normalizeJobNumberKey(row.projectNumber);
+}
+
+export function sitelineContractMatchesJob(
+  contract: {
+    projectName?: string | null;
+    internalProjectNumber?: string | null;
+    projectNumber?: string | null;
+  },
+  job: string,
+): boolean {
+  const key = sitelineRowJobKey(contract);
+  const want = normalizeJobNumberKey(job);
+  return Boolean(key && want && key === want);
 }
 
 /** True when two job strings refer to the same numeric job (e.g. 9920 and 09920). */

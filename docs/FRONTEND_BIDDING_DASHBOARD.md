@@ -120,9 +120,9 @@ Authorization: Bearer <access_token>
     ]
   },
   "notifications": [
-    { "kind": "message", "title": "Mike", "body": "drawings are in", "conversationId": "abc", "at": "…" },
-    { "kind": "due", "title": "Weinberg", "body": "Bid date 2026-09-10", "bidId": "12", "at": "2026-09-10" },
-    { "kind": "new_bid", "title": "Weinberg", "body": "Updated in the last 7 days", "bidId": "12" },
+    { "kind": "assigned", "title": "Weinberg", "body": "Assigned as Captain", "bidId": "12" },
+    { "kind": "due", "title": "Weinberg", "body": "Assigned as Duct 1 · Bid date 2026-09-10", "bidId": "12", "at": "2026-09-10" },
+    { "kind": "note", "title": "Rhal on Weinberg", "body": "drawings are in", "bidId": "12", "commentId": 40 },
     { "kind": "comment_mention", "title": "Hassan Riaz mentioned you", "body": "see drawings", "bidId": "12", "commentId": 44, "at": "…" }
   ]
 }
@@ -144,7 +144,7 @@ Captain / AE: `user.teamId` set → that crew. Null → those stages for all tea
 
 Due = overdue + today. Upcoming = next 7 days.
 
-`messages` = Connecteam unread preview. Not a new inbox. `process-meta.defaults.notifications` is **true** — render `notifications[]`. Due widgets use **`bidDate`**. Meeting wire-up: [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md).
+`messages` = Connecteam unread preview, for the messages module. Do not put those rows in the bell. `notifications[]` is only this person: `assigned`, `due` on their bids, `note` (someone else wrote on their bid in the last 7 days), `comment_mention`. Due widgets on the dashboard still use **`bidDate`**. Meeting wire-up: [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md).
 
 `kind: "comment_mention"` = someone @mentioned this user on a bid comment. Click `bidId` → Notes drawer. Clears when they `GET /bids/:id/comments`. See [FRONTEND_BID_COMMENTS.md](./FRONTEND_BID_COMMENTS.md).
 

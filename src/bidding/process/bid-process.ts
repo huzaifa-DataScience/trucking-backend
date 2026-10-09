@@ -9,6 +9,16 @@
 import { randomUUID } from 'crypto';
 import { dashboardPlatesMeta, todayYmd } from './bid-plate';
 import {
+  emptyProposalSheet,
+  normalizeProposalSheet,
+  proposalSheetError,
+  PROPOSAL_BOILERPLATE,
+  PROPOSAL_BUCKET_LABELS,
+  PROPOSAL_BUCKETS,
+  PROPOSAL_EXCEPTIONS,
+  type ProposalSheet,
+} from './proposal-sheet';
+import {
   normalizeSpecSheets,
   specSheetTemplatesMeta,
   specSheetLookupsMeta,
@@ -600,6 +610,8 @@ export type BidProcess = {
   relatedBidNote: string | null;
   /** Bid-level sticky Notes pad. Not invitation paste (`invitations[].inviteBody`) or clerk invite notes. */
   notes: string | null;
+  /** Togal.ai project for this bid. Files are pushed there; this stores the link. */
+  togal: { projectUrl: string | null; projectId: string | null; sentAttachmentIds: number[] };
   whoElseBidding: {
     researched: boolean | null;
     notes: string | null;
@@ -632,6 +644,8 @@ export type BidProcess = {
     qualifications: string | null;
     notes: string | null;
   };
+  /** Printed proposal. Replaces Proposify. Copies are per recipient. */
+  proposalSheet: ProposalSheet;
   proposalVersions: Array<{
     version: number;
     amount: number | null;
@@ -924,6 +938,7 @@ export function emptyProcess(): BidProcess {
     relatedBidId: null,
     relatedBidNote: null,
     notes: null,
+    togal: { projectUrl: null, projectId: null, sentAttachmentIds: [] },
     whoElseBidding: { researched: null, notes: null },
     budgetOnly: null,
     proposalIteration: null,
@@ -953,6 +968,7 @@ export function emptyProcess(): BidProcess {
       qualifications: null,
       notes: null,
     },
+    proposalSheet: emptyProposalSheet(),
     proposalVersions: [],
     submission: {
       date: null,
@@ -1520,6 +1536,8 @@ function assertProcess(p: BidProcess): void {
   if (p.intelligence.followUpCalls.length > MAX_FOLLOWUP_COMPANIES) {
     throw new BidProcessError(`process.intelligence.followUpCalls max ${MAX_FOLLOWUP_COMPANIES}`);
   }
+  const sheetErr = proposalSheetError(p.proposalSheet);
+  if (sheetErr) throw new BidProcessError(sheetErr);
   if (p.proposalVersions.length > MAX_PROPOSAL_VERSIONS) {
     throw new BidProcessError(`process.proposalVersions max ${MAX_PROPOSAL_VERSIONS}`);
   }
@@ -1557,6 +1575,15 @@ function normalizeProcess(p: BidProcess): void {
   p.relatedBidId = numOrNull(p.relatedBidId);
   p.relatedBidNote = nullishStr(p.relatedBidNote);
   p.notes = nullishStr(p.notes);
+  if (!p.togal || typeof p.togal !== 'object') p.togal = { projectUrl: null, projectId: null, sentAttachmentIds: [] };
+  else {
+    const ids = Array.isArray(p.togal.sentAttachmentIds) ? p.togal.sentAttachmentIds : [];
+    p.togal = {
+      projectUrl: normalizeTogalProjectUrl(p.togal.projectUrl),
+      projectId: nullishStr(p.togal.projectId),
+      sentAttachmentIds: ids.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 200),
+    };
+  }
   p.drawingNumber = nullishStr(p.drawingNumber);
   p.ownerProjectNumber = normalizeProjectNumber(p.ownerProjectNumber);
   p.mechanicalEngineerProjectNumber = normalizeProjectNumber(p.mechanicalEngineerProjectNumber);
@@ -1828,6 +1855,7 @@ function normalizeProcess(p: BidProcess): void {
   }));
   p.generalContractors = p.generalContractors.map(normalizeParty);
   p.mechanicals = p.mechanicals.map(normalizeParty);
+  p.proposalSheet = normalizeProposalSheet(p.proposalSheet);
   p.proposalVersions = p.proposalVersions.map((v, i) => ({
     version: Number(v?.version) || i + 1,
     amount: numOrNull(v?.amount),
@@ -1927,6 +1955,23 @@ function nullishStr(v: unknown): string | null {
   return s || null;
 }
 
+/** https link on togal.ai only. Empty clears the bid link. */
+export function normalizeTogalProjectUrl(raw: unknown): string | null {
+  const s = nullishStr(raw);
+  if (!s) return null;
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new BidProcessError('togal.projectUrl must be an https:// link on togal.ai');
+  }
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== 'https:' || u.username || u.password || (host !== 'togal.ai' && !host.endsWith('.togal.ai'))) {
+    throw new BidProcessError('togal.projectUrl must be an https:// link on togal.ai');
+  }
+  return u.toString();
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
@@ -1935,7 +1980,11 @@ function walkStrings(value: unknown, path = 'process'): void {
   if (typeof value === 'string') {
     const max = path.endsWith('inviteBody')
       ? MAX_INVITE_BODY
-      : path.endsWith('notes') ||
+      : path.endsWith('togal.projectUrl')
+        ? 2000
+        : path.endsWith('specialNotes')
+        ? 8000
+        : path.endsWith('notes') ||
           path.endsWith('text') ||
           path.endsWith('comments') ||
           path.endsWith('footerNote')
@@ -1986,6 +2035,7 @@ export function processMeta() {
     assignmentEditor: ASSIGNMENT_EDITOR,
     setupEditor: SETUP_EDITOR,
     takeoffEditor: TAKEOFF_EDITOR,
+    togalEditor: TOGAL_EDITOR,
     proposalEditor: PROPOSAL_EDITOR,
     postBidEditor: POST_BID_EDITOR,
     estimatesListEditor: ESTIMATES_LIST_EDITOR,
@@ -2003,13 +2053,13 @@ export function processMeta() {
     dashboardEditor: {
       query: 'GET /dashboard',
       bind: ['notifications', 'messages', 'groups', 'counts'],
-      notifications: ['comment_mention', 'due', 'new_bid', 'message'],
+      notifications: ['comment_mention', 'note', 'due', 'assigned'],
       dueUses: 'bidDate (fallback dueDate)',
       click: {
         bidId: '/bidding/:id',
         commentId: '/bidding/:id notes drawer',
-        conversationId: 'Connecteam — not in-app chat',
       },
+      messages: 'Connecteam inbox. Not a notification kind.',
     },
     internalListEditor: {
       query: 'GET /bids?view=internal',
@@ -2268,6 +2318,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'takeoffAssignments.versions', phase: 'takeoff', note: 'Never overwrite; new version each revision' },
   { path: 'amendments', phase: 'proposal', note: '+ Add; arrays replace on PATCH. Output stage — do not put building type / GSF here' },
   { path: 'estimateReview', phase: 'proposal', note: 'Totals / scope notes. Identity fields are intake — show read-only' },
+  { path: 'proposalSheet', phase: 'proposal', note: 'Printed proposal. Per-recipient copies. Does not call Proposify.' },
   { path: 'proposalVersions', phase: 'proposal', note: 'BAFO / VE / scope change flags' },
   { path: 'submission', phase: 'proposal', note: '' },
   { path: 'intelligence', phase: 'post_bid', note: 'Follow-up + competitors + source + confidence' },
@@ -2520,6 +2571,24 @@ const INTERNAL_CHROME_TABS = [
   { id: 'takeoff', stage: 'takeoff', label: 'Takeoff' },
 ];
 
+const TOGAL_EDITOR = {
+  product: 'Togal.ai',
+  projectUrl: 'process.togal.projectUrl',
+  staysInTogal: ['drawings', 'specifications', 'addenda'] as const,
+  returns: [
+    { what: 'snaps', to: 'POST /bids/:id/attachments category=takeoff_markup' },
+    { what: 'color-coded markup export', to: 'POST /bids/:id/attachments category=takeoff_markup' },
+  ],
+  status: 'GET /bids/togal/status',
+  connect: 'POST /bids/togal/connect — captain, admin, super_admin approves the Togal login',
+  load: 'POST /bids/:id/togal/load — push drawings, specs, addenda not yet sent. Upload on the bid does this too.',
+  runScript: 'POST /bids/:id/togal/run-script',
+  pull: 'POST /bids/:id/togal/pull — snaps and color-coded export onto takeoff',
+  script: 'GET /bids/togal/script',
+  scriptSave: 'PUT /bids/togal/script { body } — captain, admin, super_admin',
+  doNot: ['Pull base drawings, specs, or addenda back from Togal', 'In-app PDF editor', 'Bluebeam'],
+};
+
 const TAKEOFF_EDITOR = {
   uploads: [
     { label: 'takeoff', category: 'takeoff_markup', note: 'One drop zone' },
@@ -2535,8 +2604,8 @@ const TAKEOFF_EDITOR = {
   },
   markup: {
     offline: true,
-    tool: 'Bluebeam Revu',
-    flow: 'GET download hub drawings → markup in Revu offline → POST /bids/:id/attachments category=takeoff_markup',
+    tool: 'Togal.ai',
+    flow: 'Upload drawings, specs, and addenda on this bid. The server sends them to Togal. Open process.togal.projectUrl to mark up, then POST snaps and the color-coded export as category=takeoff_markup. View and download the originals here.',
   },
   fileBuckets: [
     { category: 'project_documents', label: 'Bid documents', from: 'intake' },
@@ -2578,6 +2647,7 @@ const PROPOSAL_EDITOR = {
     'systems',
     'computed',
     'estimateReview',
+    'proposalSheet',
     'proposalVersions',
     'amendments',
     'submission',
@@ -2639,10 +2709,19 @@ const PROPOSAL_EDITOR = {
   ],
   showFromIntakeNote: 'Read-only chrome. Captured on intake. Do not re-edit.',
   gsfForCalc: 'If the Excel engine needs GSF, copy process.impactedGsf → baseBid.gsfOfBuilding',
+  sheet: {
+    bind: 'proposalSheet',
+    buckets: PROPOSAL_BUCKETS.map((id) => ({ id, label: PROPOSAL_BUCKET_LABELS[id] })),
+    exceptions: PROPOSAL_EXCEPTIONS,
+    boilerplate: PROPOSAL_BOILERPLATE,
+    copies: 'One row per recipient. showQuantities and prices are that copy only. Alternates are not in the lump total.',
+    certPage: 'Print the MBE / NAICS page only when the bid our-entity is DCB.',
+  },
   doNot: [
     'Editable building type / GSF / project type / company / state / team / captain / AE / crew',
     'Re-ask address, owner, bid kind, our entity, estimate #, bid name',
     'Duplicate Follow-up CRM / startup / Proposify identity fields',
+    'Connect to Proposify — this sheet replaces it',
   ],
 };
 

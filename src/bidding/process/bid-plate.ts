@@ -3,6 +3,7 @@
  * Company-wide list stays on `GET /bids`. Edit is still team-assigned (`canEdit`).
  */
 import { APP_ROLE_IDS, isAdminPanelRole, type AppRoleId } from '../../auth/rbac-catalog';
+import { indexPeopleByName, lookupPersonByName } from './bid-crew';
 
 export const NEW_BID_DAYS = 7;
 export const UPCOMING_DAYS = 7;
@@ -276,55 +277,65 @@ export type DashboardMessage = {
 export const NOTIFICATION_LIMIT = 50;
 
 export type DashboardNotification = {
-  kind: 'message' | 'due' | 'new_bid' | 'comment_mention';
+  kind: 'due' | 'assigned' | 'note' | 'comment_mention';
   title: string;
   body: string | null;
   bidId?: string;
   commentId?: number;
-  conversationId?: string;
   at?: string | null;
 };
 
-export function dashboardNotifications<
-  T extends PlateRowBase & { id?: string; estimateNumber?: string | null; bidName?: string | null },
->(
-  groups: Array<{ id: PlateGroupId; rows: T[] }>,
-  messages: DashboardMessage[],
-): DashboardNotification[] {
+export type NotificationViewer = { name: string; email?: string | null };
+
+export type PersonalBidRow = PlateRowBase & {
+  id?: string;
+  estimateNumber?: string | null;
+  bidName?: string | null;
+  internalBidDate?: string | null;
+  assignees?: { name: string; role: string }[];
+};
+
+/** Roles on this bid whose name or email is this person. */
+export function viewerRolesOnBid(assignees: { name: string; role: string }[] | undefined, viewer: NotificationViewer): string[] {
+  const name = viewer.name.trim();
+  if (!name && !viewer.email) return [];
+  const map = indexPeopleByName([{ name, email: viewer.email ?? null, firstName: null, lastName: null }]);
+  return (assignees ?? []).filter((a) => lookupPersonByName(map, a.name)).map((a) => a.role);
+}
+
+/**
+ * Bell rows for bids this person is actually on.
+ * One row per bid: due when their bid date or takeoff turn-in is close, otherwise the assignment.
+ */
+export function personalBidNotifications(rows: PersonalBidRow[], viewer: NotificationViewer, today = todayYmd()): DashboardNotification[] {
   const out: DashboardNotification[] = [];
-  for (const m of messages) {
-    if (!(m.unreadCount > 0)) continue;
+  for (const row of rows) {
+    if ((row.status ?? 'draft') === 'archived') continue;
+    const outcome = row.outcomeStatus ?? 'open';
+    if (outcome !== 'open' && outcome !== 'awarded') continue;
+    const roles = viewerRolesOnBid(row.assignees, viewer);
+    if (!roles.length) continue;
+    const title = row.bidName?.trim() || row.estimateNumber || 'Bid';
+    const bidWhen = plateCalendarDate(row);
+    const takeoff = roles.some((r) => r.startsWith('Takeoff'));
+    const turnIn = takeoff ? (row.internalBidDate ?? '').trim().slice(0, 10) : '';
+    const hot = (d: string | null | undefined) => {
+      const b = dueBucket(d, today);
+      return b === 'overdue' || b === 'due' || b === 'upcoming';
+    };
+    const bits = [`Assigned as ${roles.join(', ')}`];
+    if (hot(bidWhen)) bits.push(`Bid date ${bidWhen}`);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(turnIn) && hot(turnIn)) bits.push(`Takeoff turn-in ${turnIn}`);
+    const isDue = bits.length > 1;
     out.push({
-      kind: 'message',
-      title: m.title?.trim() || 'Message',
-      body: m.lastMessagePreview,
-      conversationId: m.conversationId,
-      at: m.lastMessageAt,
+      kind: isDue ? 'due' : 'assigned',
+      title,
+      body: bits.join(' · '),
+      bidId: row.id,
+      at: (hot(bidWhen) ? bidWhen : null) || (hot(turnIn) ? turnIn : null),
     });
   }
-  const due = groups.find((g) => g.id === 'due')?.rows ?? [];
-  for (const r of due) {
-    const when = plateCalendarDate(r);
-    out.push({
-      kind: 'due',
-      title: r.bidName?.trim() || r.estimateNumber || 'Bid due',
-      body: when ? `Bid date ${when}` : 'Due',
-      bidId: r.id,
-      at: when,
-    });
-  }
-  const assigned = groups.find((g) => g.id === 'assigned')?.rows ?? [];
-  for (const r of assigned) {
-    if (!r.isNew) continue;
-    if (due.some((d) => d.id && d.id === r.id)) continue;
-    out.push({
-      kind: 'new_bid',
-      title: r.bidName?.trim() || r.estimateNumber || 'New bid',
-      body: 'Updated in the last 7 days',
-      bidId: r.id,
-    });
-  }
-  return out.slice(0, NOTIFICATION_LIMIT);
+  return out;
 }
 
 /** Mirrors `STAGE_LABELS` in bid-process — kept here to avoid a circular import. */

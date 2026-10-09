@@ -12,6 +12,7 @@ import {
   normalizeJobNumberKey,
 } from '../common/job-number-match.util';
 import {
+  findSitelineContractsForJob,
   resolveSitelineBillDollars as resolveSitelineBillDollarsFromDb,
   sitelineLatestTotalValueToDollars,
 } from '../siteline/siteline-contract-bill.util';
@@ -166,9 +167,7 @@ export class ClearstoryContractComparisonService {
     pool: ClearstoryProject[],
     job: string,
   ): Promise<ClearstoryProject> {
-    const sitelineMatches = await this.sitelineContracts.find({
-      where: [{ internalProjectNumber: job }, { projectNumber: job }],
-    });
+    const sitelineMatches = await findSitelineContractsForJob(this.sitelineContracts, job);
     const activeSiteline = sitelineMatches.filter((c) => isSitelineContractActive(c.status));
     const sitelineTotal = activeSiteline.reduce((sum, c) => {
       const d = sitelineLatestTotalValueToDollars(c.latestTotalValue);
@@ -292,10 +291,7 @@ export class ClearstoryContractComparisonService {
       };
     }
 
-    const sitelineMatches = await this.sitelineContracts.find({
-      where: [{ internalProjectNumber: jobNumber }, { projectNumber: jobNumber }],
-      order: { lastSyncedAt: 'DESC' },
-    });
+    const sitelineMatches = await findSitelineContractsForJob(this.sitelineContracts, jobNumber);
 
     const deduped = Array.from(new Map(sitelineMatches.map((c) => [c.id, c])).values());
     const activeSiteline = deduped.filter((c) => isSitelineContractActive(c.status));

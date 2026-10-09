@@ -70,6 +70,7 @@ export { BidPreference } from './bid-preference.entity';
 export { BidPayrollBurden, BurdenRateType } from './bid-payroll-burden.entity';
 export { AppFile } from './app-file.entity';
 export { BidAttachment } from './bid-attachment.entity';
+export { BidTogalInstruction } from './bid-togal-instruction.entity';
 export { BidComment, BidCommentAttachment, BidCommentMention } from './bid-comment.entity';
 export { BidActivityLog, BidActivityAction, BidActivityArea } from './bid-activity-log.entity';
 export { BidSpecSystem } from './bid-spec-system.entity';

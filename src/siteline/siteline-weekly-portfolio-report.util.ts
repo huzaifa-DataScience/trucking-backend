@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { sitelineJobLabel } from '../common/job-number-match.util';
 import { SitelineAgingContract, SitelineContract } from '../database/entities';
 import { ClearstoryContractComparisonService } from '../clearstory/clearstory-contract-comparison.service';
 import {
@@ -48,7 +49,7 @@ export async function buildPortfolioReportRows(
   const rows: PortfolioReportRow[] = [];
 
   for (const ac of contracts) {
-    const jobNumber = ac.internalProjectNumber?.trim() || ac.projectNumber?.trim() || '';
+    const jobNumber = sitelineJobLabel(ac);
     const overdueCents = overdueCentsFromAgingContract(ac, daysThreshold);
     const totalCents = totalAgedCentsFromAgingContract(ac);
     if (totalCents <= 0) continue;

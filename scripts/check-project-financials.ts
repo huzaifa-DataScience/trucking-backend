@@ -6,6 +6,7 @@ import {
   emptyFoundationMaps,
   pickFoundationCost,
 } from '../src/project-financials/foundation-job-cost';
+import { jobNumbersEquivalent, sitelineContractMatchesJob } from '../src/common/job-number-match.util';
 import {
   pfBilling,
   pfContract,
@@ -27,6 +28,30 @@ function assert(cond: unknown, msg: string): void {
 
 assert(pfJobKey('09920') === '9920', 'job key strips leading zeros');
 assert(pfJobKey('12201 - 02') === '12201', 'job key uses leading digits');
+assert(jobNumbersEquivalent('12201', '12201 - 02'), 'phase suffix is the same job');
+assert(pfJobKey('21138a - M&T') === '21138a', 'lettered job stays');
+assert(!jobNumbersEquivalent('21138', '21138a'), '21138 is not 21138a');
+assert(
+  sitelineContractMatchesJob(
+    { projectName: '21138 - M&T', internalProjectNumber: '21138' },
+    '21138',
+  ),
+  'base contract matches 21138',
+);
+assert(
+  !sitelineContractMatchesJob(
+    { projectName: '21138a - M&T', internalProjectNumber: '21138' },
+    '21138',
+  ),
+  '21138a is not pulled into 21138',
+);
+assert(
+  sitelineContractMatchesJob(
+    { projectName: '21138a - M&T', internalProjectNumber: '21138' },
+    '21138a',
+  ),
+  '21138a matches itself',
+);
 
 assert(pickLatestPayApp([{ number: 1 }, { number: 4 }, { number: 2 }])?.number === 4, 'latest pay app');
 assert(pickLatestPayApp([]) === null, 'empty pay apps');

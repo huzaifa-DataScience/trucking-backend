@@ -360,7 +360,7 @@ Use when the user picks a wage rate to show **single-tier** burden + breakdown (
     { "id": "assigned", "title": "Assigned", "columns": [], "rows": [] }
   ],
   "messages": { "totalUnread": 3, "items": [{ "conversationId": "…", "title": "Mike", "unreadCount": 2, "lastMessagePreview": "…" }] },
-  "notifications": [{ "kind": "message", "title": "Mike", "conversationId": "…" }, { "kind": "due", "title": "Weinberg", "bidId": "12" }]
+  "notifications": [{ "kind": "due", "title": "Weinberg", "bidId": "12" }]
 }
 ```
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   StreamableFile,
@@ -16,7 +18,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards';
@@ -26,12 +28,14 @@ import { MAX_COMMENT_IMAGES } from './bidding-comments';
 import { BiddingAttachmentsService } from './bidding-attachments.service';
 import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingService } from './bidding.service';
+import { TogalService } from './togal.service';
 import {
   parseBidListPage,
   parseBidListPageSize,
   parseBidListSort,
   parseBidListSortDir,
 } from './bid-list-page';
+import { IsString, MaxLength } from 'class-validator';
 import {
   CalculateBidDto,
   CreateBidDto,
@@ -42,6 +46,12 @@ import {
   SetOutcomeDto,
 } from './dto/bidding.dto';
 
+class SaveTogalScriptDto {
+  @IsString()
+  @MaxLength(500_000)
+  body!: string;
+}
+
 @Controller('bids')
 @UseGuards(JwtAuthGuard)
 export class BiddingController {
@@ -49,6 +59,7 @@ export class BiddingController {
     private readonly bidding: BiddingService,
     private readonly attachments: BiddingAttachmentsService,
     private readonly comments: BiddingCommentsService,
+    private readonly togal: TogalService,
   ) {}
 
   @Get()
@@ -104,6 +115,32 @@ export class BiddingController {
   @Get('my-plate')
   async myPlate(@CurrentUser() user: User) {
     return this.bidding.myPlate(user);
+  }
+
+  /** One instruction set for Togal chat. Register before `@Get(':id')`. */
+  @Get('togal/script')
+  getTogalScript(@CurrentUser() user: User) {
+    return this.togal.getScript(user);
+  }
+
+  @Put('togal/script')
+  saveTogalScript(@Body() dto: SaveTogalScriptDto, @CurrentUser() user: User) {
+    return this.togal.saveScript(user, dto.body);
+  }
+
+  @Get('togal/status')
+  togalStatus(@CurrentUser() user: User) {
+    return this.togal.status(user);
+  }
+
+  @Post('togal/connect')
+  togalConnect(@CurrentUser() user: User) {
+    return this.togal.beginConnect(user);
+  }
+
+  @Post('togal/connect/poll')
+  togalConnectPoll(@CurrentUser() user: User) {
+    return this.togal.pollConnect(user);
   }
 
   /** Same filters as `GET /bids`. Register before `@Get(':id')`. */
@@ -164,6 +201,12 @@ export class BiddingController {
     return this.bidding.getCompanyInfoPrefillFromJob(jobId);
   }
 
+  /** Files on bids linked to this job. Same download paths as the bid. Register before `@Get(':id')`. */
+  @Get('job/:jobId/files')
+  jobFiles(@Param('jobId', ParseIntPipe) jobId: number) {
+    return this.attachments.listForJob(jobId);
+  }
+
   @Get(':id/activity')
   async getActivity(@Param('id', ParseIntPipe) id: number) {
     return this.bidding.getActivity(id);
@@ -212,6 +255,40 @@ export class BiddingController {
   ) {
     await this.bidding.assertUserCanEdit(id, user);
     return this.bidding.patch(id, dto, user?.id);
+  }
+
+  @Post(':id/togal/load')
+  async togalLoad(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+    await this.bidding.assertUserCanEdit(id, user);
+    const togal = await this.togal.loadBid(id);
+    const bid = await this.bidding.patch(id, { process: { togal } }, user.id);
+    if (togal.warning) throw new BadRequestException(togal.warning);
+    return bid;
+  }
+
+  @Post(':id/togal/run-script')
+  async togalRunScript(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+    await this.bidding.assertUserCanEdit(id, user);
+    return this.togal.runScript(id);
+  }
+
+  @Post(':id/togal/pull')
+  async togalPull(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+    await this.bidding.assertUserCanEdit(id, user);
+    const files = await this.togal.pullExports(id);
+    for (const file of files) {
+      await this.attachments.upload(
+        id,
+        {
+          buffer: file.bytes,
+          mimetype: file.mimeType,
+          originalname: file.name,
+          size: file.bytes.length,
+        } as Express.Multer.File,
+        { label: 'takeoff', category: 'takeoff_markup', userId: user.id },
+      );
+    }
+    return this.bidding.getDetail(id, user, { skipSpecCodes: true });
   }
 
   @Post(':id/link-duplicate')
@@ -271,20 +348,46 @@ export class BiddingController {
 
   @Post(':id/attachments')
   @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(), // ponytail: no byte cap; whole file in RAM — disk stream if Nest OOMs
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'file', maxCount: 1 },
+        { name: 'files', maxCount: 200 },
+      ],
+      { storage: memoryStorage() }, // ponytail: no byte cap; whole file in RAM — disk stream if Nest OOMs
+    ),
   )
   async uploadAttachment(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles()
+    uploaded: { file?: Express.Multer.File[]; files?: Express.Multer.File[] },
     @Body('label') label?: string,
     @Body('category') category?: string,
     @Body('drawingCategory') drawingCategory?: string,
     @CurrentUser() user?: User,
   ) {
     await this.bidding.assertUserCanEdit(id, user);
-    return this.attachments.upload(id, file, { label, category, drawingCategory, userId: user?.id });
+    const incoming = [...(uploaded?.file ?? []), ...(uploaded?.files ?? [])];
+    if (!incoming.length) throw new BadRequestException('No file uploaded (field name: file)');
+    const saved: Awaited<ReturnType<BiddingAttachmentsService['uploadExpanded']>> = [];
+    for (const file of incoming) {
+      saved.push(...(await this.attachments.uploadExpanded(id, file, { label, category, drawingCategory, userId: user?.id })));
+    }
+    const hub = saved.some((row) => row.label === 'drawings' || row.label === 'specifications' || row.label === 'addenda');
+    let togal: { sent: boolean; message: string | null } | null = null;
+    if (hub) {
+      try {
+        const state = await this.togal.loadBid(id);
+        await this.bidding.patch(id, { process: { togal: state } }, user?.id);
+        togal = { sent: saved.every((row) => state.sentAttachmentIds.includes(row.id)), message: state.warning };
+      } catch (e) {
+        togal = {
+          sent: false,
+          message: e instanceof Error ? e.message : 'Togal did not take this file. It is saved on this bid.',
+        };
+      }
+    }
+    if (saved.length === 1) return { ...saved[0], togal };
+    return { attachments: saved, togal };
   }
 
   @Patch(':id/attachments/:attachmentId')

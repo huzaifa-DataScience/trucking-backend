@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type { ReadStream } from 'fs';
 import { Bid, BidAttachment, AppFile } from '../database/entities';
 import { BiddingActivityService } from './bidding-activity.service';
@@ -15,6 +15,7 @@ import {
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
 import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES, resolveAttachmentCategory } from './process/bid-process';
+import { readZipEntries } from './zip-entries';
 
 export interface BidAttachmentDto {
   id: number;
@@ -40,6 +41,31 @@ export class BiddingAttachmentsService {
     private readonly activity: BiddingActivityService,
   ) {}
 
+  async listForJob(jobId: number): Promise<Array<BidAttachmentDto & { bidId: number; bidName: string | null; estimateNumber: string | null }>> {
+    const bids = await this.bidRepo.find({
+      where: { jobId, isDeleted: false },
+      select: { id: true, bidName: true, estimateNumber: true },
+    });
+    if (bids.length === 0) return [];
+    const byId = new Map(bids.map((b) => [b.id, b]));
+    const rows = await this.attachmentRepo.find({
+      where: { bidId: In(bids.map((b) => b.id)) },
+      relations: ['file'],
+      order: { id: 'DESC' },
+    });
+    return rows
+      .filter((r) => r.file && !r.file.isDeleted)
+      .map((r) => {
+        const bid = byId.get(r.bidId);
+        return {
+          ...this.toDto(r),
+          bidId: r.bidId,
+          bidName: bid?.bidName ?? null,
+          estimateNumber: bid?.estimateNumber ?? null,
+        };
+      });
+  }
+
   async listForBid(bidId: number, opts?: { skipExistCheck?: boolean }): Promise<BidAttachmentDto[]> {
     if (!opts?.skipExistCheck) await this.requireBid(bidId);
     const rows = await this.attachmentRepo.find({
@@ -53,6 +79,44 @@ export class BiddingAttachmentsService {
   }
 
   async upload(
+    bidId: number,
+    file: Express.Multer.File,
+    opts: { label?: string; category?: string; drawingCategory?: string; userId?: number; skipActivity?: boolean },
+  ): Promise<BidAttachmentDto> {
+    const [one] = await this.uploadExpanded(bidId, file, opts);
+    return one;
+  }
+
+  /**
+   * A drawings/specs/addenda zip becomes one attachment per file inside it,
+   * named with the folder path. Any other upload stays one file.
+   */
+  async uploadExpanded(
+    bidId: number,
+    file: Express.Multer.File,
+    opts: { label?: string; category?: string; drawingCategory?: string; userId?: number; skipActivity?: boolean },
+  ): Promise<BidAttachmentDto[]> {
+    const label = opts.label?.trim() || '';
+    const expand = label === 'drawings' || label === 'specifications' || label === 'addenda';
+    const zip = expand && this.looksLikeZip(file) ? readZipEntries(file.buffer) : [];
+    const pieces = zip
+      .map((entry) => {
+        const mimeType = this.mimeFromName(entry.name);
+        if (!mimeType || entry.bytes.length === 0) return null;
+        return { buffer: entry.bytes, originalname: entry.name, mimetype: mimeType };
+      })
+      .filter((piece): piece is { buffer: Buffer; originalname: string; mimetype: string } => !!piece);
+    if (pieces.length === 0) {
+      return [await this.storeOne(bidId, file, opts)];
+    }
+    const out: BidAttachmentDto[] = [];
+    for (const piece of pieces) {
+      out.push(await this.storeOne(bidId, { ...file, buffer: piece.buffer, originalname: piece.originalname, mimetype: piece.mimetype, size: piece.buffer.length }, opts));
+    }
+    return out;
+  }
+
+  private async storeOne(
     bidId: number,
     file: Express.Multer.File,
     opts: { label?: string; category?: string; drawingCategory?: string; userId?: number; skipActivity?: boolean },
@@ -76,7 +140,6 @@ export class BiddingAttachmentsService {
     if (opts.drawingCategory != null && !(DRAWING_CATEGORIES as readonly string[]).includes(opts.drawingCategory)) {
       throw new BadRequestException(`Invalid drawingCategory: ${opts.drawingCategory}`);
     }
-
     const count = await this.attachmentRepo.count({ where: { bidId } });
     if (count >= MAX_BID_ATTACHMENTS_PER_BID) {
       throw new BadRequestException(`Maximum ${MAX_BID_ATTACHMENTS_PER_BID} attachments per bid`);
@@ -216,8 +279,26 @@ export class BiddingAttachmentsService {
     };
   }
 
+  private looksLikeZip(file: Express.Multer.File): boolean {
+    const mime = file.mimetype?.trim() || '';
+    return mime === 'application/zip' || mime === 'application/x-zip-compressed' || /\.zip$/i.test(file.originalname || '');
+  }
+
+  private mimeFromName(name: string): string | null {
+    const ext = name.match(/(\.[a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+    if (!ext) return null;
+    for (const [mime, known] of Object.entries(ALLOWED_UPLOAD_MIMES)) {
+      if (known === ext) return mime;
+    }
+    return null;
+  }
+
+  /** Keep folder/file.pdf. Drop .. and a leading slash. */
   private sanitizeOriginalName(name: string): string {
-    const base = (name || 'upload').replace(/[/\\]/g, '_').trim();
-    return base.slice(0, 200) || 'upload';
+    const parts = (name || 'upload')
+      .split(/[/\\]+/)
+      .map((part) => part.trim())
+      .filter((part) => part && part !== '.' && part !== '..');
+    return parts.join('/').slice(0, 255) || 'upload';
   }
 }

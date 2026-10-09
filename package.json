@@ -4,8 +4,8 @@
   "description": "NestJS dashboard API",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main",
+    "build": "node api.js && tsc -p tsconfig.build.json",
+    "start": "node api.js && node dist/main",
     "start:dev": "tsc -p tsconfig.build.json --watch",
     "start:debug": "node --inspect dist/main",
     "start:prod": "node dist/main",
