@@ -3,7 +3,7 @@
 **Give this file to FE.** One meeting, one doc.  
 Live contract: `GET /lookups/bidding/process-meta`.
 
-**Out:** in-app Bluebeam / Revu, in-app chat (Connecteam only).
+**Out:** in-app Bluebeam / Revu, in-app PDF editor, in-app chat (Connecteam only). Markup is Togal.ai.
 
 ---
 
@@ -64,9 +64,11 @@ Drawings / Specs are UI tabs (`stage: null`, `fromHub: true`). Handoff **is** `e
 
 Takeoff: **one** file drop (`label=takeoff`, `category=takeoff_markup`). Zip / snaps / recap — jo bhi, same box. List `takeoffTurnedIn` = koi bhi takeoff file. **No** zip vs snap vs recap slots. **No** per-scope tick.
 
-Two buckets: `project_documents` (John’s hub) vs `takeoff_markup` (after offline Revu). Takeoff tab = markup only, not the whole project folder.
+Two buckets: `project_documents` (files already on the bid) vs `takeoff_markup` (what comes back from Togal). Takeoff tab = snaps and the color-coded export, not the drawing set.
 
-Markup: download hub → **Revu offline** → re-upload markup. No in-app PDF editor.
+Markup: upload drawings, specs, and addenda on the bid. The server sends them to Togal. **Open in Togal** (`process.togal.projectUrl`) only to mark up. View and download the originals here, and on the job via `GET /bids/job/:jobId/files`. Snaps and the color-coded export drop on Takeoff (`category=takeoff_markup`). Full FE build: [FRONTEND_TOGAL.md](FRONTEND_TOGAL.md). No in-app PDF editor.
+
+7 Oct estimating meeting and the printed proposal: [FRONTEND_EST.md](FRONTEND_EST.md).
 
 ---
 
@@ -74,7 +76,7 @@ Markup: download hub → **Revu offline** → re-upload markup. No in-app PDF ed
 
 | Tab | Stage | Bind |
 |-----|--------|------|
-| Proposal | `proposal` | `baseBid` / `systems` / `computed`. Identity read-only (`proposalEditor`). |
+| Proposal | `proposal` | `baseBid` / `systems` / `computed` plus `process.proposalSheet` (the printed proposal). Identity read-only (`proposalEditor`). Guide: [FRONTEND_EST.md](FRONTEND_EST.md). |
 | Post-bid | `post_bid` | `process.intelligence` + GC/mechanical `stillBidding` (`postBidEditor`) |
 | Outcome | `result` | `POST /bids/:id/outcome` — `workflow.showAward` / `showLost` |
 
@@ -88,8 +90,9 @@ Do not PATCH `salesActivities`. Do not turn Estimates into a post-bid queue.
 
 | `kind` | Click |
 |--------|--------|
-| `due` / `new_bid` | `/bidding/:bidId` |
-| `comment_mention` | Notes drawer (`commentId`) |
-| `message` | Connecteam (`conversationId`) |
+| `assigned` / `due` | `/bidding/:bidId` — only bids this person is on |
+| `note` / `comment_mention` | Notes drawer (`commentId`) |
+
+Chat stays on the messages module. Do not copy it into `notifications[]`.
 
 `defaults.notifications` is `true`.

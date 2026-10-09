@@ -89,7 +89,7 @@ Team label: `GET /lookups/bidding/teams` + `row.teamId`.
 | `assistant_estimator` / `user` | Team setup + takeoff | Same |
 | `project_manager` / `operations_manager` | Awarded jobs | Awarded list |
 
-`messages.totalUnread` + `messages.items[]` = Connecteam inbox (same source as `/connecteam/conversations`). `notifications[]` mixes unread chats, due bids, and `isNew` assigned rows. There is **no** separate email/inbox product — `process-meta.defaults.notifications` stays false (handoff emails).
+`messages.totalUnread` + `messages.items[]` = Connecteam inbox (same source as `/connecteam/conversations`). `notifications[]` is due bids, new bids, and comment mentions. Chat is not a notification.
 
 Empty widgets are OK. Do not replace the Estimates list with the dashboard.
 

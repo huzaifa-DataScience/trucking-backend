@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { jobNumbersEquivalent } from '../common/job-number-match.util';
+import { jobNumbersEquivalent, sitelineJobLabel, sitelineRowJobKey } from '../common/job-number-match.util';
 import { ClearstoryContractComparisonService } from '../clearstory/clearstory-contract-comparison.service';
 import {
   emptyFoundationMaps,
@@ -189,13 +189,13 @@ export class ProjectFinancialsService {
 
     const agingByJob = new Map<string, SitelineAgingContract>();
     for (const row of agingRows) {
-      const key = pfJobKey(row.internalProjectNumber) ?? pfJobKey(row.projectNumber);
+      const key = sitelineRowJobKey(row) ?? pfJobKey(row.internalProjectNumber) ?? pfJobKey(row.projectNumber);
       if (key && !agingByJob.has(key)) agingByJob.set(key, row);
     }
 
     const slByJob = new Map<string, SitelineContract[]>();
     for (const c of contracts) {
-      const key = pfJobKey(c.internalProjectNumber) ?? pfJobKey(c.projectNumber);
+      const key = sitelineRowJobKey(c) ?? pfJobKey(c.internalProjectNumber) ?? pfJobKey(c.projectNumber);
       if (!key) continue;
       const list = slByJob.get(key) ?? [];
       list.push(c);
@@ -298,7 +298,7 @@ export class ProjectFinancialsService {
       });
 
       const jobNumber =
-        lead?.internalProjectNumber?.trim() ||
+        (lead ? sitelineJobLabel(lead) : '') ||
         cs?.jobNumber?.trim() ||
         lead?.projectNumber?.trim() ||
         key;
