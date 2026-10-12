@@ -3,6 +3,7 @@ import { SitelineService } from './siteline.service';
 import { SitelineReportService } from './siteline-report.service';
 import { SitelineEntityConfigService } from './siteline-entity-config.service';
 import { SitelineReconciliationGapsService } from './siteline-reconciliation-gaps.service';
+import { SitelineProjectDetailService } from './siteline-project-detail.service';
 import { Public } from '../auth/decorators';
 import { JwtAuthGuard } from '../auth/guards';
 
@@ -44,6 +45,7 @@ export class SitelineController {
     private readonly report: SitelineReportService,
     private readonly entityConfig: SitelineEntityConfigService,
     private readonly reconciliationGaps: SitelineReconciliationGapsService,
+    private readonly projectDetail: SitelineProjectDetailService,
   ) {}
 
   /** Check if Siteline is configured (for debugging). */
@@ -126,6 +128,16 @@ export class SitelineController {
   @Get('contracts/:id')
   async getContract(@Param('id') id: string) {
     return this.siteline.getContract(id);
+  }
+
+  /**
+   * Billing project page: one Siteline contract with its pay apps, PM, days-to-paid,
+   * and the Clearstory project (matched by job number) with its change orders. Synced data only.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('projects/:contractId')
+  async getProjectDetail(@Param('contractId') contractId: string) {
+    return this.projectDetail.getDetail(contractId);
   }
 
   /** Get a single pay app by id (real data). */
