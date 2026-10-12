@@ -14,7 +14,10 @@ import { SitelinePjWeeklyReportService } from './siteline-pj-weekly-report.servi
 import { SitelineReconciliationGapsService } from './siteline-reconciliation-gaps.service';
 import { SitelineClearstoryGapAlertService } from './siteline-clearstory-gap-alert.service';
 import { ClearstoryModule } from '../clearstory/clearstory.module';
+import { SitelineProjectDetailService } from './siteline-project-detail.service';
 import {
+  ClearstoryCor,
+  ClearstoryProject,
   SitelineContract,
   SitelinePayApp,
   SitelineAgingSummary,
@@ -38,6 +41,9 @@ import { SitelineEntityConfigService } from './siteline-entity-config.service';
       SitelineAgingSummary,
       SitelineAgingContract,
       SitelineEntityConfig,
+      // Read-only, for the billing project page's Clearstory section.
+      ClearstoryProject,
+      ClearstoryCor,
     ]),
     EmailTemplateModule,
     AppSettingsModule,
@@ -55,6 +61,7 @@ import { SitelineEntityConfigService } from './siteline-entity-config.service';
     SitelinePjWeeklyReportService,
     SitelineReconciliationGapsService,
     SitelineClearstoryGapAlertService,
+    SitelineProjectDetailService,
   ],
   exports: [
     SitelineService,
