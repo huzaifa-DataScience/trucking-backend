@@ -25,8 +25,12 @@ export class ClearstoryTablesController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('projectId') projectId?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
   ) {
-    return this.tables.listTags(page, pageSize, projectId);
+    return this.tables.listTags(page, pageSize, projectId, status, search, sort, sortDir);
   }
 
   @Get('customers')
