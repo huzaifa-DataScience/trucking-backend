@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, In, Repository } from 'typeorm';
+import { FindOptionsOrder, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import {
   ClearstoryApiPayload,
   ClearstoryCompany,
   ClearstoryContract,
   ClearstoryCor,
   ClearstoryCustomer,
+  ClearstoryProject,
   ClearstoryTag,
 } from '../database/entities';
 
@@ -36,7 +37,23 @@ export type ClearstoryTablePage<T extends ClearstoryTableRow = ClearstoryTableRo
   pageSize: number;
   total: number;
   rows: T[];
+  /** Tags only: row counts per status for the current project/search filter (ignores the status filter). */
+  statusCounts?: Record<string, number>;
 };
+
+/** Clearstory T&M tag statuses (Clearstory_Tags.Status). */
+export const CLEARSTORY_TAG_STATUSES = ['awaiting_signature', 'signed', 'draft', 'rejected'] as const;
+
+/** Sortable tag columns (API `sort` value -> entity property). Anything else falls back to newest-updated first. */
+const TAG_SORT_COLUMNS = {
+  tagNumber: 'paddedTagNumber',
+  jobNumber: 'jobNumber',
+  title: 'title',
+  workDate: 'dateOfWorkPerformed',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+} as const satisfies Record<string, keyof ClearstoryTag>;
 
 function iso(d: Date | null | undefined): string | null {
   return d?.toISOString?.() ?? null;
@@ -174,6 +191,7 @@ export class ClearstoryTableService {
     @InjectRepository(ClearstoryCustomer) private readonly customers: Repository<ClearstoryCustomer>,
     @InjectRepository(ClearstoryContract) private readonly contracts: Repository<ClearstoryContract>,
     @InjectRepository(ClearstoryCompany) private readonly companies: Repository<ClearstoryCompany>,
+    @InjectRepository(ClearstoryProject) private readonly projects: Repository<ClearstoryProject>,
   ) {}
 
   private async loadPayloadMap(
@@ -239,32 +257,89 @@ export class ClearstoryTableService {
     pageRaw?: string,
     pageSizeRaw?: string,
     projectIdRaw?: string,
+    statusRaw?: string,
+    searchRaw?: string,
+    sortRaw?: string,
+    sortDirRaw?: string,
   ): Promise<ClearstoryTablePage> {
     const { page, pageSize, skip } = clampPagination(pageRaw, pageSizeRaw);
-    const where: FindOptionsWhere<ClearstoryTag> = {};
+    const base: FindOptionsWhere<ClearstoryTag> = {};
     if (projectIdRaw !== undefined && projectIdRaw !== '') {
       const pid = Number.parseInt(projectIdRaw, 10);
-      if (Number.isFinite(pid)) where.projectId = pid;
+      if (Number.isFinite(pid)) base.projectId = pid;
     }
+    // Search matches tag #, title or job #; each OR branch carries the same base filter.
+    const search = searchRaw?.trim();
+    const like = search ? Like(`%${search.replace(/[%_[]/g, '[$&]')}%`) : undefined;
+    const withSearch = (w: FindOptionsWhere<ClearstoryTag>): FindOptionsWhere<ClearstoryTag>[] =>
+      like
+        ? [
+            { ...w, paddedTagNumber: like },
+            { ...w, number: like },
+            { ...w, title: like },
+            { ...w, jobNumber: like },
+          ]
+        : [w];
+
+    const status = (CLEARSTORY_TAG_STATUSES as readonly string[]).includes(statusRaw ?? '') ? statusRaw : undefined;
+    const where = withSearch(status ? { ...base, status } : base);
+
+    const sortProp = TAG_SORT_COLUMNS[sortRaw as keyof typeof TAG_SORT_COLUMNS];
+    const sortDir: 'ASC' | 'DESC' = sortDirRaw?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const order: FindOptionsOrder<ClearstoryTag> = sortProp
+      ? { [sortProp]: sortDir, id: 'ASC' }
+      : { updatedAt: 'DESC', id: 'ASC' };
+
     const [entities, total] = await this.tags.findAndCount({
       where,
-      order: { updatedAt: 'DESC', id: 'ASC' },
+      order,
       skip,
       take: pageSize,
     });
+
+    // Per-status counts for the tabs (project + search applied, status not).
+    const countQb = this.tags
+      .createQueryBuilder('t')
+      .select('t.status', 'status')
+      .addSelect('COUNT(*)', 'n')
+      .groupBy('t.status');
+    if (base.projectId !== undefined) countQb.andWhere('t.projectId = :pid', { pid: base.projectId });
+    if (search) {
+      countQb.andWhere(
+        '(t.paddedTagNumber LIKE :q OR t.number LIKE :q OR t.title LIKE :q OR t.jobNumber LIKE :q)',
+        { q: `%${search.replace(/[%_[]/g, '[$&]')}%` },
+      );
+    }
+    const statusCounts: Record<string, number> = {};
+    for (const r of await countQb.getRawMany<{ status: string | null; n: number | string }>()) {
+      statusCounts[r.status ?? 'unknown'] = Number(r.n);
+    }
+
+    // Project name + customer for the "Job · customer" column.
+    const projectIds = [...new Set(entities.map((e) => e.projectId).filter((x): x is number => x != null))];
+    const projectRows = projectIds.length
+      ? await this.projects.find({ where: { id: In(projectIds) }, select: { id: true, name: true, customerName: true } })
+      : [];
+    const projectById = new Map(projectRows.map((p) => [p.id, p]));
+
     const keys = entities.map((e) => String(e.id));
     const payloadMap = await this.loadPayloadMap(CLEARSTORY_TABLE_RESOURCE_TYPES.tag, keys);
     const rows: ClearstoryTableRow[] = entities.map((e) => {
       const pk = String(e.id);
       const hit = payloadMap.get(pk);
       const swagger = hit?.swagger ?? null;
+      const project = e.projectId != null ? projectById.get(e.projectId) : undefined;
       return {
         resourceKey: pk,
         swagger,
-        typedMirror: tagToMirror(e),
+        typedMirror: {
+          ...tagToMirror(e),
+          projectName: project?.name ?? null,
+          customerName: project?.customerName ?? null,
+        },
       };
     });
-    return { module: 'tags', page, pageSize, total, rows };
+    return { module: 'tags', page, pageSize, total, rows, statusCounts };
   }
 
   async listCustomers(pageRaw?: string, pageSizeRaw?: string): Promise<ClearstoryTablePage> {
