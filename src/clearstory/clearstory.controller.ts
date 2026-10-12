@@ -173,8 +173,8 @@ export class ClearstoryController {
       const qb = this.projects.createQueryBuilder('p');
       if (q) {
         qb.where(
-          '(LOWER(p.Name) LIKE :q OR LOWER(p.JobNumber) LIKE :q OR LOWER(p.CustomerName) LIKE :q)',
-          { q: `%${q}%` },
+          '(LOWER(p.Name) LIKE :q OR LOWER(p.JobNumber) LIKE :q OR LOWER(p.CustomerName) LIKE :q OR CAST(p.Id AS NVARCHAR(20)) = :qExact)',
+          { q: `%${q}%`, qExact: q },
         );
       }
       qb.orderBy('p.UpdatedAt', 'DESC').addOrderBy('p.Id', 'DESC');
@@ -203,8 +203,9 @@ export class ClearstoryController {
     // allColumns variant. Apply DB-side search + optional pagination.
     const qb = this.projects.createQueryBuilder('p');
     if (q) {
-      qb.where('(LOWER(p.Name) LIKE :q OR LOWER(p.JobNumber) LIKE :q OR LOWER(p.CustomerName) LIKE :q)', {
+      qb.where('(LOWER(p.Name) LIKE :q OR LOWER(p.JobNumber) LIKE :q OR LOWER(p.CustomerName) LIKE :q OR CAST(p.Id AS NVARCHAR(20)) = :qExact)', {
         q: `%${q}%`,
+        qExact: q,
       });
     }
     qb.orderBy('p.UpdatedAt', 'DESC').addOrderBy('p.Id', 'DESC');
