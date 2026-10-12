@@ -20,23 +20,21 @@ export async function loadAgingContractsFromLatestPerEntitySnapshots(
   agingContractRepo: Repository<SitelineAgingContract>,
   entityIds: readonly number[] = SITELINE_ENTITY_IDS,
 ): Promise<SitelineAgingContract[]> {
-  const merged: SitelineAgingContract[] = [];
-
-  for (const entityId of entityIds) {
-    const summaries = await agingSummaryRepo.find({
-      where: { entityId },
-      order: { id: 'DESC' },
-      take: 1,
-    });
-    const latest = summaries[0];
-    if (!latest) continue;
-
-    const contracts = await agingContractRepo.find({
-      where: { snapshotId: latest.id, entityId },
-    });
-
-    merged.push(...contracts);
-  }
+  const chunks = await Promise.all(
+    entityIds.map(async (entityId) => {
+      const summaries = await agingSummaryRepo.find({
+        where: { entityId },
+        order: { id: 'DESC' },
+        take: 1,
+      });
+      const latest = summaries[0];
+      if (!latest) return [] as SitelineAgingContract[];
+      return agingContractRepo.find({
+        where: { snapshotId: latest.id, entityId },
+      });
+    }),
+  );
+  const merged = chunks.flat();
 
   if (merged.length <= 1) return merged;
 

@@ -77,13 +77,15 @@ The user uploads on this bid. They do not go to Togal to drop the set.
 
 `POST /bids/:id/attachments` with `label` `drawings`, `specifications`, or `addenda`.
 
-The file is always saved. The same request sends it to Togal. Response is the attachment plus:
+The same request sends the file to Togal. The file is shown here only after Togal has it. Response is the attachment plus:
 
 ```json
 "togal": { "sent": true, "message": null }
 ```
 
-`sent: false` with a `message` means Togal did not take it (not connected, over 80 MB, or a tool error). The file is still on the bid. Show the message. Do not treat the upload as failed.
+If Togal does not take it, the request fails and the file is not kept. Show `message`. Deleting the file here deletes it on Togal too.
+
+The project is filed in the Togal folder whose name is the captain’s first name (`Mike Roberts` → folder `Mike`). No matching folder leaves it in All projects. A later captain change moves the project on the next upload.
 
 View and Download use `downloadPath`. A PDF opens in a new tab. There is no in-app editor.
 
@@ -97,9 +99,12 @@ When the bid has `jobId`, the same files are on `GET /bids/job/:jobId/files`. Ea
 
 | Field | Meaning |
 |-------|---------|
-| `projectUrl` | Set by the server when the project is created. Open button. No text field. |
-| `projectId` | Set by Load. Required before Run script and Pull. |
+| `projectUrl` | Open button when the server has an https Togal link. No text field. |
+| `projectId` | Set when the file is pushed. Required before Run script and Pull. |
+| `setId` | Drawing set on that project. Server only. |
+| `organizationId` | Togal organization. Server only. |
 | `sentAttachmentIds` | Attachment ids already pushed. Do not clear this on save. |
+| `files` | `{ attachmentId, fileId, pageIds }` so delete removes the same file on Togal. Do not clear this on save. |
 
 ### Load
 
@@ -107,7 +112,7 @@ When the bid has `jobId`, the same files are on `GET /bids/job/:jobId/files`. Ea
 
 Sends hub files whose id is not in `sentAttachmentIds`. Upload already does this. Load is the retry for anything still unsent. Returns the full bid (same shape as PATCH). Replace the bid. Copy `process.togal` into the process draft so the next save does not wipe it.
 
-A file over 80 MB stays on the bid and is skipped. That call returns 400 after the Togal link is saved. Toast the `message` and reload the bid.
+A file over 80 MB is not sent. Upload fails and that file is not kept. Load returns 400 after the Togal link is saved.
 
 ### Run script
 

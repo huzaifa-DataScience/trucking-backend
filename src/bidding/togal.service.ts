@@ -6,13 +6,15 @@ import {
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { promises as fs } from 'fs';
 import { Repository } from 'typeorm';
 import { Bid, BidAttachment, BidContent, Role, User } from '../database/entities';
 import { BidTogalInstruction } from '../database/entities/bid-togal-instruction.entity';
 import { FileStorageService } from '../files/file-storage.service';
-import { parseProcess } from './process/bid-process';
+import { UsersService } from '../users/users.service';
+import { mergeProcess, parseProcess } from './process/bid-process';
 import {
   fillToolArgs,
   firstUrl,
@@ -23,13 +25,30 @@ import {
   toolFiles,
   toolText,
 } from './togal-mcp.client';
+import { folderIdForCaptain, TogalRestClient, TogalSession } from './togal-rest.client';
 
 const ROW_ID = 1;
 /** ponytail: one nvarchar(max) row. If the script grows past this, raise the cap. */
 export const TOGAL_SCRIPT_MAX = 500_000;
-/** ponytail: whole file is base64'd into one MCP call. Bigger sets need Togal's own uploader. */
+/** Files larger than this are not sent. Bigger sets need Togal's own uploader. */
 const MAX_PUSH_BYTES = 80 * 1024 * 1024;
 const HUB_LABELS = ['drawings', 'specifications', 'addenda'] as const;
+
+function sessionRejected(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : '';
+  return /authenticate itself|unauthorized/i.test(message);
+}
+
+function pushMime(name: string, mime: string): string {
+  const lower = name.toLowerCase();
+  if (mime === 'image/png' || lower.endsWith('.png')) return 'image/png';
+  if (mime === 'image/jpeg' || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (mime === 'image/gif' || lower.endsWith('.gif')) return 'image/gif';
+  if (mime === 'image/tiff' || lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff';
+  if (mime === 'application/pdf' || lower.endsWith('.pdf')) return 'application/pdf';
+  if (mime.includes('zip') || lower.endsWith('.zip')) return 'application/zip';
+  return mime || 'application/octet-stream';
+}
 function exportMime(name: string, mime: string, bytes: Buffer): string {
   if (bytes.subarray(0, 4).toString() === '%PDF') return 'application/pdf';
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';
@@ -51,6 +70,9 @@ type InstructionRow = BidTogalInstruction;
 @Injectable()
 export class TogalService implements OnModuleInit {
   private readonly mcp = new TogalMcpClient();
+  private readonly rest = new TogalRestClient();
+  /** ponytail: one login for 6h. Togal session with remember lasts longer; re-login if a call 401s. */
+  private restSessionCache: { at: number; value: TogalSession } | null = null;
 
   constructor(
     @InjectRepository(BidTogalInstruction)
@@ -62,6 +84,8 @@ export class TogalService implements OnModuleInit {
     @InjectRepository(BidAttachment)
     private readonly attachments: Repository<BidAttachment>,
     private readonly storage: FileStorageService,
+    private readonly config: ConfigService,
+    private readonly users: UsersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -139,7 +163,15 @@ export class TogalService implements OnModuleInit {
     const row = await this.row();
     try {
       if (!row.clientId) row.clientId = await this.mcp.registerClient();
-      const device = await this.mcp.startDevice(row.clientId);
+      let device: Awaited<ReturnType<TogalMcpClient['startDevice']>>;
+      try {
+        device = await this.mcp.startDevice(row.clientId);
+      } catch (e) {
+        // ponytail: Togal drops old client ids. One re-register, then the error stands.
+        if (!(e instanceof TogalMcpError) || !/unknown oauth client/i.test(e.message)) throw e;
+        row.clientId = await this.mcp.registerClient();
+        device = await this.mcp.startDevice(row.clientId);
+      }
       const expires = new Date(Date.now() + device.expiresIn * 1000);
       row.deviceCode = device.deviceCode;
       row.deviceUserCode = device.userCode;
@@ -212,37 +244,45 @@ export class TogalService implements OnModuleInit {
   async loadBid(bidId: number): Promise<{
     projectUrl: string | null;
     projectId: string | null;
+    setId: string | null;
+    organizationId: string | null;
     sentAttachmentIds: number[];
+    files: { attachmentId: number; fileId: string; pageIds: string[] }[];
     warning: string | null;
   }> {
     const bid = await this.requireBid(bidId);
     const process = await this.processOf(bidId);
-    const token = await this.token();
-    const tools = await this.tools(token);
+    const session = await this.restSession();
     let projectId = process.togal.projectId;
-    let projectUrl = process.togal.projectUrl;
+    let setId = process.togal.setId;
+    const projectUrl = process.togal.projectUrl;
     const sent = new Set(process.togal.sentAttachmentIds);
+    const files = [...process.togal.files];
     const warnings: string[] = [];
     try {
-      if (!projectId) {
-        const create = this.requireTool(tools, [['create', 'project'], ['new', 'project']], 'create a project');
-        const created = await this.mcp.callTool(
-          token,
-          create.name,
-          fillToolArgs(create, { projectName: bid.bidName || bid.estimateNumber || `Bid ${bidId}`, name: bid.bidName || `Bid ${bidId}` }),
-        );
-        const text = toolText(created);
-        projectUrl = firstUrl(text) ?? projectUrl;
-        projectId = this.idFrom(created, text);
-        if (!projectId) {
-          throw new BadRequestException('Togal created a project but did not return an id');
+      const captainName = await this.captainFirstName(process);
+      let folderId: string | null = null;
+      if (captainName) {
+        try {
+          folderId = folderIdForCaptain(await this.rest.listFolders(session), captainName);
+        } catch (e) {
+          warnings.push(e instanceof Error ? e.message : 'Togal folders could not be read');
         }
       }
-      const upload =
-        pickTogalTool(tools, ['upload', 'drawing']) ??
-        pickTogalTool(tools, ['upload', 'file']) ??
-        pickTogalTool(tools, ['add', 'drawing']);
-      if (!upload) throw new BadRequestException(this.missing('upload a drawing', tools));
+      if (!projectId) {
+        projectId = await this.rest.createProject(
+          session,
+          bid.bidName || bid.estimateNumber || `Bid ${bidId}`,
+          folderId,
+        );
+      } else if (folderId) {
+        try {
+          await this.rest.moveProject(session, projectId, folderId);
+        } catch (e) {
+          warnings.push(e instanceof Error ? e.message : 'Togal did not move this project into the captain folder');
+        }
+      }
+      if (!setId) setId = await this.rest.createSet(session, projectId, 'Drawings');
       const rows = await this.attachments.find({ where: { bidId }, relations: ['file'] });
       for (const row of rows) {
         if (sent.has(row.id)) continue;
@@ -252,30 +292,109 @@ export class TogalService implements OnModuleInit {
         if (!file || file.isDeleted) continue;
         const bytes = await fs.readFile(this.storage.absolutePath(file.storagePath));
         if (bytes.length > MAX_PUSH_BYTES) {
-          warnings.push(`${file.originalFileName} is over 80 MB, so Togal did not take it. It stays on this bid.`);
+          warnings.push(`${file.originalFileName} is over 80 MB, so Togal did not take it.`);
           continue;
         }
         try {
-          await this.mcp.callTool(
-            token,
-            upload.name,
-            fillToolArgs(upload, {
-              projectId,
-              fileName: file.originalFileName,
-              mimeType: file.mimeType,
-              contentBase64: bytes.toString('base64'),
-            }),
-          );
+          const uploaded = await this.rest.uploadFile(session, {
+            setId,
+            mime: pushMime(file.originalFileName, file.mimeType),
+            bytes,
+          });
+          let pageIds: string[] = [];
+          try {
+            pageIds = await this.rest.createPages(session, { url: uploaded.url, setId, projectId });
+          } catch (e) {
+            warnings.push(e instanceof Error ? e.message : `${file.originalFileName} was stored but not opened as drawings`);
+          }
+          files.push({ attachmentId: row.id, fileId: uploaded.id, pageIds });
           sent.add(row.id);
         } catch (e) {
           warnings.push(e instanceof Error ? e.message : `${file.originalFileName} was not sent to Togal`);
         }
       }
     } catch (e) {
-      if (e instanceof BadRequestException) throw e;
+      if (sessionRejected(e)) this.restSessionCache = null;
+      if (e instanceof BadRequestException || e instanceof ServiceUnavailableException) throw e;
       throw this.wrap(e);
     }
-    return { projectUrl, projectId, sentAttachmentIds: [...sent], warning: warnings[0] ?? null };
+    return {
+      projectUrl,
+      projectId,
+      setId,
+      organizationId: session.organizationId,
+      sentAttachmentIds: [...sent],
+      files,
+      warning: warnings[0] ?? null,
+    };
+  }
+
+  /** Delete the Togal copy of one attachment. No-op when that file was never pushed. */
+  async removePushed(bidId: number, attachmentId: number): Promise<void> {
+    const process = await this.processOf(bidId);
+    const hit = process.togal.files.find((file) => file.attachmentId === attachmentId);
+    if (!hit) return;
+    await this.withSession(async (session) => {
+      for (const pageId of hit.pageIds) {
+        try {
+          await this.rest.deletePage(session, pageId);
+        } catch (e) {
+          if (sessionRejected(e)) throw e;
+          /* page may already be gone */
+        }
+      }
+      try {
+        await this.rest.deleteFile(session, hit.fileId);
+      } catch (e) {
+        if (sessionRejected(e)) throw e;
+        const message = e instanceof Error ? e.message : '';
+        if (!/404|not found|can ?not find/i.test(message)) throw e;
+      }
+    });
+    process.togal.files = process.togal.files.filter((file) => file.attachmentId !== attachmentId);
+    process.togal.sentAttachmentIds = process.togal.sentAttachmentIds.filter((id) => id !== attachmentId);
+    const next = mergeProcess(process, {});
+    await this.content.update({ bidId }, { processJson: JSON.stringify(next) });
+  }
+
+  private async captainFirstName(process: ReturnType<typeof parseProcess>): Promise<string | null> {
+    const id = process.assignment.captainUserId;
+    if (id) {
+      const user = await this.users.findById(id);
+      const first = user?.firstName?.trim();
+      if (first) return first;
+    }
+    const label = process.assignment.captain?.trim();
+    return label ? label.split(/\s+/)[0] ?? null : null;
+  }
+
+  /** One fresh login if Togal dropped the cached session. A new login elsewhere invalidates it. */
+  private async withSession<T>(run: (session: TogalSession) => Promise<T>): Promise<T> {
+    try {
+      return await run(await this.restSession());
+    } catch (e) {
+      if (!sessionRejected(e)) throw e;
+      this.restSessionCache = null;
+      return await run(await this.restSession());
+    }
+  }
+
+  private async restSession(): Promise<TogalSession> {
+    const email = this.config.get<string>('TOGAL_EMAIL', '')?.trim() ?? '';
+    const password = this.config.get<string>('TOGAL_PASSWORD', '') ?? '';
+    if (!email || !password) {
+      throw new ServiceUnavailableException('Togal login is not configured');
+    }
+    if (this.restSessionCache && Date.now() - this.restSessionCache.at < 6 * 60 * 60 * 1000) {
+      return this.restSessionCache.value;
+    }
+    try {
+      const value = await this.rest.login(email, password);
+      this.restSessionCache = { at: Date.now(), value };
+      return value;
+    } catch (e) {
+      throw this.wrap(e);
+    }
   }
 
   async runScript(bidId: number): Promise<{ ok: true }> {
