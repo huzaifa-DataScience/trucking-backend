@@ -610,8 +610,15 @@ export type BidProcess = {
   relatedBidNote: string | null;
   /** Bid-level sticky Notes pad. Not invitation paste (`invitations[].inviteBody`) or clerk invite notes. */
   notes: string | null;
-  /** Togal.ai project for this bid. Files are pushed there; this stores the link. */
-  togal: { projectUrl: string | null; projectId: string | null; sentAttachmentIds: number[] };
+  /** Togal.ai project for this bid. Files are pushed there; this stores the link and the ids to delete. */
+  togal: {
+    projectUrl: string | null;
+    projectId: string | null;
+    setId: string | null;
+    organizationId: string | null;
+    sentAttachmentIds: number[];
+    files: { attachmentId: number; fileId: string; pageIds: string[] }[];
+  };
   whoElseBidding: {
     researched: boolean | null;
     notes: string | null;
@@ -938,7 +945,7 @@ export function emptyProcess(): BidProcess {
     relatedBidId: null,
     relatedBidNote: null,
     notes: null,
-    togal: { projectUrl: null, projectId: null, sentAttachmentIds: [] },
+    togal: { projectUrl: null, projectId: null, setId: null, organizationId: null, sentAttachmentIds: [], files: [] },
     whoElseBidding: { researched: null, notes: null },
     budgetOnly: null,
     proposalIteration: null,
@@ -1575,13 +1582,27 @@ function normalizeProcess(p: BidProcess): void {
   p.relatedBidId = numOrNull(p.relatedBidId);
   p.relatedBidNote = nullishStr(p.relatedBidNote);
   p.notes = nullishStr(p.notes);
-  if (!p.togal || typeof p.togal !== 'object') p.togal = { projectUrl: null, projectId: null, sentAttachmentIds: [] };
-  else {
+  if (!p.togal || typeof p.togal !== 'object') {
+    p.togal = { projectUrl: null, projectId: null, setId: null, organizationId: null, sentAttachmentIds: [], files: [] };
+  } else {
     const ids = Array.isArray(p.togal.sentAttachmentIds) ? p.togal.sentAttachmentIds : [];
+    const files = Array.isArray(p.togal.files) ? p.togal.files : [];
     p.togal = {
       projectUrl: normalizeTogalProjectUrl(p.togal.projectUrl),
       projectId: nullishStr(p.togal.projectId),
+      setId: nullishStr(p.togal.setId),
+      organizationId: nullishStr(p.togal.organizationId),
       sentAttachmentIds: ids.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 200),
+      files: files
+        .map((file) => ({
+          attachmentId: Number(file?.attachmentId),
+          fileId: nullishStr(file?.fileId) ?? '',
+          pageIds: Array.isArray(file?.pageIds)
+            ? file.pageIds.map((id) => nullishStr(id)).filter((id): id is string => Boolean(id)).slice(0, 50)
+            : [],
+        }))
+        .filter((file) => Number.isFinite(file.attachmentId) && file.fileId)
+        .slice(0, 200),
     };
   }
   p.drawingNumber = nullishStr(p.drawingNumber);

@@ -261,8 +261,9 @@ export class BiddingController {
   async togalLoad(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
     await this.bidding.assertUserCanEdit(id, user);
     const togal = await this.togal.loadBid(id);
-    const bid = await this.bidding.patch(id, { process: { togal } }, user.id);
-    if (togal.warning) throw new BadRequestException(togal.warning);
+    const { warning, ...stored } = togal;
+    const bid = await this.bidding.patch(id, { process: { togal: stored } }, user.id);
+    if (warning) throw new BadRequestException(warning);
     return bid;
   }
 
@@ -375,15 +376,23 @@ export class BiddingController {
     const hub = saved.some((row) => row.label === 'drawings' || row.label === 'specifications' || row.label === 'addenda');
     let togal: { sent: boolean; message: string | null } | null = null;
     if (hub) {
+      let pushed = false;
       try {
         const state = await this.togal.loadBid(id);
-        await this.bidding.patch(id, { process: { togal: state } }, user?.id);
-        togal = { sent: saved.every((row) => state.sentAttachmentIds.includes(row.id)), message: state.warning };
+        pushed = true;
+        const { warning, ...stored } = state;
+        await this.bidding.patch(id, { process: { togal: stored } }, user?.id);
+        const missed = saved.filter((row) => !state.sentAttachmentIds.includes(row.id));
+        if (missed.length) {
+          for (const row of missed) await this.attachments.remove(id, row.id, user?.id);
+          throw new BadRequestException(warning || 'Togal did not take this file. It was not kept.');
+        }
+        togal = { sent: true, message: warning };
       } catch (e) {
-        togal = {
-          sent: false,
-          message: e instanceof Error ? e.message : 'Togal did not take this file. It is saved on this bid.',
-        };
+        if (!pushed) {
+          for (const row of saved) await this.attachments.remove(id, row.id, user?.id).catch(() => undefined);
+        }
+        throw e;
       }
     }
     if (saved.length === 1) return { ...saved[0], togal };
@@ -424,6 +433,7 @@ export class BiddingController {
     @CurrentUser() user?: User,
   ) {
     await this.bidding.assertUserCanEdit(bidId, user);
+    await this.togal.removePushed(bidId, attachmentId);
     return this.attachments.remove(bidId, attachmentId, user?.id);
   }
 }

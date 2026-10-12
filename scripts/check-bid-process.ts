@@ -35,6 +35,7 @@ import {
   chromeTabPills,
 } from '../src/bidding/process/bid-process';
 import { pickTogalTool } from '../src/bidding/togal-mcp.client';
+import { folderIdForCaptain } from '../src/bidding/togal-rest.client';
 import { readZipEntries } from '../src/bidding/zip-entries';
 import { proposalCopyPrice, proposalCopyTotal } from '../src/bidding/process/proposal-sheet';
 import { bindAssignmentCrew, EXCEL_BID_TEAMS, excelRosterContacts, indexPeopleByName, lookupPersonByName, mergeBiddingContacts, parseCrewJson, resolveEstimatesTeamId, TEAM_CREW_SLOTS, teamBelongsToCaptain, useInternalBidList } from '../src/bidding/process/bid-crew';
@@ -540,6 +541,13 @@ assert(meta.attachmentCategories.includes('takeoff_markup'), 'markup bucket');
 assert(meta.takeoffEditor.uploadCategory === 'takeoff_markup', 'takeoff default category');
 assert(meta.takeoffEditor.markup.offline === true, 'markup offline');
 assert(meta.takeoffEditor.markup.tool === 'Togal.ai', 'markup is Togal');
+assert(
+  folderIdForCaptain([{ id: 'm', name: 'Mike' }, { id: 't', name: 'Troy' }], 'Mike Roberts') === 'm',
+  'captain first name picks the Togal folder',
+);
+assert(folderIdForCaptain([{ id: 'm', name: 'Mike' }], 'mike') === 'm', 'folder match ignores case');
+assert(folderIdForCaptain([{ id: 'm', name: 'Mike' }], 'Nick Rogero') === null, 'unknown captain stays unfiled');
+assert(folderIdForCaptain([{ id: 'm', name: 'Mike' }], null) === null, 'no captain stays unfiled');
 assert(meta.togalEditor.staysInTogal.includes('drawings'), 'drawings stay in Togal');
 assert(meta.togalEditor.returns.some((r: { what: string }) => r.what === 'snaps'), 'snaps return');
 assert(mergeProcess(emptyProcess(), {}).togal.projectUrl === null, 'togal link empty');

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -51,8 +51,16 @@ export type PfListFilters = {
   alert?: 'fix' | 'not_in_siteline' | 'any';
 };
 
+type Book = { jobs: PfJobRow[]; foundationOk: boolean; trimbleOk: boolean };
+
 @Injectable()
 export class ProjectFinancialsService {
+  private readonly log = new Logger(ProjectFinancialsService.name);
+  /** ponytail: one book for 60s so filters, summary, and jobs share a build. Stale ceiling is 60s. */
+  private readonly bookTtlMs = 60_000;
+  private bookCache: { at: number; value: Book } | null = null;
+  private bookFlight: Promise<Book> | null = null;
+
   constructor(
     @InjectRepository(SitelineContract)
     private readonly contracts: Repository<SitelineContract>,
@@ -168,14 +176,76 @@ export class ProjectFinancialsService {
     });
   }
 
-  private async buildJobs(): Promise<{ jobs: PfJobRow[]; foundationOk: boolean; trimbleOk: boolean }> {
+  private buildJobs(): Promise<Book> {
+    const now = Date.now();
+    if (this.bookCache && now - this.bookCache.at < this.bookTtlMs) {
+      return Promise.resolve(this.bookCache.value);
+    }
+    if (this.bookFlight) return this.bookFlight;
+    const started = Date.now();
+    this.bookFlight = this.loadBook()
+      .then((value) => {
+        this.bookCache = { at: Date.now(), value };
+        this.bookFlight = null;
+        this.log.log(`book ${value.jobs.length} jobs in ${Date.now() - started}ms`);
+        return value;
+      })
+      .catch((err: unknown) => {
+        this.bookFlight = null;
+        throw err;
+      });
+    return this.bookFlight;
+  }
+
+  private async loadBook(): Promise<Book> {
     const [contracts, payApps, agingRows, projects, cors, refJobs, foundation, trimble] = await Promise.all([
-      this.contracts.find(),
-      this.payApps.find(),
+      this.contracts.find({
+        select: {
+          id: true,
+          entityId: true,
+          projectNumber: true,
+          projectName: true,
+          internalProjectNumber: true,
+          latestTotalValue: true,
+          percentComplete: true,
+          status: true,
+          leadPmName: true,
+          leadPmEmail: true,
+        },
+      }),
+      this.payApps.find({
+        select: { id: true, contractId: true, number: true, billed: true, retention: true },
+      }),
       loadAgingContractsFromLatestPerEntitySnapshots(this.agingSummaries, this.agingContracts),
-      this.csProjects.find(),
-      this.cors.find(),
-      this.jobs.find(),
+      this.csProjects.find({
+        select: {
+          id: true,
+          jobNumber: true,
+          name: true,
+          customerName: true,
+          siteCity: true,
+          siteState: true,
+          archived: true,
+          baseContractValue: true,
+          lastSyncedAt: true,
+        },
+      }),
+      this.cors.find({
+        select: {
+          id: true,
+          projectId: true,
+          status: true,
+          approvedCoIssuedAmount: true,
+          approvedToProceedAmount: true,
+          inReviewAmount: true,
+          totalAmount: true,
+          requestedAmount: true,
+          voidAmount: true,
+        },
+      }),
+      this.jobs.find({
+        select: { id: true, jobNumber: true, name: true, entityId: true, city: true },
+      }),
       loadFoundationJobCosts(this.dataSource, this.foundationDb()).catch(() => emptyFoundationMaps()),
       loadTrimbleBomByJob(this.dataSource),
     ]);

@@ -108,10 +108,12 @@ export class TogalMcpClient {
     });
     const body = await readJson(res);
     if (!res.ok) {
-      throw new TogalMcpError(
-        typeof body.error_description === 'string' ? body.error_description : `Togal login failed (${res.status})`,
-        typeof body.error === 'string' ? body.error : undefined,
-      );
+      const code = typeof body.error === 'string' ? body.error : undefined;
+      const detail =
+        typeof body.error_description === 'string'
+          ? body.error_description
+          : code || `Togal login failed (${res.status})`;
+      throw new TogalMcpError(detail, code);
     }
     const verificationUrl =
       (typeof body.verification_uri_complete === 'string' && body.verification_uri_complete) ||

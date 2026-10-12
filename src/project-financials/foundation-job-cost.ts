@@ -66,8 +66,13 @@ export async function loadFoundationJobCosts(
   const byJob = new Map<string, PfCostBlock[]>();
   let ok = false;
 
-  for (const co of PF_FOUNDATION_COMPANIES) {
-    const rows = await loadSchema(ds, db, co.schema, co.tables);
+  const loaded = await Promise.all(
+    PF_FOUNDATION_COMPANIES.map(async (co) => ({
+      co,
+      rows: await loadSchema(ds, db, co.schema, co.tables),
+    })),
+  );
+  for (const { co, rows } of loaded) {
     if (!rows) continue;
     ok = true;
     for (const raw of rows) {
