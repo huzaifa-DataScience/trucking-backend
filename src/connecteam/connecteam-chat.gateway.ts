@@ -9,6 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { SessionRevocationService } from '../users/session-revocation.service';
 
 /** Room for all authenticated workforce chat subscribers. */
 export const WORKFORCE_CHAT_ROOM = 'workforce-chat';
@@ -30,6 +31,7 @@ export class ConnecteamChatGateway implements OnGatewayConnection, OnGatewayDisc
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly sessions: SessionRevocationService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -42,7 +44,7 @@ export class ConnecteamChatGateway implements OnGatewayConnection, OnGatewayDisc
     try {
       const secret = this.config.get<string>('JWT_SECRET', 'change-me-in-production');
       const payload = await this.jwt.verifyAsync<JwtPayload>(token, { secret });
-      if (!payload?.sub) {
+      if (!payload?.sub || (await this.sessions.isRevoked(payload.sub, payload.iat))) {
         client.disconnect(true);
         return;
       }
