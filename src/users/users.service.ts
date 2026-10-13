@@ -88,6 +88,12 @@ export class UsersService implements OnModuleInit {
     return bcrypt.compare(plain, hash);
   }
 
+  /** Replace a user's password (same bcrypt cost as signup). Used by change-password and password reset. */
+  async setPassword(userId: number, plain: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(plain, 10);
+    await this.userRepo.update({ id: userId }, { passwordHash });
+  }
+
   async updateLastLogin(userId: number): Promise<void> {
     await this.userRepo.update(userId, { lastLoginAt: new Date() });
   }

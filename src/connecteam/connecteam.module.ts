@@ -1,3 +1,4 @@
+import { UsersModule } from '../users/users.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -36,6 +37,7 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
 
 @Module({
   imports: [
+    UsersModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

@@ -10,10 +10,13 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RbacService } from './rbac.service';
 import { FileStorageService } from '../files/file-storage.service';
+import { EmailTemplateModule } from '../email/email-template.module';
+import { PasswordResetService } from './password-reset.service';
 
 @Module({
   imports: [
     UsersModule,
+    EmailTemplateModule,
     TypeOrmModule.forFeature([AppRole, Permission, AppSetting]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -27,7 +30,7 @@ import { FileStorageService } from '../files/file-storage.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy, RbacService, FileStorageService],
+  providers: [AuthService, JwtStrategy, RbacService, FileStorageService, PasswordResetService],
   controllers: [AuthController],
   exports: [AuthService, RbacService],
 })
