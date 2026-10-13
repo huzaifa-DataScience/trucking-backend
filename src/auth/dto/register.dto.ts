@@ -1,15 +1,15 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Matches } from 'class-validator';
+import { STRONG_PASSWORD, STRONG_PASSWORD_MESSAGE } from './password.dto';
 
 export class RegisterDto {
   @IsEmail()
   email: string;
 
   @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @Matches(STRONG_PASSWORD, { message: STRONG_PASSWORD_MESSAGE })
   password: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(6, { message: 'Confirm password must be at least 6 characters' })
   confirmPassword?: string;
 }

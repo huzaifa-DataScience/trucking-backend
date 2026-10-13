@@ -1,3 +1,4 @@
+import { SessionRevocationService } from '../users/session-revocation.service';
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -17,6 +18,7 @@ export class AuthService {
     private readonly rbacService: RbacService,
     private readonly config: ConfigService,
     private readonly storage: FileStorageService,
+    private readonly sessions: SessionRevocationService,
   ) {}
 
   async register(
@@ -52,6 +54,41 @@ export class AuthService {
         ? 'Account created successfully. Your account is pending admin approval.'
         : 'Account created successfully. You can log in now.',
     };
+  }
+
+  /** A fresh sign-in token for this user (same payload as login). */
+  private async issueSession(user: User): Promise<{ access_token: string; user: LoginResult }> {
+    const permissions = await this.rbacService.getPermissionNamesForRole(user.role);
+    const payload: JwtPayload = { sub: user.id, email: user.email, role: user.role, permissions };
+    const access_token = await this.jwtService.signAsync(payload);
+    return { access_token, user: this.toLoginResult(user, permissions) };
+  }
+
+  /** Ends every other session; returns a new token so this device stays signed in. */
+  async signOutOtherDevices(userId: number): Promise<{ access_token: string; user: LoginResult }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new UnauthorizedException('Please sign in again.');
+    await this.sessions.revokeAll(user.id);
+    return this.issueSession(user);
+  }
+
+  /** Signed-in password change: the current password must be right and the new one different. */
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ access_token: string; user: LoginResult }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new UnauthorizedException('Please sign in again.');
+    const valid = await this.usersService.validatePassword(currentPassword, user.passwordHash);
+    if (!valid) throw new BadRequestException('Your current password is incorrect.');
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('Choose a new password that is different from your current one.');
+    }
+    await this.usersService.setPassword(user.id, newPassword);
+    // Other devices are signed out; this one gets a fresh token.
+    await this.sessions.revokeAll(user.id);
+    return this.issueSession(user);
   }
 
   async login(email: string, password: string): Promise<{ access_token: string; user: LoginResult }> {
