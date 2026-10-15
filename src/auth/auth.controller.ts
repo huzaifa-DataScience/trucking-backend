@@ -54,7 +54,10 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
   ): Promise<{ access_token: string; user: LoginResult } | { message: string }> {
-    return this.authService.register(dto.email, dto.password, dto.confirmPassword);
+    return this.authService.register(dto.email, dto.password, dto.confirmPassword, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
   }
 
   /** Emails a one-time reset link if the address has an account. Same answer either way. */
