@@ -70,6 +70,8 @@ export class UsersService implements OnModuleInit {
   async create(data: { 
     email: string; 
     password: string; 
+    firstName?: string | null;
+    lastName?: string | null;
     role?: Role;
     status?: UserStatus;
   }): Promise<User> {
@@ -78,6 +80,8 @@ export class UsersService implements OnModuleInit {
     const user = this.userRepo.create({
       email,
       passwordHash,
+      firstName: data.firstName?.trim() || null,
+      lastName: data.lastName?.trim() || null,
       role: data.role ?? Role.User,
       status: data.status ?? UserStatus.Pending, // New signups default to pending
     });
