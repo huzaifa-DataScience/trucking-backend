@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { RbacService } from '../auth/rbac.service';
 import { isAppRoleId } from '../auth/rbac-catalog';
-import { User, UserStatus, Role } from '../database/entities';
+import { User, UserStatus, Role, userAvatarUrl } from '../database/entities';
 import { UsersService } from '../users/users.service';
 
 export interface AdminUsersQuery {
@@ -33,26 +33,45 @@ export class AdminService {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, query.pageSize ?? 25);
 
-    const qb = this.userRepo.createQueryBuilder('u');
-
-    if (query.status && query.status !== 'all') {
-      qb.andWhere('u.status = :status', { status: query.status });
-    }
+    // Every filter except status — the status tabs count against this.
+    const base = this.userRepo.createQueryBuilder('u');
 
     if (query.role && query.role !== 'all') {
-      qb.andWhere('u.role = :role', { role: query.role });
+      base.andWhere('u.role = :role', { role: query.role });
     }
 
     if (query.search) {
-      qb.andWhere('u.email LIKE :search', { search: `%${query.search}%` });
+      base.andWhere(
+        "(u.email LIKE :search OR u.firstName LIKE :search OR u.lastName LIKE :search OR CONCAT(u.firstName, ' ', u.lastName) LIKE :search)",
+        { search: `%${query.search}%` },
+      );
     }
 
     if (query.startDate) {
-      qb.andWhere('u.createdAt >= :startDate', { startDate: query.startDate });
+      base.andWhere('u.createdAt >= :startDate', { startDate: query.startDate });
     }
 
     if (query.endDate) {
-      qb.andWhere('u.createdAt <= :endDate', { endDate: query.endDate });
+      base.andWhere('u.createdAt <= :endDate', { endDate: query.endDate });
+    }
+
+    const countRows = await base
+      .clone()
+      .select('u.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('u.status')
+      .getRawMany<{ status: string; count: number | string }>();
+    const statusCounts: Record<string, number> = { all: 0 };
+    for (const s of Object.values(UserStatus)) statusCounts[s] = 0;
+    for (const row of countRows) {
+      const n = Number(row.count) || 0;
+      statusCounts[row.status] = n;
+      statusCounts.all += n;
+    }
+
+    const qb = base.clone();
+    if (query.status && query.status !== 'all') {
+      qb.andWhere('u.status = :status', { status: query.status });
     }
 
     const skip = (page - 1) * pageSize;
@@ -66,6 +85,7 @@ export class AdminService {
       page,
       pageSize,
       total,
+      statusCounts,
     };
   }
 
@@ -215,6 +235,9 @@ export class AdminService {
     return {
       id: user.id,
       email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      avatarUrl: userAvatarUrl(user),
       role: user.role,
       status: user.status,
       permissions,
