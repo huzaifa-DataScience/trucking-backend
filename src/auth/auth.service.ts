@@ -25,6 +25,7 @@ export class AuthService {
     email: string,
     password: string,
     confirmPassword?: string,
+    names: { firstName?: string; lastName?: string } = {},
   ): Promise<{ access_token: string; user: LoginResult; message?: string }> {
     if (confirmPassword !== undefined && password !== confirmPassword) {
       throw new BadRequestException('Password and confirmPassword do not match');
@@ -40,6 +41,8 @@ export class AuthService {
     const user = await this.usersService.create({
       email,
       password,
+      firstName: names.firstName,
+      lastName: names.lastName,
       role: defaults.role as User['role'],
       status: requireApproval ? UserStatus.Pending : UserStatus.Active,
     });
