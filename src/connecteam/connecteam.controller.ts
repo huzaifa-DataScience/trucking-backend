@@ -25,7 +25,10 @@ import {
   ConnecteamTaskBoard,
   ConnecteamTask,
   ConnecteamConversation,
+  User,
+  UserStatus,
 } from '../database/entities';
+import { userDisplayName } from '../database/entities/user.entity';
 import { ConnecteamChatService } from './connecteam-chat.service';
 import { ConnecteamDisplayService } from './connecteam-display.service';
 import { ConnecteamReportService } from './connecteam-report.service';
@@ -41,6 +44,7 @@ export class ConnecteamController {
     private readonly display: ConnecteamDisplayService,
     private readonly chat: ConnecteamChatService,
     @InjectRepository(ConnecteamUser) private readonly users: Repository<ConnecteamUser>,
+    @InjectRepository(User) private readonly appUsers: Repository<User>,
     @InjectRepository(ConnecteamJob) private readonly jobs: Repository<ConnecteamJob>,
     @InjectRepository(ConnecteamTimeClock) private readonly timeClocks: Repository<ConnecteamTimeClock>,
     @InjectRepository(ConnecteamTimeActivity) private readonly timeActivities: Repository<ConnecteamTimeActivity>,
@@ -120,6 +124,7 @@ export class ConnecteamController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('includeArchived') includeArchived?: string,
+    @Query('includeAppUsers') includeAppUsers?: string,
   ) {
     const q = (search ?? '').trim().toLowerCase();
     const wantAll = String(pageSize ?? '').trim().toLowerCase() === 'all';
@@ -136,11 +141,22 @@ export class ConnecteamController {
     qb.orderBy('u.lastName', 'ASC').addOrderBy('u.firstName', 'ASC');
     if (pageSizeNum != null) qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
+    const users = await this.display.enrichUserRows(rows);
+    if (includeAppUsers === 'true') {
+      await this.overlayAppNames(users);
+      const extras = await this.appUsersNotInConnecteam(users, q);
+      return {
+        page: wantAll ? 1 : pageNum,
+        pageSize: wantAll ? total + extras.length : pageSizeNum,
+        total: total + extras.length,
+        users: [...users, ...extras],
+      };
+    }
     return {
       page: wantAll ? 1 : pageNum,
       pageSize: wantAll ? total : pageSizeNum,
       total,
-      users: await this.display.enrichUserRows(rows),
+      users,
     };
   }
 
@@ -378,6 +394,7 @@ export class ConnecteamController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('includeDeleted') includeDeleted?: string,
+    @Query('scope') scope?: string,
   ) {
     const q = (search ?? '').trim().toLowerCase();
     const pageNum = Math.max(1, Math.floor(Number(page) || 1));
@@ -398,6 +415,17 @@ export class ConnecteamController {
         { q: `%${q}%` },
       );
     }
+    if (scope === 'mine') {
+      const ctId = await this.chat.linkedConnecteamUserId(req.user.id);
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM dbo.Connecteam_Messages m
+          WHERE m.ConversationId = c.ConversationId AND m.IsDeleted = 0
+            AND (m.AppUserId = :appUserId OR (:ctId IS NOT NULL AND m.UserId = :ctId))
+        )`,
+        { appUserId: req.user.id, ctId },
+      );
+    }
     qb.orderBy('c.lastMessageAt', 'DESC').addOrderBy('c.title', 'ASC');
     qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [rows, total] = await qb.getManyAndCount();
@@ -405,5 +433,49 @@ export class ConnecteamController {
     const conversations = await this.chat.withUnreadCounts(req.user.id, enriched);
     const totalUnread = await this.chat.totalUnreadForUser(req.user.id);
     return { page: pageNum, pageSize: pageSizeNum, total, totalUnread, conversations };
+  }
+
+  /** Connecteam rows with no first/last pick up the matching App_Users name. */
+  private async overlayAppNames(
+    users: Array<{ email?: string | null; firstName?: string | null; lastName?: string | null; displayName?: string }>,
+  ) {
+    const need = users.filter((u) => !u.firstName && !u.lastName && u.email);
+    if (!need.length) return;
+    const apps = await this.appUsers.find({ where: { status: UserStatus.Active } });
+    const byEmail = new Map(apps.filter((a) => a.email).map((a) => [a.email.toLowerCase(), a]));
+    for (const u of need) {
+      const app = byEmail.get(String(u.email).toLowerCase());
+      if (!app) continue;
+      const name = userDisplayName(app);
+      if (!name || name.includes('@')) continue;
+      u.displayName = name;
+      u.firstName = app.firstName;
+      u.lastName = app.lastName;
+    }
+  }
+
+  /** Logins that are not already a Connecteam user, so the picker can show them. */
+  private async appUsersNotInConnecteam(users: Array<{ email?: string | null }>, q: string) {
+    const emails = new Set(users.map((u) => u.email?.toLowerCase()).filter((e): e is string => Boolean(e)));
+    const apps = await this.appUsers.find({
+      where: { status: UserStatus.Active },
+      order: { lastName: 'ASC', firstName: 'ASC' },
+    });
+    return apps
+      .filter((a) => {
+        const email = a.email?.toLowerCase();
+        if (email && emails.has(email)) return false;
+        if (!q) return true;
+        return `${a.firstName ?? ''} ${a.lastName ?? ''} ${a.email}`.toLowerCase().includes(q);
+      })
+      .map((a) => ({
+        userId: null as number | null,
+        appUserId: a.id,
+        displayName: userDisplayName(a),
+        firstName: a.firstName,
+        lastName: a.lastName,
+        email: a.email,
+        source: 'app' as const,
+      }));
   }
 }

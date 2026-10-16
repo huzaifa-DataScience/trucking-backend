@@ -22,6 +22,7 @@ import { ConnecteamModule } from './connecteam/connecteam.module';
 import { WfsModule } from './wfs/wfs.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { ProjectFinancialsModule } from './project-financials/project-financials.module';
+import { OperationsModule } from './operations/operations.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { ProjectFinancialsModule } from './project-financials/project-financials
     WfsModule,
     CalendarModule,
     ProjectFinancialsModule,
+    OperationsModule,
   ],
   controllers: [AppController],
 })

@@ -389,7 +389,7 @@ export class ConnecteamChatService implements OnModuleInit {
     return out;
   }
 
-  private async linkedConnecteamUserId(appUserId: number): Promise<number | null> {
+  async linkedConnecteamUserId(appUserId: number): Promise<number | null> {
     const u = await this.users.findOne({ where: { appUserId } });
     return u?.userId ?? null;
   }

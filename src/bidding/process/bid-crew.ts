@@ -96,6 +96,39 @@ function namesMatch(a: unknown, b: unknown): boolean {
   return leftA === right || rightA === left || (!!leftA && leftA === rightA);
 }
 
+/** Login rows often have no first/last, so the display name is the email. */
+export function rosterName(value: unknown): string | null {
+  const name = String(value ?? '').trim();
+  if (!name || name.includes('@')) return null;
+  return name;
+}
+
+function emailLocalName(email: string | null | undefined): string {
+  return norm(String(email ?? '').split('@')[0].replace(/[._]+/g, ' '));
+}
+
+/** Roster team whose captain is this person (email local-part or a real name). */
+export function teamForPerson<T extends { captain?: string | null }>(
+  teams: T[],
+  person: { name?: string | null; email?: string | null },
+): T | undefined {
+  const local = emailLocalName(person.email);
+  const named = rosterName(person.name);
+  return teams.find((team) => {
+    const label = rosterName(team.captain);
+    if (!label) return false;
+    return (Boolean(local) && namesMatch(local, label)) || (named != null && namesMatch(named, label));
+  });
+}
+
+/** Real captain label: user name, else the matching Bid_Teams.Captain. */
+export function personRosterName(
+  person: { name?: string | null; email?: string | null },
+  teams: Array<{ captain?: string | null }>,
+): string | null {
+  return rosterName(person.name) || rosterName(teamForPerson(teams, person)?.captain);
+}
+
 /** Seeded Bid_Teams row for this login captain (Connecteam / email / Excel spelling). */
 export function teamBelongsToCaptain(
   team: { teamName: string; captain?: string | null; crewJson?: string | null },
@@ -136,38 +169,51 @@ export function bindAssignmentCrew(
 
   if (next.captainUserId != null) {
     const cap = byUserId.get(next.captainUserId);
-    if (cap) {
-      next.captain = cap.name;
-      if (cap.teamId != null) next.teamId = cap.teamId;
-    }
-    return fillFromTeam(next, teams, byTeam);
+    if (cap) applyCaptain(next, cap, teams);
+    return fillFromTeam(next, teams, byTeam, captains);
   }
 
   const captainNeedle = norm(next.captain);
   if (captainNeedle && next.teamId == null) {
     const cap =
       captains.find((c) => norm(c.name) === captainNeedle) ??
-      captains.find((c) => c.email && norm(c.email) === captainNeedle);
-    if (cap) {
-      next.captainUserId = cap.userId;
-      next.captain = cap.name;
-      if (cap.teamId != null) next.teamId = cap.teamId;
-    }
+      captains.find((c) => c.email && norm(c.email) === captainNeedle) ??
+      captains.find((c) => emailLocalName(c.email) && namesMatch(emailLocalName(c.email), captainNeedle));
+    if (cap) applyCaptain(next, cap, teams);
   }
 
-  return fillFromTeam(next, teams, byTeam);
+  return fillFromTeam(next, teams, byTeam, captains);
+}
+
+function applyCaptain(next: AssignmentCrew, cap: CrewCaptain, teams: CrewTeam[]): void {
+  const rosterTeam = teamForPerson(teams, cap);
+  const linked = cap.teamId != null ? teams.find((t) => t.id === cap.teamId) : undefined;
+  if (linked && rosterName(linked.captain)) next.teamId = linked.id;
+  else if (rosterTeam) next.teamId = rosterTeam.id;
+  else if (cap.teamId != null) next.teamId = cap.teamId;
+  const onTeam = teams.find((t) => t.id === next.teamId);
+  next.captain = rosterName(cap.name) || rosterName(onTeam?.captain) || rosterName(rosterTeam?.captain) || cap.name;
 }
 
 function fillFromTeam(
   next: AssignmentCrew,
   teams: CrewTeam[],
   byTeam: Map<number, CrewCaptain>,
+  captains: CrewCaptain[],
 ): AssignmentCrew {
   if (next.teamId == null) return next;
   const team = teams.find((t) => t.id === next.teamId);
-  const cap = byTeam.get(next.teamId);
+  const label = rosterName(team?.captain);
+  const cap =
+    byTeam.get(next.teamId) ??
+    captains.find((c) => {
+      if (!label) return false;
+      return namesMatch(emailLocalName(c.email), label) || (rosterName(c.name) != null && namesMatch(c.name, label));
+    });
   if (next.captainUserId == null && cap) next.captainUserId = cap.userId;
-  if (!next.captain) next.captain = cap?.name ?? null;
+  if (!rosterName(next.captain)) {
+    next.captain = label || (cap ? rosterName(cap.name) : null) || cap?.name || next.captain || null;
+  }
   if (!next.bidClerk) next.bidClerk = team?.bidClerk ?? null;
   if (!next.assistantEstimator) next.assistantEstimator = next.bidClerk ?? team?.bidClerk ?? null;
   return next;

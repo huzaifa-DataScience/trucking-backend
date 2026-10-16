@@ -91,6 +91,9 @@ import {
   WfsStaticItem,
   WfsSnapshot,
   CalendarEvent,
+  OpsHaulerRate,
+  OpsDisposalRate,
+  OpsHaulTicket,
 } from './entities';
 
 @Module({
@@ -218,6 +221,9 @@ import {
             WfsStaticItem,
             WfsSnapshot,
             CalendarEvent,
+            OpsHaulerRate,
+            OpsDisposalRate,
+            OpsHaulTicket,
           ],
           synchronize: false,
           // Keep logs high-level in development (no noisy raw SQL "query:" lines)
@@ -330,6 +336,9 @@ import {
       WfsStaticItem,
       WfsSnapshot,
       CalendarEvent,
+      OpsHaulerRate,
+      OpsDisposalRate,
+      OpsHaulTicket,
     ]),
   ],
   exports: [TypeOrmModule],

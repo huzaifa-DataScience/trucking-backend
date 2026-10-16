@@ -29,6 +29,7 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [BACKEND_COMPLIANCE_VERIFICATION.md](./BACKEND_COMPLIANCE_VERIFICATION.md) | Compliance checklist verification |
 | [SPEC_COMPLIANCE_CHECKLIST.md](./SPEC_COMPLIANCE_CHECKLIST.md) | Frontend spec checklist |
 | [FRONTEND_COMPANY_FILTER.md](./FRONTEND_COMPANY_FILTER.md) | Job/Material/Hauler `entityId` filter |
+| **[FRONTEND_OPERATIONS.md](./FRONTEND_OPERATIONS.md)** | **Give to FE** — trucking log, rate cards, cost, reports |
 | [FRONTEND_AGING_REPORT.md](./FRONTEND_AGING_REPORT.md) | Aging report UI |
 | [FRONTEND_SITELINE.md](./FRONTEND_SITELINE.md) | Siteline API for frontend |
 | [FRONTEND_CONNECTEAM.md](./FRONTEND_CONNECTEAM.md) | Workforce / Connecteam API for frontend |

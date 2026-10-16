@@ -18,6 +18,7 @@ import {
   fillProjectAddress,
   intakeCompleteBlocked,
   mergeProcess,
+  normalizeTakeoffStatus,
   parseUsAddress,
   normalizeProjectNumber,
   ourTierIndex,
@@ -494,8 +495,25 @@ assert(meta.attachmentLabels.includes('master-scan'), 'master-scan label');
 assert(meta.drawingCategories.includes('cd'), 'CD drawing category');
 assert(meta.attachmentMaxBytes === null, 'attachment max unlimited');
 assert(meta.intakeEditor.hideBidClerk === true, 'hide bid clerk');
-assert(meta.assignmentEditor.technicalReview === false, 'approve not on assignment');
-assert(meta.setupEditor.technicalReview === true, 'approve on handoff');
+assert(meta.assignmentEditor.technicalReview === true, 'technical review on assignment');
+assert(meta.assignmentEditor.technicalReviewPosition === 'top', 'technical review at top');
+assert(meta.setupEditor.technicalReview === false, 'technical review not repeated on handoff');
+assert(normalizeTakeoffStatus('make revisions') === 'revision', 'takeoff revision');
+assert(normalizeTakeoffStatus('resubmitted') === 'resubmitted', 'takeoff resubmitted');
+assert(normalizeTakeoffStatus('done') === 'completed', 'takeoff completed');
+const followed = mergeProcess(emptyProcess(), {
+  intelligence: {
+    followUpCalls: [{ companyName: 'JHU', kind: 'gc', callAttempts: [{ remarks: 'extended', attachmentIds: [4] }] }],
+    competitors: [{ name: 'Acme Insulation', trade: 'insulation' }],
+  },
+});
+assert(followed.intelligence.followUpCalls[0].kind === 'gc', 'follow-up kind');
+assert(followed.intelligence.followUpCalls[0].callAttempts[0].attachmentIds[0] === 4, 'follow-up screenshot id');
+assert(followed.intelligence.competitors[0].trade === 'insulation', 'competitor trade');
+assert(
+  intakePartiesFromProcess(followed).some((p) => p.role === 'insulation' && p.contact.name === 'Acme Insulation'),
+  'competitor lands in insulation directory',
+);
 assert(meta.setupEditor.label === 'Handoff', 'setup chrome is Handoff');
 assert(meta.intakeEditor.hideDueDate === true, 'hide intake due date');
 assert(meta.intakeEditor.clientBidDate.bind === 'bidDate', 'client bid date is header');
@@ -972,6 +990,32 @@ assert(
 assert(bindAssignmentCrew({ ...blankCrew, captainUserId: 12, teamId: 3 }, captains, teams).teamId === 2, 'captain wins over teamId');
 assert(bindAssignmentCrew({ ...blankCrew, captain: 'Mike' }, captains, teams).teamId == null, 'excel name is not a captain');
 assert(bindAssignmentCrew({ ...blankCrew, teamId: 3 }, captains, teams).captainUserId == null, 'team without login captain stays empty');
+const emailCaps = [
+  { userId: 26, name: 'bil.shams@goelservices.com', email: 'bil.shams@goelservices.com', teamId: null as number | null },
+];
+const emailTeams = [{ id: 2, captain: 'Bil Shams', bidClerk: 'Mark Tan', captainUserId: null }];
+const fromEmail = bindAssignmentCrew({ ...blankCrew, captainUserId: 26 }, emailCaps, emailTeams);
+assert(
+  fromEmail.captain === 'Bil Shams' && fromEmail.teamId === 2 && fromEmail.bidClerk === 'Mark Tan',
+  'email login keeps roster captain',
+);
+const fromRosterTeam = bindAssignmentCrew({ ...blankCrew, teamId: 2 }, emailCaps, emailTeams);
+assert(
+  fromRosterTeam.captain === 'Bil Shams' && fromRosterTeam.captainUserId === 26,
+  'team fills roster name and login',
+);
+const wilderLogin = [
+  { userId: 33, name: 'wilder.rodriguez@goelservices.com', email: 'wilder.rodriguez@goelservices.com', teamId: 4 },
+];
+const wilderTeams = [
+  { id: 1, captain: 'Wilder Rodriguez', bidClerk: 'Hassan Riaz', captainUserId: null },
+  { id: 4, captain: 'wilder.rodriguez@goelservices.com', bidClerk: 'John Alex Lopez', captainUserId: 33 },
+];
+const fromWilder = bindAssignmentCrew({ ...blankCrew, captainUserId: 33, teamId: 4 }, wilderLogin, wilderTeams);
+assert(
+  fromWilder.teamId === 1 && fromWilder.captain === 'Wilder Rodriguez' && fromWilder.bidClerk === 'Hassan Riaz',
+  'roster team beats email team',
+);
 assert(EXCEL_BID_TEAMS.length === 3 && EXCEL_BID_TEAMS[0].captain === 'Wilder Rodriguez', 'excel roster in system');
 const peopleIdx = indexPeopleByName([
   { firstName: 'Mike', lastName: 'Roberts', email: 'mike@goel.com' },

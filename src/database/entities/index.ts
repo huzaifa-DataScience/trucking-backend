@@ -85,3 +85,4 @@ export { BidItemCatalog } from './bid-item-catalog.entity';
 export { WfsStaticItem } from './wfs-static-item.entity';
 export { WfsSnapshot } from './wfs-snapshot.entity';
 export { CalendarEvent } from './calendar-event.entity';
+export { OpsDisposalRate, OpsHaulTicket, OpsHaulerRate } from './operations.entity';

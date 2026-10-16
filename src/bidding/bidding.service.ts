@@ -638,7 +638,7 @@ export class BiddingService {
     ) {
       process.assignment.captainUserId = userId;
     }
-    if (process) await this.applyAssignmentCrew(process);
+    if (process) await this.applyAssignmentCrew(process, process.assignment.teamId);
     if (process) await this.specs.applySpecSheetCodes(process);
     await this.assertUniqueOpportunity({
       estimateNumber: dto.estimateNumber,
@@ -803,7 +803,9 @@ export class BiddingService {
         ? this.mergeProcessSafe(existingProcess, dto.process)
         : existingProcess;
     if (dto.process !== undefined) stampTakeoffAssignedAt(existingProcess, processNow);
-    if (dto.process?.assignment !== undefined) await this.applyAssignmentCrew(processNow);
+    if (dto.process?.assignment !== undefined) {
+      await this.applyAssignmentCrew(processNow, existingProcess.assignment.teamId);
+    }
     const prevBidName = bid.bidName;
     const prevEstimate = bid.estimateNumber;
     if (processNow.drawingName) bid.bidName = processNow.drawingName;
@@ -1186,16 +1188,19 @@ export class BiddingService {
     return bidName ? `${estimateNumber} — ${bidName}` : estimateNumber;
   }
 
-  private async applyAssignmentCrew(process: BidProcess): Promise<void> {
+  private async applyAssignmentCrew(process: BidProcess, beforeTeamId: number | null): Promise<void> {
     const [captains, teams] = await Promise.all([
       this.lookups.getCaptains(),
       this.lookups.getTeams(),
     ]);
     process.assignment = bindAssignmentCrew(process.assignment, captains, teams);
-    fillTakeoffAssignmentsFromTeam(
-      process,
-      teams.find((t) => t.id === process.assignment.teamId),
-    );
+    // Crew names follow a team change. A later save keeps names the user edited.
+    if (process.assignment.teamId !== beforeTeamId) {
+      fillTakeoffAssignmentsFromTeam(
+        process,
+        teams.find((t) => t.id === process.assignment.teamId),
+      );
+    }
   }
 
   /** Same estimate #, name, or title-block # → one opportunity. Case-insensitive. */
