@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,28 +10,35 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   Res,
   StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService, LoginResult } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { CurrentUser, Public } from './decorators';
 import { JwtAuthGuard } from './guards';
 import { LoginDto } from './dto/login.dto';
 import { PatchTeamDto } from './dto/patch-team.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
 import { User } from '../database/entities';
 import { MAX_AVATAR_BYTES } from '../files/file-storage.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Post('login')
@@ -46,7 +54,56 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
   ): Promise<{ access_token: string; user: LoginResult } | { message: string }> {
-    return this.authService.register(dto.email, dto.password, dto.confirmPassword);
+    return this.authService.register(dto.email, dto.password, dto.confirmPassword, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
+  }
+
+  /** Emails a one-time reset link if the address has an account. Same answer either way. */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: Request): Promise<{ message: string }> {
+    await this.passwordReset.requestReset(dto.email, req.ip);
+    return { message: "If that email has an account, we've sent a link to reset the password." };
+  }
+
+  /** Sets a new password from a reset link. */
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
+    if (dto.confirmPassword !== undefined && dto.confirmPassword !== dto.password) {
+      throw new BadRequestException('Passwords do not match');
+    }
+    await this.passwordReset.resetPassword(dto.token, dto.password);
+    return { message: 'Your password has been changed. You can sign in now.' };
+  }
+
+  /** Signed-in password change (Account settings). */
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser() user: User | undefined,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ access_token: string; user: LoginResult; message: string }> {
+    if (!user) throw new UnauthorizedException('Please sign in again.');
+    const session = await this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
+    return { ...session, message: 'Password changed. Other devices have been signed out.' };
+  }
+
+  /** Signs out every other device; the response carries a new token for this one. */
+  @UseGuards(JwtAuthGuard)
+  @Post('sign-out-other-devices')
+  @HttpCode(HttpStatus.OK)
+  async signOutOtherDevices(
+    @CurrentUser() user: User | undefined,
+  ): Promise<{ access_token: string; user: LoginResult; message: string }> {
+    if (!user) throw new UnauthorizedException('Please sign in again.');
+    const session = await this.authService.signOutOtherDevices(user.id);
+    return { ...session, message: 'Signed out of all other devices.' };
   }
 
   @UseGuards(JwtAuthGuard)
