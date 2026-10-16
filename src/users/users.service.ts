@@ -70,6 +70,8 @@ export class UsersService implements OnModuleInit {
   async create(data: { 
     email: string; 
     password: string; 
+    firstName?: string | null;
+    lastName?: string | null;
     role?: Role;
     status?: UserStatus;
   }): Promise<User> {
@@ -78,6 +80,8 @@ export class UsersService implements OnModuleInit {
     const user = this.userRepo.create({
       email,
       passwordHash,
+      firstName: data.firstName?.trim() || null,
+      lastName: data.lastName?.trim() || null,
       role: data.role ?? Role.User,
       status: data.status ?? UserStatus.Pending, // New signups default to pending
     });
@@ -86,6 +90,12 @@ export class UsersService implements OnModuleInit {
 
   async validatePassword(plain: string, hash: string): Promise<boolean> {
     return bcrypt.compare(plain, hash);
+  }
+
+  /** Replace a user's password (same bcrypt cost as signup). Used by change-password and password reset. */
+  async setPassword(userId: number, plain: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(plain, 10);
+    await this.userRepo.update({ id: userId }, { passwordHash });
   }
 
   async updateLastLogin(userId: number): Promise<void> {
