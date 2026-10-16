@@ -21,6 +21,7 @@ import {
   ConnecteamWebhookEvent,
   ConnecteamMessage,
   Job,
+  User,
 } from '../database/entities';
 import { ConnecteamApiClient } from './connecteam-api.client';
 import { ConnecteamChatGateway } from './connecteam-chat.gateway';
@@ -65,6 +66,7 @@ import { ConnecteamWebhookService } from './connecteam-webhook.service';
       ConnecteamWebhookEvent,
       ConnecteamMessage,
       Job,
+      User,
     ]),
   ],
   controllers: [ConnecteamController, ConnecteamWebhookController, ConnecteamWriteController],

@@ -33,6 +33,10 @@ export class CalendarEvent {
   @Column({ name: 'BidId', type: 'int', nullable: true })
   bidId!: number | null;
 
+  /** Comma-separated App_Users ids invited to this event. Owner is not repeated here. */
+  @Column({ name: 'AttendeeUserIds', type: 'nvarchar', length: 200, nullable: true })
+  attendeeUserIds!: string | null;
+
   @Column({ name: 'CreatedAt', type: 'datetime2', default: () => 'SYSUTCDATETIME()' })
   createdAt!: Date;
 

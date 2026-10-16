@@ -250,9 +250,23 @@ export class TogalService implements OnModuleInit {
     files: { attachmentId: number; fileId: string; pageIds: string[] }[];
     warning: string | null;
   }> {
+    return this.withSession((session) => this.pushBid(bidId, session));
+  }
+
+  private async pushBid(
+    bidId: number,
+    session: TogalSession,
+  ): Promise<{
+    projectUrl: string | null;
+    projectId: string | null;
+    setId: string | null;
+    organizationId: string | null;
+    sentAttachmentIds: number[];
+    files: { attachmentId: number; fileId: string; pageIds: string[] }[];
+    warning: string | null;
+  }> {
     const bid = await this.requireBid(bidId);
     const process = await this.processOf(bidId);
-    const session = await this.restSession();
     let projectId = process.togal.projectId;
     let setId = process.togal.setId;
     const projectUrl = process.togal.projectUrl;
@@ -266,6 +280,7 @@ export class TogalService implements OnModuleInit {
         try {
           folderId = folderIdForCaptain(await this.rest.listFolders(session), captainName);
         } catch (e) {
+          if (sessionRejected(e)) throw e;
           warnings.push(e instanceof Error ? e.message : 'Togal folders could not be read');
         }
       }
@@ -279,6 +294,7 @@ export class TogalService implements OnModuleInit {
         try {
           await this.rest.moveProject(session, projectId, folderId);
         } catch (e) {
+          if (sessionRejected(e)) throw e;
           warnings.push(e instanceof Error ? e.message : 'Togal did not move this project into the captain folder');
         }
       }
@@ -305,17 +321,18 @@ export class TogalService implements OnModuleInit {
           try {
             pageIds = await this.rest.createPages(session, { url: uploaded.url, setId, projectId });
           } catch (e) {
+            if (sessionRejected(e)) throw e;
             warnings.push(e instanceof Error ? e.message : `${file.originalFileName} was stored but not opened as drawings`);
           }
           files.push({ attachmentId: row.id, fileId: uploaded.id, pageIds });
           sent.add(row.id);
         } catch (e) {
+          if (sessionRejected(e)) throw e;
           warnings.push(e instanceof Error ? e.message : `${file.originalFileName} was not sent to Togal`);
         }
       }
     } catch (e) {
-      if (sessionRejected(e)) this.restSessionCache = null;
-      if (e instanceof BadRequestException || e instanceof ServiceUnavailableException) throw e;
+      if (sessionRejected(e) || e instanceof BadRequestException || e instanceof ServiceUnavailableException) throw e;
       throw this.wrap(e);
     }
     return {

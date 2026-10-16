@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** Custom event body. All-day: `start`/`end` are `YYYY-MM-DD` (end inclusive). Timed: ISO instants. */
 export class CalendarEventDto {
@@ -32,4 +32,10 @@ export class CalendarEventDto {
   @IsOptional()
   @IsInt()
   bidId?: number | null;
+
+  /** App user ids to share this event with. Owner is added automatically. */
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  attendeeUserIds?: number[] | null;
 }

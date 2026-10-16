@@ -16,7 +16,7 @@ import {
   UserStatus,
   Role,
 } from '../database/entities';
-import { userDisplayName } from '../database/entities/user.entity';
+import { userDisplayName, userFullName } from '../database/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { computeBurdenedRate, BurdenItem } from './bidding-calc/labor-burden';
 import {
@@ -28,7 +28,7 @@ import {
   type IntakePartyRole,
   type PartyContact,
 } from './process/bid-process';
-import { TEAM_CREW_SLOTS, type TeamCrewSlot } from './process/bid-crew';
+import { personRosterName, rosterName, TEAM_CREW_SLOTS, type TeamCrewSlot } from './process/bid-crew';
 
 function aliasCrewRole(role?: string): string {
   const want = String(role ?? '').trim();
@@ -167,7 +167,7 @@ export class BiddingLookupsService {
       return {
         id: t.id,
         teamName: t.teamName,
-        captain: cap ? userDisplayName(cap) : null,
+        captain: rosterName(t.captain) || (cap ? userDisplayName(cap) : null),
         captainUserId: cap?.id ?? null,
         bidClerk: t.bidClerk,
         assistantManager: t.assistantManager,
@@ -187,7 +187,8 @@ export class BiddingLookupsService {
     const teamName = new Map(teams.map((t) => [t.id, t.teamName]));
     return captains.map((u) => ({
       userId: u.id,
-      name: userDisplayName(u),
+      name:
+        personRosterName({ name: userFullName(u), email: u.email }, teams) || userDisplayName(u),
       firstName: u.firstName,
       lastName: u.lastName,
       email: u.email,

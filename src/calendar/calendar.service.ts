@@ -143,13 +143,22 @@ export class CalendarService {
 
   async createEvent(viewer: Viewer, dto: CalendarEventDto) {
     const fields = await this.eventFields(dto);
-    const saved = await this.events.save(this.events.create({ ...fields, ownerUserId: viewer.id }));
+    const saved = await this.events.save(
+      this.events.create({
+        ...fields,
+        ownerUserId: viewer.id,
+        attendeeUserIds: await this.cleanAttendees(dto.attendeeUserIds, viewer.id),
+      }),
+    );
     return (await this.customItems(viewer.id, viewer.id, null, saved.id))[0];
   }
 
   async updateEvent(viewer: Viewer, id: number, dto: CalendarEventDto) {
     const row = await this.ownEvent(viewer, id);
     Object.assign(row, await this.eventFields(dto), { updatedAt: new Date() });
+    if (dto.attendeeUserIds !== undefined) {
+      row.attendeeUserIds = await this.cleanAttendees(dto.attendeeUserIds, viewer.id);
+    }
     await this.events.save(row);
     return (await this.customItems(viewer.id, viewer.id, null, id))[0];
   }
@@ -306,7 +315,12 @@ export class CalendarService {
     range: { from: string; to: string } | null,
     onlyId?: number,
   ): Promise<CalendarItem[]> {
-    const qb = this.events.createQueryBuilder('e').where('e.ownerUserId = :ownerId', { ownerId });
+    const qb = this.events
+      .createQueryBuilder('e')
+      .where('(e.ownerUserId = :ownerId OR CONCAT(\',\', e.attendeeUserIds, \',\') LIKE :attendee)', {
+        ownerId,
+        attendee: `%,${ownerId},%`,
+      });
     if (onlyId != null) qb.andWhere('e.id = :id', { id: onlyId });
     if (range) {
       const { start, end } = paddedInstants(range);
@@ -330,8 +344,9 @@ export class CalendarService {
         allDay: e.allDay,
         description: e.description,
         location: e.location,
-        editable: ownerId === viewerId,
+        editable: e.ownerUserId === viewerId,
         customEventId: e.id,
+        attendeeUserIds: (e.attendeeUserIds ?? '').split(',').map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0),
         bidLink: b ? { id: b.id, estimateNumber: b.estimateNumber, bidName: b.bidName } : null,
       });
     });
@@ -367,6 +382,14 @@ export class CalendarService {
       bidId: dto.bidId ?? null,
     };
   }
+
+  private async cleanAttendees(ids: number[] | null | undefined, ownerId: number): Promise<string | null> {
+    const unique = [...new Set((ids ?? []).filter((n) => Number.isInteger(n) && n > 0 && n !== ownerId))].slice(0, 20);
+    if (!unique.length) return null;
+    const found = await this.users.find({ where: { id: In(unique) }, select: { id: true } });
+    const ok = found.map((u) => u.id);
+    return ok.length ? ok.join(',') : null;
+  }
 }
 
 function item(p: {
@@ -382,6 +405,7 @@ function item(p: {
   details?: CalendarItem['details'];
   editable?: boolean;
   customEventId?: number;
+  attendeeUserIds?: number[];
   bidLink?: { id: number; estimateNumber: string; bidName: string | null } | null;
 }): CalendarItem {
   return {
@@ -412,6 +436,7 @@ function item(p: {
     details: p.details ?? [],
     editable: p.editable ?? false,
     ...(p.customEventId != null ? { customEventId: p.customEventId } : {}),
+    ...(p.attendeeUserIds?.length ? { attendeeUserIds: p.attendeeUserIds } : {}),
   };
 }
 

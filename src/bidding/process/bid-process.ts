@@ -218,7 +218,29 @@ export const PROCESS_ATTACHMENT_LABELS = [
   'takeoff-zip',
   'takeoff-snap',
   'takeoff-recap',
+  'follow-up',
 ] as const;
+
+/** Per-scope takeoff status. Mike 9 Oct: more than done / none. */
+export const TAKEOFF_ASSIGNMENT_STATUSES = ['in_process', 'revision', 'completed', 'resubmitted'] as const;
+export type TakeoffAssignmentStatus = (typeof TAKEOFF_ASSIGNMENT_STATUSES)[number];
+export const TAKEOFF_ASSIGNMENT_STATUS_LABELS: Record<TakeoffAssignmentStatus, string> = {
+  in_process: 'In process',
+  revision: 'Revision',
+  completed: 'Completed',
+  resubmitted: 'Resubmitted',
+};
+
+export function normalizeTakeoffStatus(raw: unknown): string | null {
+  const s = String(raw ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  if (!s || s === 'none') return null;
+  if (s === 'in process' || s === 'working' || s === 'working on' || s === 'under process') return 'in_process';
+  if (s === 'revision' || s === 'revisions' || s === 'make revisions') return 'revision';
+  if (s === 'completed' || s === 'complete' || s === 'done') return 'completed';
+  if (s === 'resubmitted' || s === 'resubmit') return 'resubmitted';
+  if ((TAKEOFF_ASSIGNMENT_STATUSES as readonly string[]).includes(s)) return s;
+  return nullishStr(raw);
+}
 
 /** Drawings tab — design/revision phase. Percent = design completeness at issuance. */
 export const DRAWING_CATEGORIES = ['sd', 'dd', 'cd', 'ifb', 'ifp', 'ifc', 'ifr'] as const;
@@ -300,7 +322,15 @@ export type PartyContact = {
   preferredContactValue?: string | null;
 };
 
-export const INTAKE_PARTY_ROLES = ['owner', 'architect', 'mechanical', 'invite_contact'] as const;
+export const INTAKE_PARTY_ROLES = [
+  'owner',
+  'architect',
+  'mechanical',
+  'invite_contact',
+  'gc',
+  'mechanical_contractor',
+  'insulation',
+] as const;
 export type IntakePartyRole = (typeof INTAKE_PARTY_ROLES)[number];
 
 export function partyDedupeKey(role: string, c: PartyContact): string | null {
@@ -327,7 +357,53 @@ export function intakePartiesFromProcess(p: {
   push('mechanical', p.mechanicalEngineer);
   for (const inv of p.invitations ?? []) push('invite_contact', inv?.contact);
   push('invite_contact', p.inviteContact);
+  const company = (
+    name: string | null | undefined,
+    contactName?: string | null,
+    phone?: string | null,
+  ): PartyContact | null => {
+    const n = String(name ?? '').trim();
+    if (!n) return null;
+    return { name: n, company: n, contactName: contactName ?? null, email: null, phone: phone ?? null };
+  };
+  const extra = p as {
+    generalContractors?: Array<{ company?: string | null; name?: string | null; contactName?: string | null; phone?: string | null }>;
+    mechanicals?: Array<{ company?: string | null; name?: string | null; contactName?: string | null; phone?: string | null }>;
+    intelligence?: {
+      competitors?: Array<{ name?: string | null }>;
+      followUpCalls?: Array<{ companyName?: string | null; contactName?: string | null; phone?: string | null; kind?: string | null }>;
+    };
+  };
+  for (const g of extra.generalContractors ?? []) {
+    const c = company(g.company || g.name, g.contactName, g.phone);
+    if (c) out.push({ role: 'gc', contact: c });
+  }
+  for (const m of extra.mechanicals ?? []) {
+    const c = company(m.company || m.name, m.contactName, m.phone);
+    if (c) out.push({ role: 'mechanical_contractor', contact: c });
+  }
+  for (const f of extra.intelligence?.followUpCalls ?? []) {
+    const kind = followUpKind(f.kind);
+    const c = company(f.companyName, f.contactName, f.phone);
+    if (c && kind) out.push({ role: kind === 'gc' ? 'gc' : 'mechanical_contractor', contact: c });
+  }
+  for (const c of extra.intelligence?.competitors ?? []) {
+    const contact = company(c.name);
+    if (contact) out.push({ role: 'insulation', contact });
+  }
   return out;
+}
+
+function followUpKind(raw: unknown): 'gc' | 'mechanical' | null {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'gc' || s === 'general' || s === 'general contractor') return 'gc';
+  if (s === 'mechanical' || s === 'mc' || s === 'mechanical contractor') return 'mechanical';
+  return null;
+}
+
+function competitorTrade(raw: unknown): 'insulation' | null {
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'insulation' ? 'insulation' : null;
 }
 
 export const CONTRACTOR_STATUSES = [
@@ -488,6 +564,8 @@ export type CompetitorIntel = {
   source: string | null;
   confidence: string | null;
   atBid: boolean | null;
+  /** Goel competitors on follow-up are insulation companies. */
+  trade: 'insulation' | null;
 };
 
 /** One dated attempt to reach a follow-up company — ordinal is its position (1st..5th), not user-typed. */
@@ -495,6 +573,8 @@ export type FollowUpCallAttempt = {
   ordinal: number;
   dateOfCall: string | null;
   remarks: string | null;
+  /** Bid attachment ids. Upload label `follow-up`, then save the ids here. */
+  attachmentIds: number[];
 };
 
 export type FollowUpCompany = {
@@ -502,6 +582,8 @@ export type FollowUpCompany = {
   companyName: string | null;
   contactName: string | null;
   phone: string | null;
+  /** gc or mechanical contractor. Not Goel. */
+  kind: 'gc' | 'mechanical' | null;
   callAttempts: FollowUpCallAttempt[];
 };
 
@@ -1764,6 +1846,7 @@ function normalizeProcess(p: BidProcess): void {
       source: nullishStr(c?.source),
       confidence: nullishStr(c?.confidence),
       atBid: c?.atBid ?? null,
+      trade: competitorTrade(c?.trade),
     }));
   p.intelligence.followUpCalls = (Array.isArray(p.intelligence.followUpCalls) ? p.intelligence.followUpCalls : [])
     .slice(0, MAX_FOLLOWUP_COMPANIES)
@@ -1772,12 +1855,17 @@ function normalizeProcess(p: BidProcess): void {
       companyName: nullishStr(f?.companyName),
       contactName: nullishStr(f?.contactName),
       phone: nullishStr(f?.phone),
+      kind: followUpKind(f?.kind),
       callAttempts: (Array.isArray(f?.callAttempts) ? f.callAttempts : [])
         .slice(0, MAX_FOLLOWUP_CALL_ATTEMPTS)
         .map((a, i) => ({
           ordinal: i + 1,
           dateOfCall: nullishStr(a?.dateOfCall),
           remarks: nullishStr(a?.remarks),
+          attachmentIds: (Array.isArray(a?.attachmentIds) ? a.attachmentIds : [])
+            .map((n) => Number(n))
+            .filter((n) => Number.isInteger(n) && n > 0)
+            .slice(0, 8),
         })),
     }));
   p.amendments = p.amendments.map((a, i) => ({
@@ -1855,7 +1943,7 @@ function normalizeProcess(p: BidProcess): void {
     assigneeName: nullishStr(a?.assigneeName),
     assignedAt: nullishStr(a?.assignedAt),
     dueAt: nullishStr(a?.dueAt),
-    status: nullishStr(a?.status),
+    status: normalizeTakeoffStatus(a?.status),
     hoursSpent: numOrNull(a?.hoursSpent),
     notes: nullishStr(a?.notes),
     finalQuantity: numOrNull(a?.finalQuantity),
@@ -2316,7 +2404,7 @@ const PROCESS_FIELDS: Array<{ path: string; phase: EntryPhase; note: string }> =
   { path: 'mechanicals', phase: 'intake', note: 'Multiple mechanicals on the same opportunity; hasTheJob / stillBidding' },
   { path: 'assignment', phase: 'assignment', note: 'Captain/team only. Internal due dates hidden. Approve-for-takeoff is Handoff (after drawings/specs). pursue false = no-bid on complete' },
   { path: 'takeoffAssignments.completed', phase: 'takeoff', note: 'Hidden. Turn-in is zip + snap + recap, not a per-scope tick.' },
-  { path: 'technicalReview', phase: 'estimating_setup', note: 'Approve for takeoff on Handoff after drawings/specs. Still required to leave Handoff.' },
+  { path: 'technicalReview', phase: 'assignment', note: 'Top of Assignment. Nick or PJ assign the team here. Not repeated on Handoff. approvedForTakeoff is still required to leave Handoff.' },
   { path: 'takeoffAssignments', phase: 'assignment', note: 'Who does each scope; 1 or 2 for back-check. Names fill from the captain’s crew when team changes. VRF + equipment = hydronic team' },
   { path: 'constructionType', phase: 'intake', note: 'Followup building bucket — GET /lookups/bidding/building-types; save name. Not on proposal.' },
   { path: 'constructionSubtype', phase: 'intake', note: 'GET /lookups/bidding/project-types. Not on proposal.' },
@@ -2468,7 +2556,7 @@ const INTAKE_EDITOR = {
   captainField: 'assignment.captainUserId',
   captainLookup: 'GET /lookups/bidding/captains',
   captainSelectsTeam: true,
-  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact&q=&page=1&pageSize=10',
+  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact|gc|mechanical_contractor|insulation&q=&page=1&pageSize=10',
   partyRoles: INTAKE_PARTY_ROLES,
   sketchTiers: [
     { sortOrder: 0, role: 'owner', note: 'Who owns the property' },
@@ -2500,19 +2588,22 @@ const INTAKE_EDITOR = {
 };
 
 const ASSIGNMENT_EDITOR = {
-  technicalReview: false,
+  technicalReview: true,
+  technicalReviewPosition: 'top',
   hideInternalEstimateDue: true,
   hideInternalReviewDue: true,
   hideBidClerk: true,
   assistantEstimatorFrom: 'team bidClerk slot — label Assistant Estimator',
   takeoffFillsFromTeam: true,
   takeoffSlotOrder: ['duct1', 'duct2', 'hydronic1', 'hydronic2', 'plumbing1', 'plumbing2'] as const,
+  takeoffAssignmentStatuses: TAKEOFF_ASSIGNMENT_STATUSES,
+  takeoffAssignmentStatusLabels: TAKEOFF_ASSIGNMENT_STATUS_LABELS,
   who: 'Nick + PJ + Gino',
   doNot: [
     'Show Bid clerk next to Assistant Estimator — same person',
     'Show internal estimate due / internal review due — those moved to Handoff internalBidDate',
     'Block Complete for approvedForTakeoff — that gate is Handoff → Takeoff',
-    'Keep approve-for-takeoff editor on Assignment — Handoff after Drawings/Specs',
+    'Repeat the technical review form on Handoff',
   ],
 };
 
@@ -2644,8 +2735,8 @@ const SETUP_EDITOR = {
     label: 'Internal bid date',
     note: 'Overseas takeoff turn-in. Show the same date on Takeoff.',
   },
-  technicalReview: true,
-  approvedForTakeoff: 'technicalReview.approvedForTakeoff',
+  technicalReview: false,
+  approvedForTakeoff: 'technicalReview.approvedForTakeoff — set on Assignment; this tab does not show the form. Gate still applies.',
   mbePreference: {
     bind: 'mbePreference',
     lookup: 'GET /lookups/bidding/preferences',
@@ -2656,7 +2747,7 @@ const SETUP_EDITOR = {
   specSheet: 'FRONTEND_SPEC_SHEET.md',
   doNot: [
     'Building type / project type / GSF — those moved to intake (PJ 13 Sep 2026)',
-    'Put approve-for-takeoff back on Assignment — drawings/specs first, then this tab',
+    'Show the technical review form here — it lives at the top of Assignment',
   ],
 };
 
@@ -2764,6 +2855,11 @@ const POST_BID_EDITOR = {
     'mechanicals.stillBidding',
   ],
   stillBidding: 'generalContractors[].stillBidding / mechanicals[].stillBidding',
+  followUpCompanyKind: 'intelligence.followUpCalls[].kind = gc | mechanical',
+  followUpCompanyLookup: 'GET /lookups/bidding/parties?role=gc or role=mechanical_contractor&q=',
+  competitorTrade: 'intelligence.competitors[].trade = insulation',
+  competitorLookup: 'GET /lookups/bidding/parties?role=insulation&q=',
+  followUpScreenshots: 'callAttempts[].attachmentIds — POST /bids/:id/attachments label follow-up, then save the ids',
   proposalPdf: { label: 'proposal', category: 'proposal' },
   outcome: 'POST /bids/:id/outcome — then Outcome tab (award / lost)',
   export: 'GET /bids/export',

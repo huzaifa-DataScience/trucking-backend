@@ -47,6 +47,8 @@ export type CalendarItem = {
   /** Only the owner's custom events are editable. */
   editable: boolean;
   customEventId?: number;
+  /** App user ids on a shared custom event, not including the owner. */
+  attendeeUserIds?: number[];
 };
 
 export type PersonRef = {
