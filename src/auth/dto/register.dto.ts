@@ -1,7 +1,13 @@
-import { IsEmail, IsOptional, IsString, Matches } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { STRONG_PASSWORD, STRONG_PASSWORD_MESSAGE } from './password.dto';
 
 export class RegisterDto {
+  @IsOptional() @IsString() @MaxLength(200)
+  firstName?: string;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  lastName?: string;
+
   @IsEmail()
   email: string;
 
