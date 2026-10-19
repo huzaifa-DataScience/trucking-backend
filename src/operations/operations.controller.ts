@@ -20,8 +20,22 @@ export class OperationsController {
   }
 
   @Get('hauler-rates')
-  haulerRates() {
-    return this.ops.listHaulerRates();
+  haulerRates(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
+    @Query('company') company?: string,
+    @Query('status') status?: string,
+  ) {
+    // Without `page` the full list is returned as before (haul form / haul log dropdowns use it).
+    if (page == null) return this.ops.listHaulerRates();
+    return this.ops.listHaulerRatesPage({
+      page: intOrUndefined(page),
+      pageSize: intOrUndefined(pageSize),
+      search,
+      company,
+      status: status === 'inactive' || status === 'all' ? status : 'active',
+    });
   }
 
   @Post('hauler-rates')
@@ -35,8 +49,28 @@ export class OperationsController {
   }
 
   @Get('disposal-rates')
-  disposalRates() {
-    return this.ops.listDisposalRates();
+  disposalRates(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
+    @Query('company') company?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    // Without `page` the full list is returned as before (haul form / haul log dropdowns use it).
+    if (page == null) return this.ops.listDisposalRates();
+    return this.ops.listDisposalRatesPage({
+      page: intOrUndefined(page),
+      pageSize: intOrUndefined(pageSize),
+      search,
+      company,
+      type,
+      status: status === 'inactive' || status === 'all' ? status : 'active',
+      sortBy,
+      sortDir: sortDir === 'desc' ? 'desc' : 'asc',
+    });
   }
 
   @Post('disposal-rates')
@@ -56,13 +90,23 @@ export class OperationsController {
     @Query('jobNumber') jobNumber?: string,
     @Query('haulerRateId') haulerRateId?: string,
     @Query('disposalRateId') disposalRateId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
   ) {
-    return this.ops.listHauls({
+    const filters = {
       from,
       to,
       jobNumber,
       haulerRateId: intOrUndefined(haulerRateId),
       disposalRateId: intOrUndefined(disposalRateId),
+    };
+    // Without `page` the full list is returned as before; with it, one page + totals.
+    if (page == null) return this.ops.listHauls(filters);
+    return this.ops.listHaulsPage(filters, {
+      page: intOrUndefined(page),
+      pageSize: intOrUndefined(pageSize),
+      search,
     });
   }
 
@@ -82,8 +126,25 @@ export class OperationsController {
   }
 
   @Get('reports/jobs')
-  reportJobs(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.ops.reportJobs({ from, to });
+  reportJobs(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    // Without `page` every job is returned as before.
+    if (page == null) return this.ops.reportJobs({ from, to });
+    return this.ops.reportJobsPage(
+      { from, to },
+      {
+        page: intOrUndefined(page),
+        pageSize: intOrUndefined(pageSize),
+        sortBy,
+        sortDir: sortDir === 'asc' ? 'asc' : 'desc',
+      },
+    );
   }
 
   @Get('reports/haulers')

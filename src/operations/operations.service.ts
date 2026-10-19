@@ -44,6 +44,17 @@ export const AGGREGATE_KEYS = ['rc57', 'rc6', 'rc2', 'cr57', 'dirtTons'] as cons
 
 type QtyKey = (typeof LEED_KEYS)[number] | (typeof AGGREGATE_KEYS)[number];
 
+/** Disposal card type from free-text `unitLabel`; same rule as the Disposal rates page ("Recyle" counts as Recycle). */
+function disposalType(unitLabel: string | null | undefined): string {
+  const u = (unitLabel ?? '').trim().toLowerCase();
+  if (!u) return 'Not set';
+  if (u.startsWith('rec')) return 'Recycle';
+  if (u === 'import') return 'Import';
+  if (u === 'export') return 'Export';
+  if (u === 'asbestos') return 'Asbestos';
+  return 'Other';
+}
+
 function blank(value: unknown): string | null {
   if (value == null) return null;
   const s = String(value).trim();
@@ -96,6 +107,45 @@ export class OperationsService {
     return rows.map((row) => this.haulerView(row));
   }
 
+  /** One page of hauler rate cards; same search (label, company, category) and order as the full list. */
+  async listHaulerRatesPage(opts: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    company?: string;
+    status: 'active' | 'inactive' | 'all';
+  }) {
+    const term = opts.search?.trim().toLowerCase();
+    const company = opts.company?.trim();
+    const every = await this.listHaulerRates();
+    // Company + search first, so the status counts describe what the switch would show.
+    const matched = every.filter((r) => {
+      if (company && r.companyName !== company) return false;
+      if (!term) return true;
+      return [r.label, r.companyName, r.category].filter(Boolean).join(' ').toLowerCase().includes(term);
+    });
+    const active = matched.filter((r) => r.isActive).length;
+    const all = matched.filter((r) =>
+      opts.status === 'active' ? r.isActive : opts.status === 'inactive' ? !r.isActive : true,
+    );
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+    const pages = Math.max(1, Math.ceil(all.length / pageSize));
+    const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+    const companies = [...new Set(every.map((r) => r.companyName).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    // allCount = every card before filters, for the "N of M cards" footer.
+    return {
+      items: all.slice((page - 1) * pageSize, page * pageSize),
+      total: all.length,
+      allCount: every.length,
+      page,
+      pageSize,
+      statusCounts: { active, inactive: matched.length - active, all: matched.length },
+      companies,
+    };
+  }
+
   async saveHaulerRate(body: HaulerRateDto, id?: number) {
     const row = id ? await this.haulers.findOne({ where: { id } }) : this.haulers.create();
     if (!row) throw new NotFoundException('Hauler rate not found');
@@ -124,6 +174,78 @@ export class OperationsService {
     return rows.map((row) => this.disposalView(row));
   }
 
+  /**
+   * One page of disposal rate cards. Filters, type counts and sorting match the Disposal rates page:
+   * the type comes from `unitLabel` (typos like "Recyle" count as Recycle), blanks sort last.
+   */
+  async listDisposalRatesPage(opts: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    company?: string;
+    type?: string;
+    status: 'active' | 'inactive' | 'all';
+    sortBy?: string;
+    sortDir: 'asc' | 'desc';
+  }) {
+    const term = opts.search?.trim().toLowerCase();
+    const company = opts.company?.trim();
+    const every = await this.listDisposalRates();
+    type Card = (typeof every)[number];
+    // Everything except the Type filter; the type switch counts come from this.
+    const matched = every.filter((r) => {
+      if (opts.status === 'active' && !r.isActive) return false;
+      if (opts.status === 'inactive' && r.isActive) return false;
+      if (company && r.companyName !== company) return false;
+      if (!term) return true;
+      return [r.label, r.companyName, r.category, r.unitLabel, r.address]
+        .filter(Boolean)
+        .join('\n')
+        .toLowerCase()
+        .includes(term);
+    });
+    const typeCounts: Record<string, number> = {};
+    for (const r of matched) typeCounts[disposalType(r.unitLabel)] = (typeCounts[disposalType(r.unitLabel)] ?? 0) + 1;
+    let all = opts.type && opts.type !== 'all' ? matched.filter((r) => disposalType(r.unitLabel) === opts.type) : matched;
+
+    const sortValue: Record<string, (r: Card) => string | number | null> = {
+      company: (r) => r.companyName,
+      type: (r) => disposalType(r.unitLabel),
+      material: (r) => r.category ?? '',
+      costPerLoad: (r) => r.costPerLoad ?? null,
+      costPerTon: (r) => r.costPerTon ?? null,
+      costPerCy: (r) => r.costPerCy ?? null,
+    };
+    const value = opts.sortBy ? sortValue[opts.sortBy] : undefined;
+    if (value) {
+      const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+      const isBlank = (v: string | number | null) => v == null || v === '' || (typeof v === 'number' && Number.isNaN(v));
+      all = [...all].sort((x, y) => {
+        const a = value(x);
+        const b = value(y);
+        if (isBlank(a) || isBlank(b)) return isBlank(a) === isBlank(b) ? 0 : isBlank(a) ? 1 : -1;
+        const c = typeof a === 'number' && typeof b === 'number' ? a - b : collator.compare(String(a), String(b));
+        return opts.sortDir === 'desc' ? -c : c;
+      });
+    }
+
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+    const pages = Math.max(1, Math.ceil(all.length / pageSize));
+    const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+    const companies = [...new Set(every.map((r) => r.companyName).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    return {
+      items: all.slice((page - 1) * pageSize, page * pageSize),
+      total: all.length,
+      allCount: every.length,
+      page,
+      pageSize,
+      typeCounts: { ...typeCounts, all: matched.length },
+      companies,
+    };
+  }
+
   async saveDisposalRate(body: DisposalRateDto, id?: number) {
     const row = id ? await this.disposal.findOne({ where: { id } }) : this.disposal.create();
     if (!row) throw new NotFoundException('Disposal rate not found');
@@ -149,6 +271,44 @@ export class OperationsService {
   async listHauls(q: { from?: string; to?: string; jobNumber?: string; haulerRateId?: number; disposalRateId?: number }) {
     const rows = await this.haulQuery(q).getMany();
     return rows.map((row) => this.haulView(row));
+  }
+
+  /**
+   * One page of the haul log plus totals for everything that matches. Costs are worked out from the
+   * rate cards in code, so all matching hauls are priced here; only the requested page is sent back.
+   */
+  async listHaulsPage(
+    q: { from?: string; to?: string; jobNumber?: string; haulerRateId?: number; disposalRateId?: number },
+    opts: { page?: number; pageSize?: number; search?: string },
+  ) {
+    const term = opts.search?.trim().toLowerCase();
+    const all = (await this.listHauls(q)).filter((r) => {
+      if (!term) return true;
+      return [r.jobNumber, r.jobName, r.haulerLabel, r.disposalLabel, r.goelTicketNumber, r.haulingTicketNumber, r.disposalTicketNumber]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(term);
+    });
+    const totals = all.reduce(
+      (sum, r) => ({
+        loads: sum.loads + 1,
+        truckingCost: cents(sum.truckingCost + (r.truckingCost ?? 0)),
+        disposalCost: cents(sum.disposalCost + (r.disposalCost ?? 0)),
+        totalCost: cents(sum.totalCost + (r.totalCost ?? 0)),
+      }),
+      { loads: 0, truckingCost: 0, disposalCost: 0, totalCost: 0 },
+    );
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+    const pages = Math.max(1, Math.ceil(all.length / pageSize));
+    const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+    return {
+      items: all.slice((page - 1) * pageSize, page * pageSize),
+      total: all.length,
+      page,
+      pageSize,
+      totals,
+    };
   }
 
   async saveHaul(body: HaulTicketDto, id?: number) {
@@ -200,6 +360,44 @@ export class OperationsService {
       jobNumber: row.jobNumber,
       jobName: row.jobName,
     }));
+  }
+
+  /**
+   * Cost by job, one page at a time. Every job is still totaled and sorted here (costs come from
+   * the rate cards in code); `totals` covers all jobs in the range, `total` is the job count.
+   */
+  async reportJobsPage(
+    q: { from?: string; to?: string },
+    opts: { page?: number; pageSize?: number; sortBy?: string; sortDir: 'asc' | 'desc' },
+  ) {
+    const { rows, totals } = await this.reportJobs(q);
+    type Row = (typeof rows)[number];
+    const numeric: Record<string, (r: Row) => number> = {
+      loads: (r) => r.loads,
+      weightTons: (r) => r.weightTons,
+      truckingCost: (r) => r.truckingCost,
+      disposalCost: (r) => r.disposalCost,
+      totalCost: (r) => r.totalCost,
+    };
+    let sorted = rows; // already Total, high to low
+    if (opts.sortBy === 'name') {
+      // Same rule as the page: A–Z ignoring case, "Job 2" before "Job 10", blank job numbers last.
+      const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+      sorted = [...rows].sort((x, y) => {
+        const a = x.jobNumber || '';
+        const b = y.jobNumber || '';
+        if (!a || !b) return !a === !b ? 0 : !a ? 1 : -1;
+        const c = collator.compare(a, b);
+        return opts.sortDir === 'desc' ? -c : c;
+      });
+    } else if (opts.sortBy && numeric[opts.sortBy]) {
+      const value = numeric[opts.sortBy];
+      sorted = [...rows].sort((x, y) => (opts.sortDir === 'desc' ? value(y) - value(x) : value(x) - value(y)));
+    }
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+    const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+    return { rows: sorted.slice((page - 1) * pageSize, page * pageSize), totals, total: sorted.length, page, pageSize };
   }
 
   async reportHaulers(q: { from?: string; to?: string }) {

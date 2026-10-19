@@ -7,6 +7,7 @@ import {
   LateSubmissionAuditResponseDto,
   EfficiencyOutlierRowDto,
 } from './dto/forensic.dto';
+import { asDate, pageOf } from './forensic-paging';
 
 @Injectable()
 export class ForensicService {
@@ -84,6 +85,56 @@ export class ForensicService {
       };
     });
     return { lateTicketsFound: items.length, items };
+  }
+
+  /** One page of the late submission audit; `lateTicketsFound` still counts every late ticket. */
+  async getLateSubmissionPage(
+    startDate: string | undefined,
+    endDate: string | undefined,
+    opts: { page?: number; pageSize?: number; sortBy?: string; sortDir?: string },
+  ) {
+    const { lateTicketsFound, items } = await this.getLateSubmissionAudit(startDate, endDate);
+    const paged = pageOf(
+      items,
+      {
+        ticket: (r) => r.ticketNumber,
+        ticketDate: (r) => asDate(r.ticketDate),
+        entryDate: (r) => asDate(r.systemEntryDate),
+        lag: (r) => r.lagTime,
+        signedBy: (r) => r.signedBy,
+        jobName: (r) => r.jobName,
+        hauler: (r) => r.haulerCompanyName,
+      },
+      opts,
+    );
+    return { lateTicketsFound, ...paged };
+  }
+
+  /** One page of the efficiency outlier report (benchmarks are still worked out over every truck). */
+  async getEfficiencyOutlierPage(
+    startDate: string | undefined,
+    endDate: string | undefined,
+    jobId: string | undefined,
+    materialId: string | undefined,
+    opts: { page?: number; pageSize?: number; sortBy?: string; sortDir?: string },
+  ) {
+    const rows = await this.getEfficiencyOutlierReport(startDate, endDate, jobId, materialId);
+    return pageOf(
+      rows,
+      {
+        date: (r) => asDate(r.date),
+        jobName: (r) => r.jobName,
+        route: (r) => r.route,
+        truck: (r) => r.truckNumber,
+        hauler: (r) => r.haulerName ?? '',
+        tickets: (r) => r.totalTickets,
+        duration: (r) => r.workDuration,
+        avgCycle: (r) => r.myAvgCycle,
+        benchmark: (r) => r.fleetBenchmark,
+        status: (r) => r.statusLabel,
+      },
+      opts,
+    );
   }
 
   /**
