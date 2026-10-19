@@ -9,6 +9,16 @@ function intOrUndefined(raw?: string): number | undefined {
   return Number.isFinite(n) ? Math.trunc(n) : undefined;
 }
 
+/** Paged cost report query; the default order is Total, high to low. */
+function reportPageOpts(page?: string, pageSize?: string, sortBy?: string, sortDir?: string) {
+  return {
+    page: intOrUndefined(page),
+    pageSize: intOrUndefined(pageSize),
+    sortBy,
+    sortDir: sortDir === 'asc' ? ('asc' as const) : ('desc' as const),
+  };
+}
+
 @Controller('operations')
 @UseGuards(JwtAuthGuard)
 export class OperationsController {
@@ -136,29 +146,46 @@ export class OperationsController {
   ) {
     // Without `page` every job is returned as before.
     if (page == null) return this.ops.reportJobs({ from, to });
-    return this.ops.reportJobsPage(
-      { from, to },
-      {
-        page: intOrUndefined(page),
-        pageSize: intOrUndefined(pageSize),
-        sortBy,
-        sortDir: sortDir === 'asc' ? 'asc' : 'desc',
-      },
-    );
+    return this.ops.reportJobsPage({ from, to }, reportPageOpts(page, pageSize, sortBy, sortDir));
   }
 
   @Get('reports/haulers')
-  reportHaulers(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.ops.reportHaulers({ from, to });
+  reportHaulers(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    // Without `page` every hauler is returned as before.
+    if (page == null) return this.ops.reportHaulers({ from, to });
+    return this.ops.reportHaulersPage({ from, to }, reportPageOpts(page, pageSize, sortBy, sortDir));
   }
 
   @Get('reports/destinations')
-  reportDestinations(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.ops.reportDestinations({ from, to });
+  reportDestinations(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    // Without `page` every destination is returned as before.
+    if (page == null) return this.ops.reportDestinations({ from, to });
+    return this.ops.reportDestinationsPage({ from, to }, reportPageOpts(page, pageSize, sortBy, sortDir));
   }
 
   @Get('reports/leed')
-  reportLeed(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.ops.reportLeed({ from, to });
+  reportLeed(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    // Without `page` every job is returned as before.
+    if (page == null) return this.ops.reportLeed({ from, to });
+    return this.ops.reportLeedPage({ from, to }, { page: intOrUndefined(page), pageSize: intOrUndefined(pageSize) });
   }
 }
