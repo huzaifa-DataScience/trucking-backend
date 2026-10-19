@@ -44,6 +44,8 @@ export const AGGREGATE_KEYS = ['rc57', 'rc6', 'rc2', 'cr57', 'dirtTons'] as cons
 
 type QtyKey = (typeof LEED_KEYS)[number] | (typeof AGGREGATE_KEYS)[number];
 
+type CostReportPageOpts = { page?: number; pageSize?: number; sortBy?: string; sortDir: 'asc' | 'desc' };
+
 /** Disposal card type from free-text `unitLabel`; same rule as the Disposal rates page ("Recyle" counts as Recycle). */
 function disposalType(unitLabel: string | null | undefined): string {
   const u = (unitLabel ?? '').trim().toLowerCase();
@@ -362,17 +364,38 @@ export class OperationsService {
     }));
   }
 
+  /** Cost by job / hauler / destination, one page at a time; see pageCostReport. */
+  async reportJobsPage(q: { from?: string; to?: string }, opts: CostReportPageOpts) {
+    return this.pageCostReport(await this.reportJobs(q), (r) => r.jobNumber, opts);
+  }
+
+  async reportHaulersPage(q: { from?: string; to?: string }, opts: CostReportPageOpts) {
+    return this.pageCostReport(await this.reportHaulers(q), (r) => r.hauler, opts);
+  }
+
+  async reportDestinationsPage(q: { from?: string; to?: string }, opts: CostReportPageOpts) {
+    return this.pageCostReport(await this.reportDestinations(q), (r) => r.destination, opts);
+  }
+
+  /** LEED / aggregates by job, one page at a time (that table has no column sorting; order unchanged). */
+  async reportLeedPage(q: { from?: string; to?: string }, opts: { page?: number; pageSize?: number }) {
+    const rows = await this.reportLeed(q);
+    const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+    const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+    return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize };
+  }
+
   /**
-   * Cost by job, one page at a time. Every job is still totaled and sorted here (costs come from
-   * the rate cards in code); `totals` covers all jobs in the range, `total` is the job count.
+   * Every row is still totaled and sorted here (costs come from the rate cards in code); only one page
+   * is sent. `totals` covers all rows in the range, `total` is the row count. Sorting matches the
+   * page's table: the name column A–Z ignoring case with "2" before "10" (a blank name sorts as "—").
    */
-  async reportJobsPage(
-    q: { from?: string; to?: string },
-    opts: { page?: number; pageSize?: number; sortBy?: string; sortDir: 'asc' | 'desc' },
-  ) {
-    const { rows, totals } = await this.reportJobs(q);
-    type Row = (typeof rows)[number];
-    const numeric: Record<string, (r: Row) => number> = {
+  private pageCostReport<
+    R extends { loads: number; weightTons: number; truckingCost: number; disposalCost: number; totalCost: number },
+  >(report: { rows: R[]; totals: unknown }, nameOf: (r: R) => string | null | undefined, opts: CostReportPageOpts) {
+    const { rows, totals } = report;
+    const numeric: Record<string, (r: R) => number> = {
       loads: (r) => r.loads,
       weightTons: (r) => r.weightTons,
       truckingCost: (r) => r.truckingCost,
@@ -381,13 +404,10 @@ export class OperationsService {
     };
     let sorted = rows; // already Total, high to low
     if (opts.sortBy === 'name') {
-      // Same rule as the page: A–Z ignoring case, "Job 2" before "Job 10", blank job numbers last.
       const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+      const label = (r: R) => nameOf(r) || '—';
       sorted = [...rows].sort((x, y) => {
-        const a = x.jobNumber || '';
-        const b = y.jobNumber || '';
-        if (!a || !b) return !a === !b ? 0 : !a ? 1 : -1;
-        const c = collator.compare(a, b);
+        const c = collator.compare(label(x), label(y));
         return opts.sortDir === 'desc' ? -c : c;
       });
     } else if (opts.sortBy && numeric[opts.sortBy]) {
