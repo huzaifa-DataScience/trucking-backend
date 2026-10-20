@@ -78,6 +78,7 @@ All project docs live in this folder. **`README.md` in the repo root** covers AP
 | [FRONTEND_BIDDING_LIFECYCLE.md](./FRONTEND_BIDDING_LIFECYCLE.md) | `process` field dictionary (not a second UI spec) |
 | **[FRONTEND_INTAKE.md](./FRONTEND_INTAKE.md)** | **Stage 1** — Intake + Assignment (drawing name, project #s, invitations, tiers, team) |
 | [FRONTEND_TEAM_2026-09-30.md](./FRONTEND_TEAM_2026-09-30.md) | **Give to FE** — 30 Sep meeting (Estimates, hub, takeoff, dashboard, 403) |
+| [FRONTEND_MEETING_2026-10-16.md](./FRONTEND_MEETING_2026-10-16.md) | **Give to FE** — 16 Oct meeting (bidding clients, folder upload, drawing tabs, post-bid) |
 | **[FRONTEND_SPEC_SHEET.md](./FRONTEND_SPEC_SHEET.md)** | **Give to FE** — spec sheet cascade (family, 2 layers, equipment, duct circumference, manufacturer) |
 | **[FRONTEND_BIDDING_SPECS.md](./FRONTEND_BIDDING_SPECS.md)** | **Specs Plumb UI + API** — Mike import, Spec grid, Trimble Recv, Structshare item list (no vendor/cheapest) |
 | **[FRONTEND_MIKE_RULES.md](./FRONTEND_MIKE_RULES.md)** | **Specs Rules panel** — Mike-only stacking / Qty Est rules for FE button or sub-tab |

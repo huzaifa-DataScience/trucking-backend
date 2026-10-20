@@ -264,6 +264,49 @@ export const DRAWING_CATEGORY_PERCENTS: Record<DrawingCategory, string> = {
   ifr: '60–90%',
 };
 
+/** Attachment set label. Built-in codes stay valid; a custom name such as "50% DD" is stored as typed. */
+export function normalizeDrawingCategory(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (s.length > 40 || /[\u0000-\u001f]/.test(s)) {
+    throw new Error('drawingCategory must be 1–40 characters');
+  }
+  return s;
+}
+
+/** Fill takeoff due dates that are still empty or still equal to the previous internal due. */
+export function syncEstimatorDueDates(previousInternalDue: string | null, process: BidProcess): void {
+  const next = process.assignment.internalEstimateDue;
+  if (!next || next === previousInternalDue) return;
+  for (const row of process.takeoffAssignments) {
+    if (row.dueAt == null || row.dueAt === '' || row.dueAt === previousInternalDue) row.dueAt = next;
+  }
+}
+
+/** Companies and people the bid was invited by or is bidding to. */
+export function biddingClientNames(process: BidProcess): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: string | null | undefined) => {
+    const s = value?.trim();
+    if (!s) return;
+    const key = s.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(s);
+  };
+  for (const inv of process.invitations) {
+    add(inv.contact?.company);
+    add(inv.contact?.name);
+  }
+  for (const party of [...process.generalContractors, ...process.mechanicals]) {
+    add(party.company);
+    add(party.name);
+  }
+  return out;
+}
+
 /** Attachments tab bucket (not the "Drawings" tab, which uses label='drawings' instead). */
 export const ATTACHMENT_CATEGORIES = ['project_documents', 'proposal', 'takeoff_markup'] as const;
 export type AttachmentCategory = (typeof ATTACHMENT_CATEGORIES)[number];
@@ -2556,7 +2599,7 @@ const INTAKE_EDITOR = {
   captainField: 'assignment.captainUserId',
   captainLookup: 'GET /lookups/bidding/captains',
   captainSelectsTeam: true,
-  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact|gc|mechanical_contractor|insulation&q=&page=1&pageSize=10',
+  partiesLookup: 'GET /lookups/bidding/parties?role=owner|architect|mechanical|invite_contact|insulation&q=&page=1&pageSize=10. gc and mechanical_contractor read the same invite_contact list.',
   partyRoles: INTAKE_PARTY_ROLES,
   sketchTiers: [
     { sortOrder: 0, role: 'owner', note: 'Who owns the property' },
@@ -2856,7 +2899,7 @@ const POST_BID_EDITOR = {
   ],
   stillBidding: 'generalContractors[].stillBidding / mechanicals[].stillBidding',
   followUpCompanyKind: 'intelligence.followUpCalls[].kind = gc | mechanical',
-  followUpCompanyLookup: 'GET /lookups/bidding/parties?role=gc or role=mechanical_contractor&q=',
+  followUpCompanyLookup: 'GET /lookups/bidding/parties?role=invite_contact&q= (gc and mechanical_contractor are the same list)',
   competitorTrade: 'intelligence.competitors[].trade = insulation',
   competitorLookup: 'GET /lookups/bidding/parties?role=insulation&q=',
   followUpScreenshots: 'callAttempts[].attachmentIds — POST /bids/:id/attachments label follow-up, then save the ids',

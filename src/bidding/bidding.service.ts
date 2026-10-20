@@ -71,6 +71,8 @@ import {
   parseProcess,
   fillTakeoffAssignmentsFromTeam,
   stampTakeoffAssignedAt,
+  syncEstimatorDueDates,
+  biddingClientNames,
   workflowChrome,
   takeoffTurnInFrom,
   TAKEOFF_MARKUP_LABELS,
@@ -165,6 +167,8 @@ type BidListQuery = {
   submitDateFrom?: string;
   submitDateTo?: string;
   clientCompanyName?: string;
+  /** Exact company or contact from invitations, general contractors, or mechanicals. */
+  biddingClient?: string;
   sort?: BidListSort;
   sortDir?: 'ASC' | 'DESC';
   view?: 'internal' | 'all';
@@ -287,6 +291,7 @@ export class BiddingService {
       mepn ||
       teamId != null ||
       params.clientCompanyName ||
+      params.biddingClient ||
       bidListNeedsProcessJoin(params.sort)
     );
     if (needProcess) qb.leftJoin(BidContent, 'cnt', 'cnt.bidId = b.id');
@@ -331,6 +336,29 @@ export class BiddingService {
       qb.andWhere(`JSON_VALUE(cnt.CompanyInfoJson, '$.companyName') = :ccn`, {
         ccn: params.clientCompanyName,
       });
+    }
+    const biddingClient = params.biddingClient?.trim();
+    if (biddingClient) {
+      qb.andWhere(
+        `cnt.ProcessJson IS NOT NULL AND ISJSON(cnt.ProcessJson) = 1 AND (
+          EXISTS (
+            SELECT 1 FROM OPENJSON(cnt.ProcessJson, '$.invitations')
+            WITH (company nvarchar(300) '$.contact.company', person nvarchar(300) '$.contact.name') j
+            WHERE j.company = :biddingClient OR j.person = :biddingClient
+          )
+          OR EXISTS (
+            SELECT 1 FROM OPENJSON(cnt.ProcessJson, '$.generalContractors')
+            WITH (company nvarchar(300) '$.company', person nvarchar(300) '$.name') g
+            WHERE g.company = :biddingClient OR g.person = :biddingClient
+          )
+          OR EXISTS (
+            SELECT 1 FROM OPENJSON(cnt.ProcessJson, '$.mechanicals')
+            WITH (company nvarchar(300) '$.company', person nvarchar(300) '$.name') m
+            WHERE m.company = :biddingClient OR m.person = :biddingClient
+          )
+        )`,
+        { biddingClient: biddingClient.slice(0, 300) },
+      );
     }
     return qb;
   }
@@ -627,6 +655,7 @@ export class BiddingService {
       ? this.mergeProcessSafe(emptyProcess(), dto.process)
       : null;
     if (process) stampTakeoffAssignedAt(emptyProcess(), process);
+    if (process) syncEstimatorDueDates(null, process);
     // Captains creating their own bid should see it in their team-scoped list right
     // away, instead of it sitting unassigned until someone runs Assignment.
     if (
@@ -803,6 +832,9 @@ export class BiddingService {
         ? this.mergeProcessSafe(existingProcess, dto.process)
         : existingProcess;
     if (dto.process !== undefined) stampTakeoffAssignedAt(existingProcess, processNow);
+    if (dto.process !== undefined) {
+      syncEstimatorDueDates(existingProcess.assignment.internalEstimateDue, processNow);
+    }
     if (dto.process?.assignment !== undefined) {
       await this.applyAssignmentCrew(processNow, existingProcess.assignment.teamId);
     }
@@ -1133,6 +1165,7 @@ export class BiddingService {
       ourEntityId: bid.ourEntityId,
       companyName: bid.ourEntity?.name ?? null,
       clientCompanyName: clientCompanyNameFrom(companyInfo),
+      biddingClients: biddingClientNames(process),
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       bidDate: bid.bidDate instanceof Date ? bid.bidDate.toISOString().slice(0, 10) : bid.bidDate,
       submitDate:

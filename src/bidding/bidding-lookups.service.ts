@@ -115,16 +115,19 @@ export class BiddingLookupsService {
       this.logger.warn(`Bid_Parties lookup skipped: ${err?.message ?? err}`);
       return empty;
     }
+    const directoryRole =
+      role === 'gc' || role === 'mechanical_contractor' ? 'invite_contact' : role;
     const qb = this.partyRepo
       .createQueryBuilder('p')
-      .where('p.role = :role', { role })
+      .where('p.role = :role', { role: directoryRole })
       .orderBy('p.name', 'ASC')
       .addOrderBy('p.id', 'ASC');
     const needle = (q ?? '').trim().slice(0, 80).replace(/[%_]/g, '');
     if (needle) {
-      qb.andWhere('(p.name LIKE :q OR p.company LIKE :q OR p.email LIKE :q)', {
-        q: `%${needle}%`,
-      });
+      qb.andWhere(
+        '(p.name LIKE :q OR p.company LIKE :q OR p.contactName LIKE :q OR p.email LIKE :q)',
+        { q: `%${needle}%` },
+      );
     }
     const total = await qb.clone().getCount();
     const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
@@ -567,7 +570,21 @@ export class BiddingLookupsService {
   }
 
   private async upsertOne(role: IntakePartyRole, contact: PartyContact): Promise<void> {
+    if (role === 'gc' || role === 'mechanical_contractor') role = 'invite_contact';
     const key = partyDedupeKey(role, contact);
+    if (!key) return;
+    if (!(contact.email ?? '').trim()) {
+      const label = (contact.name || contact.company || contact.contactName || '').trim();
+      if (label) {
+        const richer = await this.partyRepo
+          .createQueryBuilder('p')
+          .where('p.role = :role', { role })
+          .andWhere('(p.name = :label OR p.contactName = :label OR p.company = :label)', { label })
+          .andWhere('p.email IS NOT NULL')
+          .getOne();
+        if (richer) return;
+      }
+    }
     if (!key) return;
     const pick = (next: string | null | undefined, prev: string | null) => {
       const t = (next ?? '').trim();

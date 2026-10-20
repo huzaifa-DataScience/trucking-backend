@@ -12,6 +12,7 @@ import {
   classifyInsulationFamily,
   classifySpecLayer,
   diffProcessChangePaths,
+  biddingClientNames,
   emptyProcess,
   fillTakeoffAssignmentsFromTeam,
   humanizeProcessPath,
@@ -20,6 +21,7 @@ import {
   mergeProcess,
   normalizeTakeoffStatus,
   parseUsAddress,
+  normalizeDrawingCategory,
   normalizeProjectNumber,
   ourTierIndex,
   parseProcess,
@@ -28,6 +30,7 @@ import {
   processMeta,
   specSheetTemplate,
   suggestOurEntity,
+  syncEstimatorDueDates,
   takeoffComparisons,
   workflowChrome,
   takeoffTurnInFrom,
@@ -635,6 +638,88 @@ assert(meta.intakeEditor.captainSelectsTeam === true, 'captain pick fills team')
 assert(meta.intakeEditor.partiesLookup.includes('/lookups/bidding/parties'), 'parties lookup');
 assert(meta.intakeEditor.partiesLookup.includes('pageSize='), 'parties lookup paginated');
 assert(meta.intakeEditor.partyRoles.includes('invite_contact'), 'invite_contact role');
+{
+  const due = emptyProcess();
+  due.assignment.internalEstimateDue = '2026-11-02';
+  due.takeoffAssignments = [
+    {
+      role: 'duct1',
+      assigneeName: 'A',
+      assignedAt: null,
+      dueAt: null,
+      status: null,
+      hoursSpent: null,
+      notes: null,
+      finalQuantity: null,
+      reviewedBy: null,
+      completed: null,
+      versions: [],
+    },
+    {
+      role: 'hydronic1',
+      assigneeName: 'B',
+      assignedAt: null,
+      dueAt: '2026-10-01',
+      status: null,
+      hoursSpent: null,
+      notes: null,
+      finalQuantity: null,
+      reviewedBy: null,
+      completed: null,
+      versions: [],
+    },
+  ];
+  syncEstimatorDueDates(null, due);
+  assert(due.takeoffAssignments[0].dueAt === '2026-11-02', 'empty takeoff due copies internal');
+  assert(due.takeoffAssignments[1].dueAt === '2026-10-01', 'custom takeoff due stays');
+  due.assignment.internalEstimateDue = '2026-11-09';
+  syncEstimatorDueDates('2026-11-02', due);
+  assert(due.takeoffAssignments[0].dueAt === '2026-11-09', 'old internal due moves with the bid');
+  assert(due.takeoffAssignments[1].dueAt === '2026-10-01', 'revision date stays');
+  assert(normalizeDrawingCategory('50% DD') === '50% DD', 'custom drawing set name');
+  assert(normalizeDrawingCategory('sd') === 'sd', 'built-in drawing set');
+  assert(normalizeDrawingCategory('   ') === null, 'blank drawing set');
+  let longName = false;
+  try {
+    normalizeDrawingCategory('x'.repeat(41));
+  } catch {
+    longName = true;
+  }
+  assert(longName, 'drawing set longer than 40 rejected');
+  const named = emptyProcess();
+  named.invitations.push({
+    receivedAt: null,
+    contact: {
+      name: 'Brian Chamberlain',
+      company: 'Denver-Elek, Inc.',
+      contactName: null,
+      email: null,
+      phone: null,
+    },
+    links: [],
+    attachmentIds: [],
+    addenda: [],
+    notes: null,
+    inviteBody: null,
+  });
+  named.mechanicals.push({
+    name: 'Kody Klugh',
+    company: 'Panacea',
+    contactName: null,
+    email: null,
+    phone: null,
+    hasTheJob: null,
+    receivedProposalBy: null,
+    stillBidding: null,
+    bidPrice: null,
+    contractorStatus: null,
+    proposalStatus: null,
+  });
+  assert(
+    biddingClientNames(named).join('|') === 'Denver-Elek, Inc.|Brian Chamberlain|Panacea|Kody Klugh',
+    'bidding clients from invite and mechanical',
+  );
+}
 assert(meta.intakeEditor.eorLabel.includes('Engineer of Record'), 'EOR label');
 assert(meta.intakeEditor.inviteCompanyFirst === true, 'invite company first');
 

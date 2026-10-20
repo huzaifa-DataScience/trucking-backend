@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { BidContent } from '../database/entities';
 import { OutboundEmailService } from '../email/outbound-email.service';
 import { UsersService } from '../users/users.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { indexPeopleByName, lookupPersonByName } from './process/bid-crew';
-import { TAKEOFF_ROLES, type BidProcess, type TakeoffRole } from './process/bid-process';
+import { TAKEOFF_ROLES, parseProcess, type BidProcess, type TakeoffRole } from './process/bid-process';
 
 const TAKEOFF_ROLE_LABELS: Record<TakeoffRole, string> = {
   duct1: 'Duct 1',
@@ -36,7 +40,63 @@ export class BiddingAssignmentNotificationsService {
     private readonly outbound: OutboundEmailService,
     private readonly usersService: UsersService,
     private readonly lookups: BiddingLookupsService,
+    @InjectRepository(BidContent) private readonly contentRepo: Repository<BidContent>,
   ) {}
+
+  /** Weekday mail when a takeoff due date is 5, 4, or 3 New York days away. One mail per person per bid. */
+  @Cron('0 15 8 * * 1-5', { timeZone: 'America/New_York' })
+  async remindTakeoffDue(): Promise<void> {
+    try {
+      if (!this.outbound.isConfigured()) return;
+      const today = nyCalendarDate(0);
+      const rows = await this.contentRepo
+        .createQueryBuilder('c')
+        .innerJoinAndSelect('c.bid', 'b')
+        .where('b.isDeleted = :del', { del: false })
+        .andWhere('b.status != :arch', { arch: 'archived' })
+        .getMany();
+      const contacts = await this.usersService.listCrewContacts();
+      const byName = indexPeopleByName(contacts);
+      for (const row of rows) {
+        const bid = row.bid;
+        if (!bid) continue;
+        let process: BidProcess;
+        try {
+          process = parseProcess(JSON.parse(row.processJson || 'null'));
+        } catch {
+          continue;
+        }
+        const byEmail = new Map<string, { name: string; lines: string[]; soonest: number }>();
+        for (const assignment of process.takeoffAssignments) {
+          const name = assignment.assigneeName?.trim();
+          if (!name || !assignment.dueAt) continue;
+          const days = daysUntil(assignment.dueAt, today);
+          if (days !== 5 && days !== 4 && days !== 3) continue;
+          const person = lookupPersonByName(byName, name);
+          if (!person?.email) continue;
+          const label = TAKEOFF_ROLE_LABELS[assignment.role] ?? assignment.role;
+          const entry = byEmail.get(person.email) ?? { name, lines: [], soonest: days };
+          entry.soonest = Math.min(entry.soonest, days);
+          entry.lines.push(`${label} is due in ${days} days (${assignment.dueAt.slice(0, 10)})`);
+          byEmail.set(person.email, entry);
+        }
+        const bidLabel = this.bidEmailLabel(bid);
+        const bidUrl = this.bidUrl(bid.id);
+        for (const [email, entry] of byEmail) {
+          const subject = `Takeoff due in ${entry.soonest} days — ${bidLabel}`;
+          const html = this.wrapHtml(`
+            <p>${this.escapeHtml(entry.name)}, your takeoff on <strong>${this.escapeHtml(bidLabel)}</strong>:</p>
+            <ul>${entry.lines.map((line) => `<li>${this.escapeHtml(line)}</li>`).join('')}</ul>
+            ${bidUrl ? `<p><a href="${bidUrl}" style="color:#2563eb;">Open the bid</a></p>` : ''}
+          `);
+          await this.sendOne(email, subject, html);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Takeoff due reminder failed: ${msg}`);
+    }
+  }
 
   async notify(bidId: number, bidLabel: string, before: BidProcess, after: BidProcess): Promise<void> {
     try {
@@ -151,6 +211,10 @@ export class BiddingAssignmentNotificationsService {
     }
   }
 
+  private bidEmailLabel(bid: { estimateNumber: string; bidName: string | null }): string {
+    return bid.bidName ? `${bid.estimateNumber} — ${bid.bidName}` : bid.estimateNumber;
+  }
+
   private bidUrl(bidId: number): string {
     const base = this.config.get<string>('APP_DASHBOARD_URL', '').trim();
     return base ? `${base.replace(/\/+$/, '')}/bidding/${bidId}` : '';
@@ -168,4 +232,22 @@ export class BiddingAssignmentNotificationsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+}
+
+function nyCalendarDate(offsetDays: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const [year, month, day] = parts.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + offsetDays)).toISOString().slice(0, 10);
+}
+
+function daysUntil(dueAt: string, today: string): number | null {
+  const due = Date.parse(`${dueAt.slice(0, 10)}T00:00:00Z`);
+  const start = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(due) || Number.isNaN(start)) return null;
+  return Math.round((due - start) / 86_400_000);
 }

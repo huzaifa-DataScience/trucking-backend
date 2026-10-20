@@ -28,8 +28,8 @@ export class BidAttachment {
   @Column({ name: 'Category', type: 'nvarchar', length: 30, nullable: true })
   category!: string | null;
 
-  /** Drawings tab only: 'sd' | 'dd' | 'ifb' | 'ifp' | 'ifc' | 'ifr'. */
-  @Column({ name: 'DrawingCategory', type: 'nvarchar', length: 10, nullable: true })
+  /** Drawings tab label. Built-in codes (sd, dd, cd, …) or a custom set name. */
+  @Column({ name: 'DrawingCategory', type: 'nvarchar', length: 40, nullable: true })
   drawingCategory!: string | null;
 
   @Column({ name: 'SortOrder', type: 'int', default: 0 })
