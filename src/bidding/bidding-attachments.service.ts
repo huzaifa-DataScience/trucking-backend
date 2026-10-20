@@ -14,7 +14,7 @@ import {
   FileStorageService,
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
-import { ATTACHMENT_CATEGORIES, DRAWING_CATEGORIES, resolveAttachmentCategory } from './process/bid-process';
+import { ATTACHMENT_CATEGORIES, normalizeDrawingCategory, resolveAttachmentCategory } from './process/bid-process';
 import { readZipEntries } from './zip-entries';
 
 export interface BidAttachmentDto {
@@ -29,6 +29,15 @@ export interface BidAttachmentDto {
   sortOrder: number;
   downloadPath: string;
   createdAt: string;
+}
+
+function drawingCategoryOrThrow(value: string | null | undefined): string | null {
+  try {
+    return normalizeDrawingCategory(value);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Invalid drawingCategory';
+    throw new BadRequestException(message);
+  }
 }
 
 @Injectable()
@@ -128,18 +137,19 @@ export class BiddingAttachmentsService {
     if (!file?.buffer?.length) {
       throw new BadRequestException('No file uploaded (field name: file)');
     }
-    const mimeType = file.mimetype?.trim() || '';
+    let mimeType = file.mimetype?.trim() || '';
+    if (!ALLOWED_UPLOAD_MIMES[mimeType] && /\.csv$/i.test(file.originalname || '')) {
+      mimeType = 'text/csv';
+    }
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       throw new BadRequestException(
-        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), ZIP`,
+        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), CSV, ZIP`,
       );
     }
     if (opts.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(opts.category)) {
       throw new BadRequestException(`Invalid category: ${opts.category}`);
     }
-    if (opts.drawingCategory != null && !(DRAWING_CATEGORIES as readonly string[]).includes(opts.drawingCategory)) {
-      throw new BadRequestException(`Invalid drawingCategory: ${opts.drawingCategory}`);
-    }
+    const drawingCategory = drawingCategoryOrThrow(opts.drawingCategory);
     const count = await this.attachmentRepo.count({ where: { bidId } });
     if (count >= MAX_BID_ATTACHMENTS_PER_BID) {
       throw new BadRequestException(`Maximum ${MAX_BID_ATTACHMENTS_PER_BID} attachments per bid`);
@@ -170,7 +180,7 @@ export class BiddingAttachmentsService {
         fileId: appFile.id,
         label: opts.label?.trim() || null,
         category: resolveAttachmentCategory(opts.category, opts.label),
-        drawingCategory: opts.drawingCategory ?? null,
+        drawingCategory,
         sortOrder: count,
       }),
     );
@@ -201,13 +211,7 @@ export class BiddingAttachmentsService {
       attachment.category = patch.category;
     }
     if (patch.drawingCategory !== undefined) {
-      if (
-        patch.drawingCategory != null &&
-        !(DRAWING_CATEGORIES as readonly string[]).includes(patch.drawingCategory)
-      ) {
-        throw new BadRequestException(`Invalid drawingCategory: ${patch.drawingCategory}`);
-      }
-      attachment.drawingCategory = patch.drawingCategory;
+      attachment.drawingCategory = drawingCategoryOrThrow(patch.drawingCategory);
     }
     if (patch.label !== undefined) attachment.label = patch.label?.trim() || null;
     await this.attachmentRepo.save(attachment);
