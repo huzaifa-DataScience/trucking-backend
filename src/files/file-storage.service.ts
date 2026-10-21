@@ -17,6 +17,8 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'text/csv': '.csv',
   'application/csv': '.csv',
   'text/comma-separated-values': '.csv',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
 };
 
 export const MAX_BID_ATTACHMENTS_PER_BID = 200; // ponytail: intake hub + markup copies; raise if a job hits it

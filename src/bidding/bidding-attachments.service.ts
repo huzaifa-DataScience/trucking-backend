@@ -138,12 +138,18 @@ export class BiddingAttachmentsService {
       throw new BadRequestException('No file uploaded (field name: file)');
     }
     let mimeType = file.mimetype?.trim() || '';
-    if (!ALLOWED_UPLOAD_MIMES[mimeType] && /\.csv$/i.test(file.originalname || '')) {
-      mimeType = 'text/csv';
+    if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
+      const ext = (file.originalname || '').match(/(\.[a-z0-9]+)$/i)?.[1]?.toLowerCase();
+      const fromName: Record<string, string> = {
+        '.csv': 'text/csv',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+      if (ext && fromName[ext]) mimeType = fromName[ext];
     }
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       throw new BadRequestException(
-        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), CSV, ZIP`,
+        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), CSV, Excel (.xls/.xlsx), ZIP`,
       );
     }
     if (opts.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(opts.category)) {
