@@ -120,6 +120,10 @@ export class BiddingLookupsService {
     const qb = this.partyRepo
       .createQueryBuilder('p')
       .where('p.role = :role', { role: directoryRole })
+      .andWhere('p.inactive = :inactive', { inactive: false })
+      .andWhere(
+        `(NULLIF(LTRIM(RTRIM(ISNULL(p.email, ''))), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(ISNULL(p.phone, ''))), '') IS NOT NULL)`,
+      )
       .orderBy('p.name', 'ASC')
       .addOrderBy('p.id', 'ASC');
     const needle = (q ?? '').trim().slice(0, 80).replace(/[%_]/g, '');
@@ -132,18 +136,9 @@ export class BiddingLookupsService {
     const total = await qb.clone().getCount();
     const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
     return {
-      items: rows.map((p) => ({
-        id: p.id,
-        name: p.name || p.company || p.email,
-        company: p.company,
-        contactName: p.contactName,
-        email: p.email,
-        phone: p.phone,
-        role: p.role,
-        inactive: false,
-        doNotContact: false,
-        status: null as string | null,
-      })),
+      items: rows.map((p) =>
+        this.toPartyItem(p, role === 'gc' || role === 'mechanical_contractor' ? role : p.role),
+      ),
       total,
       page,
       pageSize,
@@ -545,7 +540,88 @@ export class BiddingLookupsService {
         CREATE UNIQUE INDEX UX_Bid_Parties_Dedupe ON dbo.Bid_Parties(DedupeKey);
         CREATE INDEX IX_Bid_Parties_Role ON dbo.Bid_Parties(Role);
       END
+      IF COL_LENGTH('dbo.Bid_Parties', 'Inactive') IS NULL
+        ALTER TABLE dbo.Bid_Parties ADD Inactive bit NOT NULL CONSTRAINT DF_Bid_Parties_Inactive DEFAULT 0;
     `);
+  }
+
+  /** Add or correct one invite contact. GC and mechanical search both read this list. */
+  async saveParty(
+    id: number | null,
+    input: {
+      company?: string | null;
+      contactName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      inactive?: boolean;
+    },
+  ): Promise<BidPartyItem> {
+    await this.ensurePartiesReady();
+    const company = clean(input.company);
+    const contactName = clean(input.contactName);
+    const email = clean(input.email)?.toLowerCase() ?? null;
+    const phone = clean(input.phone);
+    const name = contactName || company;
+    let row = id != null ? await this.partyRepo.findOne({ where: { id } }) : null;
+    if (id != null && !row) throw new NotFoundException(`Party ${id} not found`);
+    if (!row) {
+      if (!name) throw new BadRequestException('Company or contact name is required');
+      if (!email && !phone) throw new BadRequestException('Email or phone is required');
+      const key = partyDedupeKey('invite_contact', { name, company, contactName, email, phone });
+      row =
+        (key ? await this.partyRepo.findOne({ where: { dedupeKey: key } }) : null) ??
+        this.partyRepo.create({
+          dedupeKey: key ?? `invite_contact|${name.toLowerCase()}|`,
+          role: 'invite_contact',
+          name,
+          company,
+          contactName,
+          email,
+          phone,
+          inactive: false,
+        });
+    }
+    if (company !== undefined && input.company !== undefined) row.company = company;
+    if (input.contactName !== undefined) row.contactName = contactName;
+    if (input.email !== undefined) row.email = email;
+    if (input.phone !== undefined) row.phone = phone;
+    if (input.inactive !== undefined) row.inactive = input.inactive;
+    row.role = 'invite_contact';
+    row.name = clean(row.contactName) || clean(row.company) || clean(row.name);
+    if (!row.name) throw new BadRequestException('Company or contact name is required');
+    if (!clean(row.email) && !clean(row.phone)) {
+      throw new BadRequestException('Email or phone is required');
+    }
+    row.dedupeKey =
+      partyDedupeKey('invite_contact', {
+        name: row.name,
+        company: row.company,
+        contactName: row.contactName,
+        email: row.email,
+        phone: row.phone,
+      }) ?? row.dedupeKey;
+    row.updatedAt = new Date();
+    try {
+      row = await this.partyRepo.save(row);
+    } catch {
+      throw new BadRequestException('A contact with that name and email already exists');
+    }
+    return this.toPartyItem(row, 'invite_contact');
+  }
+
+  private toPartyItem(p: BidParty, role: string): BidPartyItem {
+    return {
+      id: p.id,
+      name: p.name || p.company || p.email,
+      company: p.company,
+      contactName: p.contactName,
+      email: p.email,
+      phone: p.phone,
+      role,
+      inactive: !!p.inactive,
+      doNotContact: false,
+      status: null,
+    };
   }
 
   /** ponytail: one-shot ProcessJson scan; if this gets slow, a SQL seed job. */
@@ -603,7 +679,16 @@ export class BiddingLookupsService {
     };
     let row = await this.partyRepo.findOne({ where: { dedupeKey: key } });
     if (!row) {
-      row = this.partyRepo.create({ dedupeKey: key, role, name: null, company: null, contactName: null, email: null, phone: null });
+      row = this.partyRepo.create({
+        dedupeKey: key,
+        role,
+        name: null,
+        company: null,
+        contactName: null,
+        email: null,
+        phone: null,
+        inactive: false,
+      });
     }
     apply(row);
     try {
@@ -615,6 +700,11 @@ export class BiddingLookupsService {
       await this.partyRepo.save(again);
     }
   }
+}
+
+function clean(value: string | null | undefined): string | null {
+  const s = (value ?? '').trim();
+  return s || null;
 }
 
 function round2(value: number): number {

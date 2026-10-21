@@ -307,6 +307,61 @@ export function biddingClientNames(process: BidProcess): string[] {
   return out;
 }
 
+export type BiddingClientRow = {
+  kind: 'gc' | 'mechanical' | 'invitation';
+  company: string | null;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  baseBid: number | null;
+};
+
+/** One row per GC, mechanical, or invitation the bid is going to. */
+export function biddingClientRows(process: BidProcess): BiddingClientRow[] {
+  const out: BiddingClientRow[] = [];
+  const seen = new Set<string>();
+  const push = (row: BiddingClientRow) => {
+    const company = row.company?.trim() || null;
+    const contactName = row.contactName?.trim() || null;
+    if (!company && !contactName) return;
+    const key = `${row.kind}|${(company || '').toLowerCase()}|${(contactName || '').toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ ...row, company, contactName, email: row.email?.trim() || null, phone: row.phone?.trim() || null });
+  };
+  for (const party of process.generalContractors) {
+    push({
+      kind: 'gc',
+      company: party.company,
+      contactName: party.contactName || party.name,
+      email: party.email,
+      phone: party.phone,
+      baseBid: party.bidPrice,
+    });
+  }
+  for (const party of process.mechanicals) {
+    push({
+      kind: 'mechanical',
+      company: party.company,
+      contactName: party.contactName || party.name,
+      email: party.email,
+      phone: party.phone,
+      baseBid: party.bidPrice,
+    });
+  }
+  for (const inv of process.invitations) {
+    push({
+      kind: 'invitation',
+      company: inv.contact?.company ?? null,
+      contactName: inv.contact?.contactName || inv.contact?.name || null,
+      email: inv.contact?.email ?? null,
+      phone: inv.contact?.phone ?? null,
+      baseBid: null,
+    });
+  }
+  return out;
+}
+
 /** Attachments tab bucket (not the "Drawings" tab, which uses label='drawings' instead). */
 export const ATTACHMENT_CATEGORIES = ['project_documents', 'proposal', 'takeoff_markup'] as const;
 export type AttachmentCategory = (typeof ATTACHMENT_CATEGORIES)[number];

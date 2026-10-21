@@ -73,6 +73,7 @@ import {
   stampTakeoffAssignedAt,
   syncEstimatorDueDates,
   biddingClientNames,
+  biddingClientRows,
   workflowChrome,
   takeoffTurnInFrom,
   TAKEOFF_MARKUP_LABELS,
@@ -1166,6 +1167,7 @@ export class BiddingService {
       companyName: bid.ourEntity?.name ?? null,
       clientCompanyName: clientCompanyNameFrom(companyInfo),
       biddingClients: biddingClientNames(process),
+      biddingClientRows: biddingClientRows(process),
       trimbleProjectId: bid.trimbleProjectId == null ? null : Number(bid.trimbleProjectId),
       bidDate: bid.bidDate instanceof Date ? bid.bidDate.toISOString().slice(0, 10) : bid.bidDate,
       submitDate:

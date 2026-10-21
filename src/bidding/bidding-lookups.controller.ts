@@ -26,6 +26,14 @@ import { BiddingCommentsService } from './bidding-comments.service';
 import { BiddingLookupsService } from './bidding-lookups.service';
 import { SpecsService } from './specs/specs.service';
 
+class SavePartyDto {
+  @IsOptional() @IsString() @MaxLength(500) company?: string | null;
+  @IsOptional() @IsString() @MaxLength(500) contactName?: string | null;
+  @IsOptional() @IsString() @MaxLength(500) email?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) phone?: string | null;
+  @IsOptional() @IsBoolean() inactive?: boolean;
+}
+
 class CreateTeamDto {
   @IsString() @MinLength(1) @MaxLength(100) teamName!: string;
 }
@@ -142,6 +150,16 @@ export class BiddingLookupsController {
     @Query('pageSize') pageSize?: string,
   ) {
     return this.lookups.getParties(role, q, page, pageSize);
+  }
+
+  @Post('parties')
+  createParty(@Body() dto: SavePartyDto) {
+    return this.lookups.saveParty(null, dto);
+  }
+
+  @Patch('parties/:id')
+  updateParty(@Param('id', ParseIntPipe) id: number, @Body() dto: SavePartyDto) {
+    return this.lookups.saveParty(id, dto);
   }
 
   @Get('process-meta')

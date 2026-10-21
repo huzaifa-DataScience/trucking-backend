@@ -13,6 +13,7 @@ import {
   classifySpecLayer,
   diffProcessChangePaths,
   biddingClientNames,
+  biddingClientRows,
   emptyProcess,
   fillTakeoffAssignmentsFromTeam,
   humanizeProcessPath,
@@ -719,6 +720,10 @@ assert(meta.intakeEditor.partyRoles.includes('invite_contact'), 'invite_contact 
     biddingClientNames(named).join('|') === 'Denver-Elek, Inc.|Brian Chamberlain|Panacea|Kody Klugh',
     'bidding clients from invite and mechanical',
   );
+  const rows = biddingClientRows(named);
+  assert(rows.length === 2, 'bidding client rows');
+  assert(rows[0].kind === 'mechanical' && rows[0].contactName === 'Kody Klugh' && rows[0].baseBid == null, 'mechanical row');
+  assert(rows[1].kind === 'invitation' && rows[1].company === 'Denver-Elek, Inc.', 'invitation row');
 }
 assert(meta.intakeEditor.eorLabel.includes('Engineer of Record'), 'EOR label');
 assert(meta.intakeEditor.inviteCompanyFirst === true, 'invite company first');

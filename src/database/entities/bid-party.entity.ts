@@ -24,6 +24,9 @@ export class BidParty {
   @Column({ name: 'Phone', type: 'nvarchar', length: 100, nullable: true })
   phone!: string | null;
 
+  @Column({ name: 'Inactive', type: 'bit', default: false })
+  inactive!: boolean;
+
   @Column({ name: 'DedupeKey', type: 'nvarchar', length: 400 })
   dedupeKey!: string;
 
