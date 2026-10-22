@@ -9,6 +9,7 @@ export const ALLOWED_UPLOAD_MIMES: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  'image/gif': '.gif',
   'application/pdf': '.pdf',
   'application/msword': '.doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
@@ -87,6 +88,16 @@ export class FileStorageService implements OnModuleInit {
   }
 
   /** Check before streaming — `createReadStream` only fails asynchronously on the stream itself, which NestJS logs as a raw unhandled error instead of a clean 404. */
+  async readText(relativePath: string): Promise<string | null> {
+    try {
+      return await fs.readFile(this.absolutePath(relativePath), 'utf8');
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') return null;
+      throw err;
+    }
+  }
+
   async fileExists(relativePath: string): Promise<boolean> {
     try {
       await fs.access(this.absolutePath(relativePath));

@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { RECAP_SLOT_LABELS, type RecapSlotTotals } from './recap-compare';
 import { dashboardPlatesMeta, todayYmd } from './bid-plate';
 import {
   emptyProposalSheet,
@@ -218,6 +219,7 @@ export const PROCESS_ATTACHMENT_LABELS = [
   'takeoff-zip',
   'takeoff-snap',
   'takeoff-recap',
+  ...RECAP_SLOT_LABELS,
   'follow-up',
 ] as const;
 
@@ -372,7 +374,14 @@ export const ATTACHMENT_CATEGORY_LABELS: Record<AttachmentCategory, string> = {
 };
 
 /** Takeoff tab uploads — marked-up / overseas files, not John's bid set. */
-export const TAKEOFF_MARKUP_LABELS = ['takeoff', 'takeoff-zip', 'takeoff-snap', 'takeoff-recap', 'master-scan'] as const;
+export const TAKEOFF_MARKUP_LABELS = [
+  'takeoff',
+  'takeoff-zip',
+  'takeoff-snap',
+  'takeoff-recap',
+  'master-scan',
+  ...RECAP_SLOT_LABELS,
+] as const;
 
 /** Explicit category wins. Else infer from label. Null → bid documents. */
 export function resolveAttachmentCategory(
@@ -1392,7 +1401,12 @@ export function prevStage(stage: ProcessStage): ProcessStage | null {
   return i > 0 ? PROCESS_STAGES[i - 1] : null;
 }
 
-export type HandoffCtx = { hasDrawings?: boolean; labels?: Array<string | null | undefined> };
+export type HandoffCtx = {
+  hasDrawings?: boolean;
+  labels?: Array<string | null | undefined>;
+  /** Group A / Group B slot totals. Empty slot is null. */
+  recaps?: RecapSlotTotals | null;
+};
 
 /** Strip `#` / spaces so C.480 and #C.480 match (PJ). */
 export function normalizeProjectNumber(raw: unknown): string | null {
@@ -1569,18 +1583,21 @@ export function applyOutcome(p: BidProcess, outcome: OutcomeStatus): BidProcess 
   return next;
 }
 
-export function takeoffComparisons(assignments: TakeoffAssignment[]): TakeoffComparison[] {
-  const pairs: Array<[string, TakeoffRole, TakeoffRole]> = [
-    ['duct', 'duct1', 'duct2'],
-    ['hydronic', 'hydronic1', 'hydronic2'],
-    ['plumbing', 'plumbing1', 'plumbing2'],
+export function takeoffComparisons(
+  assignments: TakeoffAssignment[],
+  recaps?: RecapSlotTotals | null,
+): TakeoffComparison[] {
+  const pairs: Array<[string, TakeoffRole, TakeoffRole, 'duct' | 'hydronic' | 'plumbing']> = [
+    ['duct', 'duct1', 'duct2', 'duct'],
+    ['hydronic', 'hydronic1', 'hydronic2', 'hydronic'],
+    ['plumbing', 'plumbing1', 'plumbing2', 'plumbing'],
   ];
   const byRole = new Map(assignments.map((a) => [a.role, a]));
-  return pairs.map(([scope, roleA, roleB]) => {
+  return pairs.map(([scope, roleA, roleB, key]) => {
     const a = byRole.get(roleA);
     const b = byRole.get(roleB);
-    const quantityA = latestQty(a);
-    const quantityB = latestQty(b);
+    const quantityA = recaps ? recaps.a[key] : latestQty(a);
+    const quantityB = recaps ? recaps.b[key] : latestQty(b);
     const difference = quantityA != null && quantityB != null ? quantityB - quantityA : null;
     const differencePct =
       difference != null && quantityA != null && quantityA !== 0 ? difference / quantityA : null;
@@ -1665,7 +1682,7 @@ export function workflowChrome(p: BidProcess, ctx?: HandoffCtx): WorkflowChrome 
     outcomeEditable: true,
     showAward: p.outcome === 'awarded',
     showLost: LOST_OUTCOMES.includes(p.outcome),
-    takeoffComparisons: takeoffComparisons(p.takeoffAssignments),
+    takeoffComparisons: takeoffComparisons(p.takeoffAssignments, ctx?.recaps),
     tabs: chromeTabPills(p, ctx?.labels),
   };
 }

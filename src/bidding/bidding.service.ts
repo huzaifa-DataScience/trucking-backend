@@ -771,6 +771,7 @@ export class BiddingService {
 
     const process = parseProcess(parseJson(content?.processJson ?? null, null));
     if (!opts?.skipSpecCodes) await this.specs.applySpecSheetCodes(process);
+    const recaps = await this.attachments.recapSlotTotals(id);
     return {
       ...this.toSummary(bid, content, editor, { attachmentLabels: attachments.map((a) => a.label) }),
       jobId: bid.jobId,
@@ -782,6 +783,7 @@ export class BiddingService {
       workflow: workflowChrome(process, {
         hasDrawings: this.hasDrawingsLabel(attachments),
         labels: attachments.map((a) => a.label),
+        recaps,
       }),
       computed: parseJson<Record<string, unknown>>(snapshot?.computedJson ?? null, {}),
       attachments,

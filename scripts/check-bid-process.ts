@@ -39,6 +39,7 @@ import {
   resolveAttachmentCategory,
   chromeTabPills,
 } from '../src/bidding/process/bid-process';
+import { parseRecapCsv, parseRecapSlotLabel } from '../src/bidding/process/recap-compare';
 import { pickTogalTool } from '../src/bidding/togal-mcp.client';
 import { folderIdForCaptain } from '../src/bidding/togal-rest.client';
 import { readZipEntries } from '../src/bidding/zip-entries';
@@ -248,6 +249,19 @@ const comps = takeoffComparisons([
   { role: 'duct2', assigneeName: 'B', assignedAt: null, dueAt: null, status: null, hoursSpent: null, notes: null, finalQuantity: null, reviewedBy: null, completed: null, versions: [{ version: 1, createdBy: null, createdAt: null, reason: null, quantity: 110, hoursSpent: null, csvAttachmentId: null, pdfAttachmentId: null }] },
 ]);
 assert(comps[0].difference === 10 && comps[0].reconciliationRequired === true, 'duct1 vs duct2 compare');
+const recap = parseRecapCsv(
+  'Estimate,1,Test\nArea,System-and-Type,Quantity\n1,D LSA A Low Pressure Supply,10\n1,P CHW A Chilled Water,4\n1,P DCW A Domestic Cold Water,6\n',
+);
+assert(recap?.duct === 10 && recap.hydronic === 4 && recap.plumbing === 6, 'recap scopes');
+if (recap == null) throw new Error('recap parsed');
+assert(parseRecapSlotLabel('recap-b-duct')?.scope === 'duct', 'recap slot label');
+assert(parseRecapSlotLabel('takeoff') == null, 'plain takeoff is not a slot');
+const fromFiles = takeoffComparisons([], {
+  a: { duct: recap.duct, hydronic: recap.hydronic, plumbing: recap.plumbing },
+  b: { duct: 12, hydronic: null, plumbing: 6 },
+});
+assert(fromFiles[0].quantityA === 10 && fromFiles[0].quantityB === 12 && fromFiles[0].difference === 2, 'recap files fill compare');
+assert(fromFiles[1].quantityB == null && fromFiles[1].difference == null, 'empty slot stays empty');
 
 assert(applyOutcome(emptyProcess(), 'awarded').outcome === 'awarded', 'set outcome');
 

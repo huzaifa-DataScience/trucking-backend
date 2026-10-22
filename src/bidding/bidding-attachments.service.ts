@@ -15,6 +15,12 @@ import {
   MAX_BID_ATTACHMENTS_PER_BID,
 } from '../files/file-storage.service';
 import { ATTACHMENT_CATEGORIES, normalizeDrawingCategory, resolveAttachmentCategory } from './process/bid-process';
+import {
+  emptyRecapSlots,
+  parseRecapCsv,
+  parseRecapSlotLabel,
+  type RecapSlotTotals,
+} from './process/recap-compare';
 import { readZipEntries } from './zip-entries';
 
 export interface BidAttachmentDto {
@@ -138,18 +144,24 @@ export class BiddingAttachmentsService {
       throw new BadRequestException('No file uploaded (field name: file)');
     }
     let mimeType = file.mimetype?.trim() || '';
+    if (mimeType === 'image/jpg' || mimeType === 'image/pjpeg') mimeType = 'image/jpeg';
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       const ext = (file.originalname || '').match(/(\.[a-z0-9]+)$/i)?.[1]?.toLowerCase();
       const fromName: Record<string, string> = {
         '.csv': 'text/csv',
         '.xls': 'application/vnd.ms-excel',
         '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
       };
       if (ext && fromName[ext]) mimeType = fromName[ext];
     }
     if (!ALLOWED_UPLOAD_MIMES[mimeType]) {
       throw new BadRequestException(
-        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, PDF, Word (.doc/.docx), CSV, Excel (.xls/.xlsx), ZIP`,
+        `Unsupported file type: ${mimeType || 'unknown'}. Allowed: JPEG, PNG, WebP, GIF, PDF, Word (.doc/.docx), CSV, Excel (.xls/.xlsx), ZIP`,
       );
     }
     if (opts.category != null && !(ATTACHMENT_CATEGORIES as readonly string[]).includes(opts.category)) {
@@ -191,6 +203,7 @@ export class BiddingAttachmentsService {
       }),
     );
     attachment.file = appFile;
+    await this.releaseRecapSlot(bidId, attachment.label, attachment.id);
     const dto = this.toDto(attachment);
     if (!opts.skipActivity) await this.activity.recordAttachmentAdded(bidId, opts.userId, originalName);
     return dto;
@@ -221,7 +234,51 @@ export class BiddingAttachmentsService {
     }
     if (patch.label !== undefined) attachment.label = patch.label?.trim() || null;
     await this.attachmentRepo.save(attachment);
+    await this.releaseRecapSlot(bidId, attachment.label, attachment.id);
     return this.toDto(attachment);
+  }
+
+  /** One CSV per Group A / Group B box. A newer file in the same box wins. */
+  async recapSlotTotals(bidId: number): Promise<RecapSlotTotals> {
+    const slots = emptyRecapSlots();
+    const rows = await this.attachmentRepo.find({
+      where: { bidId },
+      relations: ['file'],
+      order: { id: 'DESC' },
+    });
+    for (const row of rows) {
+      const slot = parseRecapSlotLabel(row.label);
+      if (!slot || slots[slot.group][slot.scope] != null) continue;
+      const file = row.file;
+      if (!file || file.isDeleted) continue;
+      const name = file.originalFileName || '';
+      const mime = file.mimeType || '';
+      const csv =
+        mime.includes('csv') ||
+        /\.csv$/i.test(name) ||
+        mime === 'text/plain' ||
+        mime === 'application/vnd.ms-excel';
+      if (!csv) continue;
+      const text = await this.storage.readText(file.storagePath);
+      if (!text) continue;
+      const parsed = parseRecapCsv(text);
+      if (!parsed) continue;
+      slots[slot.group][slot.scope] = parsed[slot.scope];
+    }
+    return slots;
+  }
+
+  /** The box keeps the file just saved. The previous file stays on the bid as a takeoff file. */
+  private async releaseRecapSlot(bidId: number, label: string | null, keepId: number): Promise<void> {
+    const slotLabel = (label ?? '').trim();
+    if (!parseRecapSlotLabel(slotLabel)) return;
+    const others = await this.attachmentRepo.find({ where: { bidId, label: slotLabel } });
+    for (const row of others) {
+      if (row.id === keepId) continue;
+      row.label = 'takeoff';
+      row.category = 'takeoff_markup';
+      await this.attachmentRepo.save(row);
+    }
   }
 
   async openDownload(
