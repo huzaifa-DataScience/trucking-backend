@@ -1,3 +1,4 @@
+import type { PfPageOpts } from './project-financials-paging';
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards';
 import { SITELINE_ENTITY_IDS } from '../siteline/siteline-entity-config.service';
@@ -14,6 +15,12 @@ function parseEntityId(raw?: string): number | undefined {
 function parseAlert(raw?: string): PfListFilters['alert'] {
   if (raw === 'fix' || raw === 'not_in_siteline' || raw === 'any') return raw;
   return undefined;
+}
+
+/** Page / sort query for the Job book and BOM tables. */
+function pageOpts(page?: string, pageSize?: string, sortBy?: string, sortDir?: string): PfPageOpts {
+  const num = (v?: string) => (v != null && v.trim() !== '' && Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : undefined);
+  return { page: num(page), pageSize: num(pageSize), sortBy: sortBy?.trim() || undefined, sortDir: sortDir === 'desc' ? 'desc' : 'asc' };
 }
 
 function filters(q: {
@@ -66,8 +73,15 @@ export class ProjectFinancialsController {
     @Query('search') search?: string,
     @Query('view') view?: string,
     @Query('alert') alert?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
   ) {
-    return this.pf.listJobs(filters({ entityId, pm, search, view, alert }));
+    const f = filters({ entityId, pm, search, view, alert });
+    // Without `page` every job is returned as before; with it, one page sorted on the server.
+    if (page == null) return this.pf.listJobs(f);
+    return this.pf.listJobsPage(f, 'bom', pageOpts(page, pageSize, sortBy, sortDir));
   }
 
   @Get('jobs')
@@ -77,8 +91,15 @@ export class ProjectFinancialsController {
     @Query('search') search?: string,
     @Query('view') view?: string,
     @Query('alert') alert?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
   ) {
-    return this.pf.listJobs(filters({ entityId, pm, search, view, alert }));
+    const f = filters({ entityId, pm, search, view, alert });
+    // Without `page` every job is returned as before; with it, one page sorted on the server.
+    if (page == null) return this.pf.listJobs(f);
+    return this.pf.listJobsPage(f, 'jobs', pageOpts(page, pageSize, sortBy, sortDir));
   }
 
   @Get('jobs/:jobNumber')
