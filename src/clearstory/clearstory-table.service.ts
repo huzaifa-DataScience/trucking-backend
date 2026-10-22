@@ -55,6 +55,50 @@ const TAG_SORT_COLUMNS = {
   updatedAt: 'updatedAt',
 } as const satisfies Record<string, keyof ClearstoryTag>;
 
+/**
+ * COR table columns the server can sort (table column key → SQL expression on `Clearstory_Cors` + kind).
+ * Only columns whose database value matches what the table shows; columns that exist only in the raw
+ * Clearstory payload (total hours, labels, T&M tags, …) are not here and are not sortable on the server.
+ */
+const COR_SORT_COLUMNS: Record<string, { expr: string; kind: 'text' | 'number' | 'date' }> = {
+  id: { expr: 'TRY_CAST(c.Id AS bigint)', kind: 'number' },
+  uuid: { expr: 'LOWER(CONVERT(nvarchar(36), c.Uuid))', kind: 'text' },
+  projectId: { expr: 'c.ProjectId', kind: 'number' },
+  jobNumber: { expr: 'c.JobNumber', kind: 'text' },
+  corNumber: { expr: 'c.CorNumber', kind: 'text' },
+  title: { expr: 'c.Title', kind: 'text' },
+  description: { expr: 'c.Description', kind: 'text' },
+  entryMethod: { expr: 'c.EntryMethod', kind: 'text' },
+  status: { expr: 'c.Status', kind: 'text' },
+  stage: { expr: 'c.Stage', kind: 'text' },
+  version: { expr: 'c.Version', kind: 'number' },
+  customerJobNumber: { expr: 'c.CustomerJobNumber', kind: 'text' },
+  customerReferenceNumber: { expr: 'c.CustomerReferenceNumber', kind: 'text' },
+  projectName: { expr: 'c.ProjectName', kind: 'text' },
+  contractId: { expr: 'c.ContractId', kind: 'number' },
+  customerName: { expr: 'c.CustomerName', kind: 'text' },
+  contractorName: { expr: 'c.ContractorName', kind: 'text' },
+  customerCoNumber: { expr: 'c.CustomerCoNumber', kind: 'text' },
+  dateSubmitted: { expr: 'c.DateSubmitted', kind: 'date' },
+  requestedAmount: { expr: 'c.RequestedAmount', kind: 'number' },
+  inReviewAmount: { expr: 'c.InReviewAmount', kind: 'number' },
+  approvedCoIssuedAmount: { expr: 'c.ApprovedCoIssuedAmount', kind: 'number' },
+  approvedToProceedAmount: { expr: 'c.ApprovedToProceedAmount', kind: 'number' },
+  voidAmount: { expr: 'c.VoidAmount', kind: 'number' },
+  voidDate: { expr: 'c.VoidDate', kind: 'date' },
+  coIssueDate: { expr: 'c.CoIssueDate', kind: 'date' },
+  manualTmTag: { expr: 'c.ManualTmTag', kind: 'text' },
+  tmTagCount: { expr: 'c.TmTagCount', kind: 'number' },
+  daysInReview: { expr: 'c.DaysInReview', kind: 'number' },
+  approvedToProceedDate: { expr: 'c.ApprovedToProceedDate', kind: 'date' },
+  approvedOrVoidDate: { expr: 'c.ApprovedOrVoidDate', kind: 'date' },
+  createdAt: { expr: 'c.CreatedAt', kind: 'date' },
+  updatedAt: { expr: 'c.UpdatedAt', kind: 'date' },
+};
+
+/** Column keys the COR table may send as `sort` (the page uses this to know which headers are sortable). */
+export const COR_SORTABLE_KEYS = Object.keys(COR_SORT_COLUMNS);
+
 function iso(d: Date | null | undefined): string | null {
   return d?.toISOString?.() ?? null;
 }
@@ -225,19 +269,47 @@ export class ClearstoryTableService {
     pageRaw?: string,
     pageSizeRaw?: string,
     projectIdRaw?: string,
-  ): Promise<ClearstoryTablePage> {
+    sortRaw?: string,
+    sortDirRaw?: string,
+  ): Promise<ClearstoryTablePage & { sortedOnServer?: boolean; sortableKeys?: string[] }> {
     const { page, pageSize, skip } = clampPagination(pageRaw, pageSizeRaw);
     const where: FindOptionsWhere<ClearstoryCor> = {};
+    let projectId: number | undefined;
     if (projectIdRaw !== undefined && projectIdRaw !== '') {
       const pid = Number.parseInt(projectIdRaw, 10);
-      if (Number.isFinite(pid)) where.projectId = pid;
+      if (Number.isFinite(pid)) {
+        where.projectId = pid;
+        projectId = pid;
+      }
     }
-    const [entities, total] = await this.cors.findAndCount({
-      where,
-      order: { updatedAt: 'DESC', id: 'ASC' },
-      skip,
-      take: pageSize,
-    });
+    const sortCol = sortRaw ? COR_SORT_COLUMNS[sortRaw] : undefined;
+    let entities: ClearstoryCor[];
+    let total: number;
+    if (sortCol) {
+      // Sorted across every COR, then paged. Blanks go where the table's own sort put them (last going
+      // up, first going down); ties keep the default order (newest first).
+      const desc = sortDirRaw?.toLowerCase() === 'desc';
+      const blank =
+        sortCol.kind === 'text' ? `(${sortCol.expr} IS NULL OR LTRIM(RTRIM(${sortCol.expr})) = '')` : `${sortCol.expr} IS NULL`;
+      const qb = this.cors.createQueryBuilder('c');
+      if (projectId !== undefined) qb.where('c.ProjectId = :pid', { pid: projectId });
+      qb.addSelect(`CASE WHEN ${blank} THEN 1 ELSE 0 END`, 'sort_blank')
+        .addSelect(sortCol.expr, 'sort_value')
+        .orderBy('sort_blank', desc ? 'DESC' : 'ASC')
+        .addOrderBy('sort_value', desc ? 'DESC' : 'ASC')
+        .addOrderBy('c.UpdatedAt', 'DESC')
+        .addOrderBy('c.Id', 'ASC')
+        .offset(skip)
+        .limit(pageSize);
+      [entities, total] = await Promise.all([qb.getMany(), this.cors.count({ where })]);
+    } else {
+      [entities, total] = await this.cors.findAndCount({
+        where,
+        order: { updatedAt: 'DESC', id: 'ASC' },
+        skip,
+        take: pageSize,
+      });
+    }
     const keys = entities.map((e) => e.id);
     const payloadMap = await this.loadPayloadMap(CLEARSTORY_TABLE_RESOURCE_TYPES.cor, keys);
     const rows: ClearstoryTableRow[] = entities.map((e) => {
@@ -250,7 +322,16 @@ export class ClearstoryTableService {
         typedMirror: corToMirror(e),
       };
     });
-    return { module: 'cors', page, pageSize, total, rows };
+    return {
+      module: 'cors',
+      page,
+      pageSize,
+      total,
+      rows,
+      // Lets the table tell this apart from an older backend that ignores `sort`.
+      sortedOnServer: Boolean(sortCol),
+      sortableKeys: COR_SORTABLE_KEYS,
+    };
   }
 
   async listTags(

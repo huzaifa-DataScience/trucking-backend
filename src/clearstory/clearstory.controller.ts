@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards';
 import { ClearstoryApiPayload, ClearstoryCor, ClearstoryProject } from '../database/entities';
 import { ClearstoryContractComparisonService } from './clearstory-contract-comparison.service';
 import { ClearstorySyncService } from './clearstory-sync.service';
+import { parseProjectFilterGroups, rowMatchesGroups, sortProjectRows } from './clearstory-project-list';
 
 type Bucket = 'APPROVED' | 'ATP' | 'IN_REVIEW' | 'PLACEHOLDER' | 'VOID';
 
@@ -157,6 +158,9 @@ export class ClearstoryController {
     @Query('allColumns') allColumns?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+    @Query('filters') filtersRaw?: string,
   ) {
     const q = (search ?? '').trim().toLowerCase();
     const wantAllColumns = ['1', 'true', 'yes', 'on'].includes(
@@ -209,9 +213,39 @@ export class ClearstoryController {
       });
     }
     qb.orderBy('p.UpdatedAt', 'DESC').addOrderBy('p.Id', 'DESC');
+
+    // Column sort / Filters sidebar: they work on the hydrated values below, which SQL can't see, so every
+    // matching project is built, filtered and sorted here (page rules in clearstory-project-list.ts),
+    // then one page is returned. Without them the fast DB paging below is unchanged.
+    const groups = parseProjectFilterGroups(filtersRaw);
+    const sortKey = sortBy?.trim() || undefined;
+    if (wantPaginated && (sortKey || groups.length > 0)) {
+      const everyRow = await this.projectRowsWithAllColumns(await qb.getMany());
+      const matched = everyRow.filter((r) => rowMatchesGroups(r as Record<string, unknown>, groups));
+      const sorted = sortProjectRows(matched as Record<string, unknown>[], sortKey, sortDir === 'desc' ? 'desc' : 'asc');
+      const pages = Math.max(1, Math.ceil(sorted.length / pageSizeNum));
+      const pageClamped = Math.min(pages, pageNum);
+      return {
+        page: pageClamped,
+        pageSize: pageSizeNum,
+        total: sorted.length,
+        projects: sorted.slice((pageClamped - 1) * pageSizeNum, pageClamped * pageSizeNum),
+        // Lets the page tell this apart from an older backend that ignores sortBy / filters.
+        sortedAndFilteredOnServer: true,
+      };
+    }
+
     if (wantPaginated) qb.skip((pageNum - 1) * pageSizeNum).take(pageSizeNum);
     const [filtered, total] = wantPaginated ? await qb.getManyAndCount() : [await qb.getMany(), 0];
+    const projects = await this.projectRowsWithAllColumns(filtered);
 
+    return wantPaginated
+      ? { page: pageNum, pageSize: pageSizeNum, total, projects }
+      : { projects };
+  }
+
+  /** All typed columns per project, with missing fields filled from the stored Clearstory payload. */
+  private async projectRowsWithAllColumns(filtered: ClearstoryProject[]) {
     const keys = filtered.map((p) => String(p.id));
     const payloadRows = keys.length
       ? await this.apiPayloads.find({
@@ -220,7 +254,7 @@ export class ClearstoryController {
       : [];
     const payloadByKey = new Map(payloadRows.map((r) => [r.resourceKey, r.payloadJson]));
 
-    const projects = filtered.map((p) => {
+    return filtered.map((p) => {
       const base = {
         // All columns from dbo.Clearstory_Projects (typed mirror). These are Clearstory-derived fields.
         id: p.id,
@@ -264,10 +298,6 @@ export class ClearstoryController {
         return base;
       }
     });
-
-    return wantPaginated
-      ? { page: pageNum, pageSize: pageSizeNum, total, projects }
-      : { projects };
   }
 
   @Get('projects/:id/summary')
