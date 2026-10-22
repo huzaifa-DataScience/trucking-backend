@@ -10,7 +10,15 @@
 
 `POST /bids/:id/attachments` accepts CSV and Excel (`.csv`, `.xls`, `.xlsx`), including when the browser sends the file as `application/vnd.ms-excel`. JPEG, PNG, WebP, PDF, Word, and ZIP are unchanged.
 
-The comparison rows are still scope, A, B, diff, var, final, status. The API stores the recap. It does not turn the spreadsheet into that grid.
+Recap CSVs go in a fixed box, not by upload order. `POST /bids/:id/attachments` with `label` set to one of:
+
+`recap-a-duct`, `recap-a-hydronic`, `recap-a-plumbing`, `recap-b-duct`, `recap-b-hydronic`, `recap-b-plumbing`
+
+Group A is Takeoff A. Group B is Takeoff B. Duct compares to duct, hydronic to hydronic, plumbing to plumbing. One file per box; a new upload into a filled box takes that box, and the previous file stays on the bid as label `takeoff`. `GET /bids/:id` → `workflow.takeoffComparisons` reads only those boxes. An empty box is null. Duct is Mike `D` rows. Hydronic is chilled water, heating hot water, condenser, and refrigerant. Plumbing is the other `P` rows.
+
+### Architect image
+
+`POST /bids/:id/attachments` with `label: "architect-image"` and `category: "project_documents"`. JPEG, PNG, WebP, and GIF. Download is the same attachment path. The bid can keep older images; the screen uses the highest attachment id.
 
 ### One contact list
 
@@ -61,7 +69,7 @@ The list item already has `boardStatus`: `not_started`, `bidding`, `bid_submitte
 - **Intake.** Keep General contractors and Mechanical contractors. Remove the extra invitation / mechanical blocks that repeat the same company. When the company changes, replace contact, email, and phone from the selected person. Do not leave the previous contact in the box.
 - **Bidding clients.** Render `biddingClientRows` as the table: type, company, contact, email, phone, base bid. A GC or mechanical saved on the bid is already a row. Do not make the user add that company a second time.
 - **Contractors.** One screen to add and edit a company contact (`POST` / `PATCH` above). Mark inactive people with `inactive: true`. A person with no email and no phone is not in search; add them here when they write in.
-- **Takeoff comparison.** Recap files can be uploaded now. Lay the two files out in the comparison panel. The server grid is still quantity A against quantity B.
+- **Takeoff comparison.** Six upload boxes: Group A and Group B, each with Duct, Hydronic, and Plumbing. Upload with the `recap-a-duct` style label above. Show `workflow.takeoffComparisons`. An empty box stays No data.
 
 ---
 
