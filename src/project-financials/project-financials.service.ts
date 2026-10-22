@@ -1,3 +1,4 @@
+import { pageJobs, type PfPageOpts } from './project-financials-paging';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -137,6 +138,19 @@ export class ProjectFinancialsService {
       missing,
       alerts: alertCounts(filtered),
     };
+  }
+
+  /**
+   * Job book / BOM tracking, one page at a time. The same filtered list as `listJobs` (so `alerts`
+   * still count every matching job); sorted by a table column on the server, then one page is sent.
+   */
+  async listJobsPage(filters: PfListFilters, screen: 'jobs' | 'bom', opts: PfPageOpts) {
+    const result = await this.listJobs(filters);
+    const paged = pageJobs(result.jobs, screen, opts, {
+      hideCost: result.missing.includes('foundation_job_cost'),
+      hideTrimble: result.missing.includes('trimble_bom'),
+    });
+    return { ...result, ...paged };
   }
 
   async getJob(jobNumber: string): Promise<PfJobRow> {
