@@ -722,6 +722,132 @@ export class SitelineReportService {
       message: items.length === 0 ? `No overdue rows for entityId=${reportEntityId}.` : null,
     };
   }
+
+  /**
+   * A/R aging for one or more companies, one page at a time. Rows are merged in `entityIds` order (each
+   * company's rows as `getAgingReport` returns them), then sorted and sliced. `summary` covers every
+   * matching row, so the Billing cards, chart and "By company" don't need the full list.
+   */
+  async getAgingReportPage(entityIds: number[], filters: SitelineAgingFilters, opts: BillingPageOpts) {
+    const parts = await Promise.all(
+      entityIds.map((entityId) => this.getAgingReport({ ...filters, entityId }).then((report) => ({ entityId, report }))),
+    );
+    const [first] = parts;
+    const rows = parts.flatMap((p) => p.report.rows.map((r) => ({ ...r, entityId: p.entityId })));
+    const totals = { ...first.report.totals };
+    for (const key of Object.keys(totals) as (keyof typeof totals)[]) {
+      totals[key] = parts.reduce((sum, p) => sum + (Number(p.report.totals[key]) || 0), 0);
+    }
+    const bucketProjectCounts = Object.fromEntries(
+      AGING_BUCKETS.map((b) => [b, rows.filter((r) => (r.buckets[b] ?? 0) > 0).length]),
+    ) as Record<(typeof AGING_BUCKETS)[number], number>;
+    const byCompany = entityIds.map((entityId) => {
+      const mine = rows.filter((r) => r.entityId === entityId);
+      return {
+        entityId,
+        total: mine.reduce((s, r) => s + (r.projectTotal || 0), 0),
+        over90: mine.reduce((s, r) => s + (r.buckets['91-120 Days'] ?? 0) + (r.buckets['>120 Days'] ?? 0), 0),
+        contracts: mine.length,
+      };
+    });
+    const sorted = sortBillingRows(rows, opts.sortBy, opts.sortDir, (r, key) =>
+      key.startsWith('bucket:') ? r.buckets[key.slice(7) as (typeof AGING_BUCKETS)[number]] : (r as Record<string, unknown>)[key],
+    );
+    const win = billingPageWindow(sorted.length, opts);
+    const pageRows = sorted.slice(win.skip, win.skip + win.take);
+    return {
+      ...first.report,
+      rows: opts.navOnly ? pageRows.map((r) => ({ contractId: r.contractId, projectName: r.projectName })) : pageRows,
+      totals,
+      total: sorted.length,
+      page: win.page,
+      pageSize: win.pageSize,
+      summary: { bucketProjectCounts, byCompany },
+    };
+  }
+
+  /** Past due for one or more companies, one page at a time; `summary` covers every matching item. */
+  async getAgingOverduePage(entityIds: number[], filters: SitelineAgingFilters, opts: BillingPageOpts) {
+    const parts = await Promise.all(
+      entityIds.map((entityId) =>
+        this.getOverdueOver50({ ...filters, entityId, minDaysPastDue: filters.minDaysPastDue ?? 51 }).then((r) => ({
+          entityId,
+          r,
+        })),
+      ),
+    );
+    const items = parts.flatMap((p) => p.r.items.map((it) => ({ ...it, entityId: p.entityId })));
+    type Item = (typeof items)[number];
+    const biggestOf = (list: Item[]) =>
+      list.reduce<Item | null>((best, it) => (!best || (it.netDollars || 0) > (best.netDollars || 0) ? it : best), null);
+    const summary = {
+      netTotal: items.reduce((s, it) => s + (it.netDollars || 0), 0),
+      count: items.length,
+      contracts: new Set(items.map((it) => `${it.entityId}:${it.contractId}`)).size,
+      biggest: biggestOf(items),
+      byCompany: entityIds.map((entityId) => {
+        const late = items.filter((it) => it.entityId === entityId);
+        return {
+          entityId,
+          older: late.reduce((s, it) => s + (it.netDollars || 0), 0),
+          withOlder: new Set(late.map((it) => it.contractId)).size,
+          biggest: biggestOf(late),
+        };
+      }),
+    };
+    const sorted = sortBillingRows(items, opts.sortBy, opts.sortDir, (it, key) => (it as Record<string, unknown>)[key]);
+    const win = billingPageWindow(sorted.length, opts);
+    const pageItems = sorted.slice(win.skip, win.skip + win.take);
+    return {
+      items: opts.navOnly ? pageItems.map((it) => ({ contractId: it.contractId, projectName: it.projectName })) : pageItems,
+      total: sorted.length,
+      page: win.page,
+      pageSize: win.pageSize,
+      summary,
+    };
+  }
+}
+
+/** Page request for the Billing tables. `all` returns every row (CSV export, project prev / next). */
+export interface BillingPageOpts {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+  all?: boolean;
+  /** With `all`: only `contractId` + `projectName` per row (project prev / next). */
+  navOnly?: boolean;
+}
+
+/**
+ * Same order as the Billing table's click-to-sort: blanks last in both directions, numbers numerically,
+ * everything else as text with numbers in natural order. Without `sortBy` the merged order is kept.
+ */
+function sortBillingRows<T>(
+  rows: T[],
+  sortBy: string | undefined,
+  sortDir: 'asc' | 'desc' | undefined,
+  valueOf: (row: T, key: string) => unknown,
+): T[] {
+  if (!sortBy) return rows;
+  const mul = sortDir === 'desc' ? -1 : 1;
+  return [...rows].sort((x, y) => {
+    const a = valueOf(x, sortBy);
+    const b = valueOf(y, sortBy);
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    if (typeof a === 'number' && typeof b === 'number') return (a - b) * mul;
+    return String(a).localeCompare(String(b), undefined, { numeric: true }) * mul;
+  });
+}
+
+function billingPageWindow(total: number, opts: BillingPageOpts) {
+  if (opts.all) return { page: 1, pageSize: Math.max(total, 1), skip: 0, take: total };
+  const pageSize = Math.min(200, Math.max(1, opts.pageSize ?? 50));
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(pages, Math.max(1, opts.page ?? 1));
+  return { page, pageSize, skip: (page - 1) * pageSize, take: pageSize };
 }
 
 /** SQL `nvarchar` or `datetime2` → stable `YYYY-MM-DD` for API (avoids UTC ISO shifting 1970-01-01). */
