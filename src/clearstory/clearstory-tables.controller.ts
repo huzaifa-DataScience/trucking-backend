@@ -16,8 +16,10 @@ export class ClearstoryTablesController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('projectId') projectId?: string,
+    @Query('sort') sort?: string,
+    @Query('sortDir') sortDir?: string,
   ) {
-    return this.tables.listCors(page, pageSize, projectId);
+    return this.tables.listCors(page, pageSize, projectId, sort, sortDir);
   }
 
   @Get('tags')
