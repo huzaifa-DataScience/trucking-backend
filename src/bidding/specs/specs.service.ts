@@ -93,6 +93,36 @@ export type SpecLineWriteDto = {
   sortOrder?: number;
 };
 
+/**
+ * ORDER BY for a paged list. Only keys in `columns` are used (never user text), blanks go last in
+ * both directions like the page tables did, and ties keep the default order.
+ */
+function sqlOrderBy(
+  columns: Record<string, { expr: string; text: boolean }>,
+  sortBy: string | undefined,
+  sortDir: string | undefined,
+  defaultOrder: string,
+): string {
+  const col = sortBy ? columns[sortBy] : undefined;
+  if (!col) return defaultOrder;
+  const dir = sortDir === 'desc' ? 'DESC' : 'ASC';
+  const blank = col.text ? `${col.expr} IS NULL OR ${col.expr} = ''` : `${col.expr} IS NULL`;
+  // SQL Server rejects a column listed twice, so drop the tie-breaker on the column being sorted.
+  const ties = defaultOrder
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.split(' ')[0] !== col.expr);
+  return [`CASE WHEN ${blank} THEN 1 ELSE 0 END`, `${col.expr} ${dir}`, ...ties].join(', ');
+}
+
+/** Page clamped to what exists; pageSize 1–200 (default 50). */
+function pageWindow(total: number, page?: number, pageSize?: number) {
+  const size = Math.min(200, Math.max(1, pageSize ?? 50));
+  const pages = Math.max(1, Math.ceil(total / size));
+  const p = Math.min(pages, Math.max(1, page ?? 1));
+  return { total, page: p, pageSize: size, skip: (p - 1) * size };
+}
+
 @Injectable()
 export class SpecsService implements OnModuleInit {
   private readonly logger = new Logger(SpecsService.name);
@@ -623,6 +653,101 @@ export class SpecsService implements OnModuleInit {
    * One row per bid takeoff (multi-CSV bids are consolidated first).
    * Optional `bidId` / `q` (file name, estimate #, bid name, project label).
    */
+  /**
+   * Estimation files page — one takeoff row per bid (its latest file), paged and sorted in SQL.
+   * Search matches the takeoff name, estimate # or bid name, as the page did. Runs the same
+   * "one file per bid" merge as the full list first, so both views agree.
+   */
+  async listEstimationTakeoffsPage(opts: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortDir?: string;
+  }) {
+    await this.consolidateMultiFileBids();
+    const columns: Record<string, { expr: string; text: boolean }> = {
+      takeoff: { expr: 'FileName', text: true },
+      estimate: { expr: 'EstimateNumber', text: true },
+      bidName: { expr: 'BidName', text: true },
+      rows: { expr: 'TotalRows', text: false },
+      updated: { expr: 'CreatedAt', text: false },
+    };
+    const order = sqlOrderBy(columns, opts.sortBy, opts.sortDir, 'CreatedAt DESC, MikeFileId DESC');
+    const q = opts.q?.trim();
+    const params: unknown[] = [];
+    let search = '';
+    if (q) {
+      params.push(`%${q}%`);
+      search = 'AND (f.FileName LIKE @0 OR b.EstimateNumber LIKE @0 OR b.BidName LIKE @0)';
+    }
+    const base = `
+      WITH t AS (
+        SELECT f.BidId, f.MikeFileId, f.FileName, f.CreatedAt, b.EstimateNumber, b.BidName,
+               SUM(f.ImportedRowCount) OVER (PARTITION BY f.BidId) AS TotalRows,
+               ROW_NUMBER() OVER (PARTITION BY f.BidId ORDER BY f.CreatedAt DESC, f.MikeFileId DESC) AS rn
+        FROM Bid_MikeFiles f
+        JOIN Bids b ON b.BidId = f.BidId
+        WHERE b.IsDeleted = 0 ${search}
+      )`;
+    const [{ n }] = await this.mikeFiles.manager.query(`${base} SELECT COUNT(*) AS n FROM t WHERE rn = 1`, params);
+    const win = pageWindow(Number(n) || 0, opts.page, opts.pageSize);
+    const rows: Array<{
+      BidId: number;
+      MikeFileId: string | number;
+      FileName: string | null;
+      CreatedAt: Date | null;
+      EstimateNumber: string | null;
+      BidName: string | null;
+      TotalRows: number | null;
+    }> = win.total
+      ? await this.mikeFiles.manager.query(
+          `${base} SELECT * FROM t WHERE rn = 1 ORDER BY ${order}
+           OFFSET ${win.skip} ROWS FETCH NEXT ${win.pageSize} ROWS ONLY`,
+          params,
+        )
+      : [];
+    return {
+      items: rows.map((r) => ({
+        bidId: Number(r.BidId),
+        fileId: Number(r.MikeFileId),
+        fileName: r.FileName || `File #${r.MikeFileId}`,
+        estimateNumber: r.EstimateNumber ?? null,
+        bidName: r.BidName ?? null,
+        totalRows: Number(r.TotalRows) || 0,
+        updatedAt: r.CreatedAt ? new Date(r.CreatedAt).toISOString() : null,
+      })),
+      total: win.total,
+      page: win.page,
+      pageSize: win.pageSize,
+    };
+  }
+
+  /** Takeoff name per bid (for the upload dialog's "existing takeoff" hint) — every bid, no paging. */
+  async listTakeoffNames() {
+    const rows: Array<{ BidId: number; FileName: string | null }> = await this.mikeFiles.manager.query(`
+      SELECT BidId, FileName FROM (
+        SELECT f.BidId, f.FileName,
+               ROW_NUMBER() OVER (PARTITION BY f.BidId ORDER BY f.CreatedAt DESC, f.MikeFileId DESC) AS rn
+        FROM Bid_MikeFiles f JOIN Bids b ON b.BidId = f.BidId
+        WHERE b.IsDeleted = 0
+      ) x WHERE rn = 1`);
+    return rows.map((r) => ({ bidId: Number(r.BidId), fileName: r.FileName ?? null }));
+  }
+
+  /** Same merge the full list has always run first: any bid with several Mike files becomes one. */
+  private async consolidateMultiFileBids() {
+    const multi = await this.mikeFiles
+      .createQueryBuilder('f')
+      .select('f.bidId', 'bidId')
+      .groupBy('f.bidId')
+      .having('COUNT(*) > 1')
+      .getRawMany<{ bidId: number }>();
+    for (const row of multi) {
+      await this.consolidateToSingleMikeFile(Number(row.bidId));
+    }
+  }
+
   async listAllEstimationFiles(opts?: { bidId?: number; q?: string; limit?: number }) {
     const multi = await this.mikeFiles
       .createQueryBuilder('f')
@@ -1007,6 +1132,104 @@ export class SpecsService implements OnModuleInit {
    * Production list — **one row per bid** with all Mike files already combined in metadata.
    * FE must use this for `/production` list. Do NOT build Production from `/estimation-files`.
    */
+  /**
+   * Production list, paged and sorted in SQL — same rows and search as listProductionReports
+   * (one row per bid, files combined), plus `total` / `page` / `pageSize`.
+   */
+  async listProductionReportsPage(opts: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortDir?: string;
+  }) {
+    const columns: Record<string, { expr: string; text: boolean }> = {
+      estimate: { expr: 'COALESCE(EstimateNumber, CAST(BidId AS nvarchar(20)))', text: true },
+      bidName: { expr: 'BidName', text: true },
+      job: { expr: 'LTRIM(RTRIM(JobNumber))', text: true },
+      files: { expr: 'FileCount', text: false },
+      specs: { expr: 'SpecLineCount', text: false },
+      updated: { expr: 'LatestUploadAt', text: false },
+    };
+    const order = sqlOrderBy(columns, opts.sortBy, opts.sortDir, 'LatestUploadAt DESC, BidId DESC');
+    const q = opts.q?.trim();
+    const params: unknown[] = [];
+    let search = '';
+    if (q) {
+      params.push(`%${q}%`);
+      search = `AND (b.EstimateNumber LIKE @0 OR b.BidName LIKE @0 OR j.JobNumber LIKE @0
+                     OR f.FileName LIKE @0 OR f.JobNumberHint LIKE @0)`;
+    }
+    const base = `
+      WITH t AS (
+        SELECT f.BidId, b.EstimateNumber, b.BidName, b.Status AS BidStatus, b.JobId, j.JobNumber,
+               b.TrimbleProjectId, COUNT(*) AS FileCount, SUM(f.ImportedRowCount) AS TotalRows,
+               MAX(f.CreatedAt) AS LatestUploadAt,
+               (SELECT COUNT(*) FROM Bid_SpecLines s WHERE s.BidId = f.BidId) AS SpecLineCount
+        FROM Bid_MikeFiles f
+        JOIN Bids b ON b.BidId = f.BidId
+        LEFT JOIN dbo.Ref_Jobs j ON j.JobID = b.JobId
+        WHERE b.IsDeleted = 0 ${search}
+        GROUP BY f.BidId, b.EstimateNumber, b.BidName, b.Status, b.JobId, j.JobNumber, b.TrimbleProjectId
+      )`;
+    const [{ n }] = await this.mikeFiles.manager.query(`${base} SELECT COUNT(*) AS n FROM t`, params);
+    const win = pageWindow(Number(n) || 0, opts.page, opts.pageSize);
+    const raw: Array<{
+      BidId: number;
+      EstimateNumber: string | null;
+      BidName: string | null;
+      BidStatus: string | null;
+      JobId: number | null;
+      JobNumber: string | null;
+      TrimbleProjectId: string | number | null;
+      FileCount: number;
+      TotalRows: number | null;
+      LatestUploadAt: Date;
+      SpecLineCount: number;
+    }> = win.total
+      ? await this.mikeFiles.manager.query(
+          `${base} SELECT * FROM t ORDER BY ${order}
+           OFFSET ${win.skip} ROWS FETCH NEXT ${win.pageSize} ROWS ONLY`,
+          params,
+        )
+      : [];
+
+    // File ids / names for just this page's bids (every file on the bid, as before).
+    const bidIds = raw.map((r) => Number(r.BidId));
+    const filesByBid = new Map<number, BidMikeFile[]>();
+    if (bidIds.length) {
+      const files = await this.mikeFiles.find({ where: { bidId: In(bidIds) }, order: { id: 'ASC' } });
+      for (const f of files) filesByBid.set(f.bidId, [...(filesByBid.get(f.bidId) ?? []), f]);
+    }
+
+    return {
+      mergeMode: 'all_files_per_bid' as const,
+      rows: raw.map((r) => {
+        const bidId = Number(r.BidId);
+        const files = filesByBid.get(bidId) ?? [];
+        return {
+          bidId,
+          estimateNumber: r.EstimateNumber,
+          bidName: r.BidName,
+          bidStatus: r.BidStatus,
+          jobId: r.JobId == null ? null : Number(r.JobId),
+          jobNumber: r.JobNumber?.trim() || null,
+          trimbleProjectId: r.TrimbleProjectId == null ? null : Number(r.TrimbleProjectId),
+          fileCount: Number(r.FileCount) || files.length,
+          totalRows: Number(r.TotalRows) || 0,
+          fileIds: files.map((f) => Number(f.id)),
+          fileNames: files.map((f) => f.fileName),
+          specLineCount: Number(r.SpecLineCount) || 0,
+          latestUploadAt: r.LatestUploadAt,
+          productionReportPath: `/bids/${bidId}/production-report`,
+        };
+      }),
+      total: win.total,
+      page: win.page,
+      pageSize: win.pageSize,
+    };
+  }
+
   async listProductionReports(opts?: { q?: string; limit?: number }) {
     const limit = Math.min(Math.max(opts?.limit ?? 200, 1), 500);
     const qb = this.mikeFiles

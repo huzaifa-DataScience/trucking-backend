@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { SitelineService } from './siteline.service';
-import { SitelineReportService } from './siteline-report.service';
-import { SitelineEntityConfigService } from './siteline-entity-config.service';
+import { SitelineReportService, type BillingPageOpts } from './siteline-report.service';
+import { SitelineEntityConfigService, SITELINE_ENTITY_IDS } from './siteline-entity-config.service';
 import { SitelineReconciliationGapsService } from './siteline-reconciliation-gaps.service';
 import { SitelineProjectDetailService } from './siteline-project-detail.service';
 import { Public } from '../auth/decorators';
@@ -32,6 +32,32 @@ function parseCsv(v: unknown): string[] | undefined {
     .map((p) => p.trim())
     .filter(Boolean);
   return parts.length ? parts : undefined;
+}
+
+/** `1,2,3` → known company ids only, in the given order (default: all three). */
+function parseEntityIds(v: unknown): number[] {
+  const known = SITELINE_ENTITY_IDS as readonly number[];
+  const ids = (parseCsv(v) ?? []).map(Number).filter((n) => known.includes(n));
+  return ids.length ? [...new Set(ids)] : [...known];
+}
+
+function billingPageOpts(
+  page?: string,
+  pageSize?: string,
+  sortBy?: string,
+  sortDir?: string,
+  all?: string,
+  fields?: string,
+): BillingPageOpts {
+  const allRows = parseBool(all) === true;
+  return {
+    page: parseNum(page),
+    pageSize: parseNum(pageSize),
+    sortBy: sortBy?.trim() || undefined,
+    sortDir: sortDir === 'desc' ? 'desc' : 'asc',
+    all: allRows,
+    navOnly: allRows && fields === 'nav',
+  };
 }
 
 /**
@@ -210,6 +236,82 @@ export class SitelineController {
       includeStatuses: parseCsv(includeStatuses),
       excludeStatuses: parseCsv(excludeStatuses),
     });
+  }
+
+  /**
+   * Billing A/R aging table, one page at a time. `entityIds` = companies to merge (default all three);
+   * same filters as `aging-report`. Returns the page plus `totals` / `summary` for every matching row.
+   * `all=1` returns every row (CSV export); `all=1&fields=nav` only contract id + project name.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('aging-report/page')
+  async getAgingReportPage(
+    @Query('entityIds') entityIds?: string,
+    @Query('search') search?: string,
+    @Query('overdueOnly') overdueOnly?: string,
+    @Query('minDaysPastDue') minDaysPastDue?: string,
+    @Query('maxDaysPastDue') maxDaysPastDue?: string,
+    @Query('minNetDollars') minNetDollars?: string,
+    @Query('maxNetDollars') maxNetDollars?: string,
+    @Query('includeStatuses') includeStatuses?: string,
+    @Query('excludeStatuses') excludeStatuses?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+    @Query('all') all?: string,
+    @Query('fields') fields?: string,
+  ) {
+    return this.report.getAgingReportPage(
+      parseEntityIds(entityIds),
+      {
+        search,
+        overdueOnly: parseBool(overdueOnly),
+        minDaysPastDue: parseNum(minDaysPastDue),
+        maxDaysPastDue: parseNum(maxDaysPastDue),
+        minNetDollars: parseNum(minNetDollars),
+        maxNetDollars: parseNum(maxNetDollars),
+        includeStatuses: parseCsv(includeStatuses),
+        excludeStatuses: parseCsv(excludeStatuses),
+      },
+      billingPageOpts(page, pageSize, sortBy, sortDir, all, fields),
+    );
+  }
+
+  /** Billing Past due table, one page at a time (same idea as `aging-report/page`). */
+  @UseGuards(JwtAuthGuard)
+  @Get('aging-overdue/page')
+  async getAgingOverduePage(
+    @Query('entityIds') entityIds?: string,
+    @Query('search') search?: string,
+    @Query('overdueOnly') overdueOnly?: string,
+    @Query('minDaysPastDue') minDaysPastDue?: string,
+    @Query('maxDaysPastDue') maxDaysPastDue?: string,
+    @Query('minNetDollars') minNetDollars?: string,
+    @Query('maxNetDollars') maxNetDollars?: string,
+    @Query('includeStatuses') includeStatuses?: string,
+    @Query('excludeStatuses') excludeStatuses?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+    @Query('all') all?: string,
+    @Query('fields') fields?: string,
+  ) {
+    return this.report.getAgingOverduePage(
+      parseEntityIds(entityIds),
+      {
+        search,
+        overdueOnly: parseBool(overdueOnly),
+        minDaysPastDue: parseNum(minDaysPastDue),
+        maxDaysPastDue: parseNum(maxDaysPastDue),
+        minNetDollars: parseNum(minNetDollars),
+        maxNetDollars: parseNum(maxNetDollars),
+        includeStatuses: parseCsv(includeStatuses),
+        excludeStatuses: parseCsv(excludeStatuses),
+      },
+      billingPageOpts(page, pageSize, sortBy, sortDir, all, fields),
+    );
   }
 
   /** Paginated pay apps (Siteline paginatedPayApps GraphQL). */

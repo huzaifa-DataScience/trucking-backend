@@ -101,6 +101,12 @@ class AutoFromMikeDto {
   @IsOptional() @IsBoolean() replace?: boolean;
 }
 
+function intOrUndefined(raw?: string): number | undefined {
+  if (raw == null || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.trunc(n) : undefined;
+}
+
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class SpecsController {
@@ -111,7 +117,18 @@ export class SpecsController {
    * Use THIS for `/production`. Do NOT build Production from `/estimation-files`.
    */
   @Get('production-reports')
-  listProductionReports(@Query('q') q?: string, @Query('limit') limitRaw?: string) {
+  listProductionReports(
+    @Query('q') q?: string,
+    @Query('limit') limitRaw?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    // With `page`: one page, sorted in SQL. Without it: the old capped list.
+    if (page != null) {
+      return this.specs.listProductionReportsPage({ q, page: intOrUndefined(page), pageSize: intOrUndefined(pageSize), sortBy, sortDir });
+    }
     const limit =
       limitRaw != null && String(limitRaw).trim() !== '' ? Number(limitRaw) : undefined;
     return this.specs.listProductionReports({
@@ -124,6 +141,24 @@ export class SpecsController {
    * Global library — each CSV as its own row (upload / delete / view raw rows ONLY).
    * NOT the Production list. NOT Specs calc input.
    */
+  /** Estimation files page: one takeoff row per bid, paged and sorted in SQL. Register before `:fileId`. */
+  @Get('estimation-files/takeoffs')
+  listEstimationTakeoffs(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortDir') sortDir?: string,
+  ) {
+    return this.specs.listEstimationTakeoffsPage({ q, page: intOrUndefined(page), pageSize: intOrUndefined(pageSize), sortBy, sortDir });
+  }
+
+  /** Takeoff name for every bid that has one (upload dialog hint). Register before `:fileId`. */
+  @Get('estimation-files/takeoff-names')
+  listTakeoffNames() {
+    return this.specs.listTakeoffNames();
+  }
+
   @Get('estimation-files')
   listAllEstimationFiles(
     @Query('bidId') bidIdRaw?: string,
