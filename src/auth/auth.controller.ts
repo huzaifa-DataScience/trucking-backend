@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   StreamableFile,
@@ -23,14 +24,15 @@ import { memoryStorage } from 'multer';
 import type { Request, Response } from 'express';
 import { AuthService, LoginResult } from './auth.service';
 import { PasswordResetService } from './password-reset.service';
-import { CurrentUser, Public } from './decorators';
-import { JwtAuthGuard } from './guards';
-import { LoginDto } from './dto/login.dto';
+import { CurrentUser, Public, Roles } from './decorators';
+import { JwtAuthGuard, RolesGuard } from './guards';
+import { LoginDto, SignInLocationDto } from './dto/login.dto';
 import { PatchTeamDto } from './dto/patch-team.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
-import { User } from '../database/entities';
+import { Role, User } from '../database/entities';
+import { SignInLocationService, type SignInLocationRow } from './sign-in-location.service';
 import { MAX_AVATAR_BYTES } from '../files/file-storage.service';
 
 @Controller('auth')
@@ -38,6 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordReset: PasswordResetService,
+    private readonly signInLocations: SignInLocationService,
   ) {}
 
   @Public()
@@ -46,7 +49,9 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
   ): Promise<{ access_token: string; user: LoginResult } | { message: string }> {
-    return this.authService.login(dto.email, dto.password);
+    const session = await this.authService.login(dto.email, dto.password);
+    await this.signInLocations.record(session.user.id, dto.location);
+    return session;
   }
 
   @Post('register')
@@ -175,6 +180,23 @@ export class AuthController {
       'Cache-Control': 'private, no-store',
     });
     return new StreamableFile(stream);
+  }
+
+  /** Confirms location for a session that skipped the login form (sign-up, approval, older session). */
+  @UseGuards(JwtAuthGuard)
+  @Post('sign-in-location')
+  @HttpCode(HttpStatus.OK)
+  async confirmSignInLocation(@CurrentUser() user: User, @Body() dto: SignInLocationDto): Promise<{ saved: true }> {
+    await this.signInLocations.record(user.id, dto);
+    return { saved: true };
+  }
+
+  /** Admins only: where people were when they signed in, newest first. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Get('sign-in-locations')
+  signInLocationList(@Query('limit') limit?: string): Promise<SignInLocationRow[]> {
+    return this.signInLocations.list(Number(limit) || 500);
   }
 
   @Get('admin')
