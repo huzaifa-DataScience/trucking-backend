@@ -86,3 +86,6 @@ export { WfsStaticItem } from './wfs-static-item.entity';
 export { WfsSnapshot } from './wfs-snapshot.entity';
 export { CalendarEvent } from './calendar-event.entity';
 export { OpsDisposalRate, OpsHaulTicket, OpsHaulerRate } from './operations.entity';
+export { UserSignInLocation } from './user-sign-in-location.entity';
+export { Office } from './office.entity';
+export { UserLocationPing } from './user-location-ping.entity';
